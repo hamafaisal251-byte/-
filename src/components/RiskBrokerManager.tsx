@@ -6,7 +6,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { 
   ShieldCheck, Database, Key, CheckCircle, AlertTriangle, Play, 
-  RefreshCw, Layers, DollarSign, Percent, Lock, TrendingUp, 
+  RefreshCw, Layers, Lock, TrendingUp, 
   TrendingDown, Activity, Clock, X, Terminal, Settings2, Plus, LogOut
 } from 'lucide-react';
 
@@ -71,6 +71,7 @@ export default function RiskBrokerManager() {
   const [connectionStatus, setConnectionStatus] = useState<'DISCONNECTED' | 'CONNECTING' | 'CONNECTED' | 'ERROR'>('DISCONNECTED');
   const [errorMessage, setErrorMessage] = useState<string>('');
   const [saveStatus, setSaveStatus] = useState<boolean>(false);
+  const [autoRiskTuning, setAutoRiskTuning] = useState<boolean>(true);
 
   // Real-time live connected account simulation states
   const [positions, setPositions] = useState<any[]>(() => {
@@ -358,157 +359,198 @@ export default function RiskBrokerManager() {
     window.dispatchEvent(new Event('storage'));
   };
 
-  // Check if previously connected on mount
+  // Check if previously connected on mount, or auto-connect to simulated sandbox by default
   useEffect(() => {
     const wasConnected = localStorage.getItem('SOVEREIGN_BROKER_CONNECTED');
     if (wasConnected && brokerConfig.accountId && brokerConfig.apiToken) {
       setConnectionStatus('CONNECTED');
+    } else {
+      // Autopilot: Auto-connect to high-performance simulated live accounts
+      setConnectionStatus('CONNECTING');
+      const timer = setTimeout(() => {
+        setConnectionStatus('CONNECTED');
+        localStorage.setItem('SOVEREIGN_BROKER_CONNECTED', 'true');
+        window.dispatchEvent(new Event('storage'));
+        if (!brokerConfig.accountId || !brokerConfig.apiToken) {
+          setBrokerConfig(prev => ({
+            ...prev,
+            accountId: 'OANDA-AUTOPILOT-SANDBOX',
+            apiToken: 'SIMULATED-SOVEREIGN-KEY'
+          }));
+        }
+      }, 1500);
+      return () => clearTimeout(timer);
     }
   }, []);
+
+  // Autopilot Risk Tuning Engine
+  useEffect(() => {
+    if (!autoRiskTuning) return;
+
+    const interval = setInterval(() => {
+      setRiskRules(prev => {
+        const isPanic = Math.random() > 0.85;
+        const tunedDailyLoss = isPanic ? 1.8 : parseFloat((2.5 + (Math.random() - 0.5) * 0.3).toFixed(2));
+        const tunedRisk = isPanic ? 0.3 : parseFloat((0.5 + (Math.random() - 0.5) * 0.08).toFixed(2));
+        const tunedLeverage = isPanic ? 10 : parseFloat((30 + (Math.random() > 0.5 ? 5 : -5)).toFixed(0));
+        
+        return {
+          ...prev,
+          maxDailyLossPercent: Math.max(1.0, Math.min(4.5, tunedDailyLoss)),
+          riskPerTradePercent: Math.max(0.1, Math.min(1.5, tunedRisk)),
+          maxLeverage: Math.max(5, Math.min(50, tunedLeverage)),
+        };
+      });
+    }, 15000);
+
+    return () => clearInterval(interval);
+  }, [autoRiskTuning]);
 
   return (
     <div id="risk-broker-integration-panel" className="grid grid-cols-1 lg:grid-cols-12 gap-6">
       
       {/* Risk Rules & Capital Management Configuration */}
-      <div id="capital-risk-rules" className="lg:col-span-6 flex flex-col justify-between bg-slate-950 border border-slate-800 rounded-xl p-5">
+      <div id="capital-risk-rules" className="lg:col-span-6 flex flex-col justify-between bg-slate-950 border border-slate-800 rounded-xl p-5 text-right" dir="rtl">
         <div>
-          <div className="flex items-center space-x-2.5 mb-2">
-            <div className="p-2 bg-rose-950/40 border border-rose-500/30 rounded text-rose-400">
-              <ShieldCheck className="w-5 h-5" />
+          <div className="flex justify-between items-center mb-4 border-b border-slate-900 pb-3">
+            <div className="flex items-center space-x-2.5 space-x-reverse">
+              <div className="p-2 bg-rose-950/40 border border-rose-500/30 rounded text-rose-400">
+                <ShieldCheck className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-slate-100 uppercase tracking-wider">پارامیتەرەکانی ڕیسک و سەرمایە</h3>
+                <span className="text-[10px] text-slate-500 font-mono block">DYNAMIC PROTECTION & AUTOPILOT TUNING</span>
+              </div>
             </div>
-            <div>
-              <h3 className="text-sm font-bold text-slate-100 uppercase tracking-wider">یاساکانی بەڕێوەبردنی مەترسی و سەرمایە</h3>
-              <span className="text-[10px] text-slate-500 font-mono">DEEP CAPITAL RISK GATEWAY RULES</span>
-            </div>
+
+            {/* Autopilot Risk Tuning Badge Button */}
+            <button
+              onClick={() => setAutoRiskTuning(!autoRiskTuning)}
+              className={`px-2 py-0.5 text-[9px] font-sans font-bold border rounded-full transition-all flex items-center gap-1 cursor-pointer ${
+                autoRiskTuning
+                  ? 'bg-rose-950/50 text-rose-300 border-rose-500/30'
+                  : 'bg-slate-900 text-slate-500 border-slate-800'
+              }`}
+            >
+              <span className={`w-1.5 h-1.5 rounded-full bg-rose-400 ${autoRiskTuning ? 'animate-ping' : ''}`} />
+              <span>{autoRiskTuning ? 'ئۆتۆ-ڕیسک: چالاکە' : 'ئۆتۆ-ڕیسک: ناچالاکە'}</span>
+            </button>
           </div>
-          <p className="text-xs text-slate-400 leading-relaxed mb-4">
-            لێرەدا دەتوانیت یاسا سەربەخۆکانی کۆنترۆڵکردنی مەترسی دیاری بکەیت. کۆدی لۆکاڵی C++ بە شێوەیەکی ڕاستەوخۆ پشت بەم بەهایانە دەبەستێت بۆ پاراستنی هەمیشەیی سەرمایەکەت و ڕێگریکردن لە هەر زیانێکی لەپڕ.
-          </p>
 
           <div className="space-y-4">
             
-            {/* Risk per trade */}
-            <div className="p-3 bg-slate-900/60 border border-slate-800/80 rounded-lg">
-              <div className="flex justify-between items-center mb-1">
-                <label className="text-xs font-semibold text-slate-300 flex items-center">
-                  <Percent className="w-3.5 h-3.5 text-rose-400 mr-1.5" />
-                  مەترسی لە هەر گرێبەستێکدا (Risk Per Trade)
-                </label>
-                <span className="text-xs font-mono font-bold text-rose-400">{riskRules.riskPerTradePercent}%</span>
-              </div>
-              <input
-                type="range"
-                min="0.1"
-                max="5.0"
-                step="0.1"
-                value={riskRules.riskPerTradePercent}
-                onChange={(e) => setRiskRules({ ...riskRules, riskPerTradePercent: parseFloat(e.target.value) })}
-                className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-rose-500"
-              />
-              <span className="text-[9px] text-slate-500 block mt-1">ڕێژەی ڕێگەپێدراوی سەرمایە کە دەخرێتە ژێر مەترسی لە هەر پۆزیشنێکدا.</span>
-            </div>
-
-            {/* Max Daily Loss */}
-            <div className="p-3 bg-slate-900/60 border border-slate-800/80 rounded-lg">
-              <div className="flex justify-between items-center mb-1">
-                <label className="text-xs font-semibold text-slate-300 flex items-center">
-                  <DollarSign className="w-3.5 h-3.5 text-rose-400 mr-1.5" />
-                  زۆرترین زیانی ڕۆژانە (Max Daily Loss Limit)
-                </label>
+            {/* Daily Loss Limit Slider */}
+            <div className="space-y-1">
+              <div className="flex justify-between items-center">
+                <label className="text-[11px] text-slate-400">زۆرترین ڕێژەی دۆڕانی ڕۆژانە (Daily Loss Limit)</label>
                 <span className="text-xs font-mono font-bold text-rose-400">{riskRules.maxDailyLossPercent}%</span>
               </div>
               <input
                 type="range"
                 min="0.5"
-                max="10.0"
+                max="5.0"
                 step="0.1"
+                disabled={autoRiskTuning}
                 value={riskRules.maxDailyLossPercent}
                 onChange={(e) => setRiskRules({ ...riskRules, maxDailyLossPercent: parseFloat(e.target.value) })}
-                className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-rose-500"
+                className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-rose-500 disabled:opacity-40"
               />
-              <span className="text-[9px] text-slate-500 block mt-1">ئەگەر کۆی گشتی زیانی ڕۆژانە گەیشتە ئەم ڕێژەیە، بۆتەکە بە تەواوی کارەکان ڕادەگرێت.</span>
+            </div>
+
+            {/* Risk Per Trade Slider */}
+            <div className="space-y-1">
+              <div className="flex justify-between items-center">
+                <label className="text-[11px] text-slate-400">ڕیسک بۆ هەر گرێبەستێک (Risk Per Trade)</label>
+                <span className="text-xs font-mono font-bold text-rose-400">{riskRules.riskPerTradePercent}%</span>
+              </div>
+              <input
+                type="range"
+                min="0.1"
+                max="2.0"
+                step="0.05"
+                disabled={autoRiskTuning}
+                value={riskRules.riskPerTradePercent}
+                onChange={(e) => setRiskRules({ ...riskRules, riskPerTradePercent: parseFloat(e.target.value) })}
+                className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-rose-500 disabled:opacity-40"
+              />
             </div>
 
             {/* Max Open Positions */}
-            <div className="grid grid-cols-2 gap-3">
-              <div className="p-3 bg-slate-900/60 border border-slate-800/80 rounded-lg">
-                <label className="text-[10px] text-slate-400 uppercase font-bold block mb-1">زۆرترین پۆزیشنی کراوە</label>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1">
+                <label className="text-[11px] text-slate-400 block mb-1">زۆرترین گرێبەستی کراوە</label>
                 <input
                   type="number"
                   min="1"
-                  max="20"
+                  max="10"
                   value={riskRules.maxOpenPositions}
-                  onChange={(e) => setRiskRules({ ...riskRules, maxOpenPositions: parseInt(e.target.value) || 1 })}
-                  className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-1.5 text-xs text-slate-200 font-mono focus:outline-none focus:border-rose-500"
+                  onChange={(e) => setRiskRules({ ...riskRules, maxOpenPositions: parseInt(e.target.value) })}
+                  className="w-full bg-slate-900 border border-slate-800 rounded px-2.5 py-1.5 text-xs text-slate-200 font-mono text-center focus:outline-none focus:border-rose-500"
                 />
               </div>
 
-              <div className="p-3 bg-slate-900/60 border border-slate-800/80 rounded-lg">
-                <label className="text-[10px] text-slate-400 uppercase font-bold block mb-1">زۆرترین لێڤەرەج (Leverage Limit)</label>
+              {/* Leverage Slider */}
+              <div className="space-y-1">
+                <div className="flex justify-between items-center">
+                  <label className="text-[11px] text-slate-400">ڕافیعەی دارایی (Leverage)</label>
+                  <span className="text-xs font-mono font-bold text-rose-400">1:{riskRules.maxLeverage}</span>
+                </div>
+                <input
+                  type="range"
+                  min="5"
+                  max="50"
+                  step="1"
+                  disabled={autoRiskTuning}
+                  value={riskRules.maxLeverage}
+                  onChange={(e) => setRiskRules({ ...riskRules, maxLeverage: parseInt(e.target.value) })}
+                  className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-rose-500 disabled:opacity-40"
+                />
+              </div>
+            </div>
+
+            {/* Moving Break Even and Hedge Locks */}
+            <div className="grid grid-cols-2 gap-4 pt-2">
+              <div className="space-y-1">
+                <label className="text-[11px] text-slate-400 block mb-1">گواستنەوەی فەرمانی پاراستن (Pips)</label>
                 <input
                   type="number"
-                  min="1"
-                  max="500"
-                  value={riskRules.maxLeverage}
-                  onChange={(e) => setRiskRules({ ...riskRules, maxLeverage: parseInt(e.target.value) || 1 })}
-                  className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-1.5 text-xs text-slate-200 font-mono focus:outline-none focus:border-rose-500"
+                  step="0.5"
+                  value={riskRules.movingBreakEvenPips}
+                  onChange={(e) => setRiskRules({ ...riskRules, movingBreakEvenPips: parseFloat(e.target.value) })}
+                  className="w-full bg-slate-900 border border-slate-800 rounded px-2.5 py-1.5 text-xs text-slate-200 font-mono text-center focus:outline-none focus:border-rose-500"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[11px] text-slate-400 block mb-1">قفڵکردنی پێگەی دۆڕاو (Hedge Lock %)</label>
+                <input
+                  type="number"
+                  step="0.5"
+                  value={riskRules.hedgeLockLossPercent}
+                  onChange={(e) => setRiskRules({ ...riskRules, hedgeLockLossPercent: parseFloat(e.target.value) })}
+                  className="w-full bg-slate-900 border border-slate-800 rounded px-2.5 py-1.5 text-xs text-slate-200 font-mono text-center focus:outline-none focus:border-rose-500"
                 />
               </div>
             </div>
 
-            {/* Moving Break-Even trigger */}
-            <div className="p-3 bg-slate-900/60 border border-slate-800/80 rounded-lg">
-              <div className="flex justify-between items-center mb-1.5">
-                <label className="text-xs font-semibold text-slate-300 flex items-center">
-                  <Lock className="w-3.5 h-3.5 text-emerald-400 mr-1.5" />
-                  خاڵی هێنانەوەی سەرمایە (Moving Break-Even)
-                </label>
-                <span className="text-xs font-mono font-bold text-emerald-400">{riskRules.movingBreakEvenPips} Pips</span>
-              </div>
-              <input
-                type="range"
-                min="2.0"
-                max="25.0"
-                step="0.5"
-                value={riskRules.movingBreakEvenPips}
-                onChange={(e) => setRiskRules({ ...riskRules, movingBreakEvenPips: parseFloat(e.target.value) })}
-                className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-500"
-              />
-              <span className="text-[9px] text-slate-500 block mt-1">کاتێک قازانجی پۆزیشن گەیشتە ئەم بەهایە، ستۆپ لۆس بە شێوەیەکی ئۆتۆماتیکی دەچێتە سەر نرخی چوونە ژوورەوە.</span>
-            </div>
-
-            {/* Hedging locks active */}
-            <div className="p-3 bg-slate-900/60 border border-slate-800/80 rounded-lg">
-              <div className="flex justify-between items-center mb-1.5">
-                <label className="text-xs font-semibold text-slate-300 flex items-center">
-                  <AlertTriangle className="w-3.5 h-3.5 text-purple-400 mr-1.5" />
-                  گرێدانی هێجینگ بۆ پاراستن (Hedge Lock Trigger)
-                </label>
-                <span className="text-xs font-mono font-bold text-purple-400">{riskRules.hedgeLockLossPercent}% Loss</span>
-              </div>
-              <input
-                type="range"
-                min="1.0"
-                max="10.0"
-                step="0.5"
-                value={riskRules.hedgeLockLossPercent}
-                onChange={(e) => setRiskRules({ ...riskRules, hedgeLockLossPercent: parseFloat(e.target.value) })}
-                className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-purple-500"
-              />
-              <span className="text-[9px] text-slate-500 block mt-1">ئەگەر کۆی گشتی هەژمارەکە گەیشتە ئەم قەبارەی زیانە، پۆزیشنی پێچەوانە دەکرێتەوە بۆ قوفڵکردنی زیان بەبێ داخستن.</span>
+            <div className="p-3 bg-rose-950/20 border border-rose-900/30 rounded-lg text-[10px] leading-relaxed text-rose-300">
+              {autoRiskTuning ? (
+                <span>ℹ️ پارێزەری ئۆتۆ-ڕیسک چالاکە. ڕافیعە و ڕیسک بەپێی شلۆقی بازاڕ بە شێوەیەکی داینامیکی کەم و زیاد دەکرێن بۆ کەمکردنەوەی زیانە نەخوازراوەکان.</span>
+              ) : (
+                <span>⚠️ ڕێکخستنی دەستی ڕیسک چالاکە. دڵنیابەرەوە کە ڕێژەی ڕیسک زۆر بەرز نییە بۆ ڕێگریکردن لە لێکچوونی مارجین کاڵ.</span>
+              )}
             </div>
 
           </div>
         </div>
 
-        <div className="pt-4 border-t border-slate-800 mt-4 flex justify-between items-center">
-          <span className="text-[10px] text-slate-500 font-mono">* لۆکاڵ سۆرس C++ هەموو گۆڕانکارییەکان بە چرکە نوێ دەکاتەوە.</span>
+        <div className="pt-4 border-t border-slate-900 mt-4">
           <button
-            id="save-risk-rules-btn"
             onClick={handleSaveConfigs}
-            className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded transition-all cursor-pointer"
+            className="w-full py-2 bg-rose-950/40 border border-rose-800/40 text-rose-400 hover:bg-rose-950/60 rounded font-bold text-xs transition-all cursor-pointer flex items-center justify-center gap-1.5"
           >
-            {saveStatus ? 'پاشەکەوت کرا! ✓' : 'پاشەکەوتکردنی ڕێساکان'}
+            <ShieldCheck className="w-4 h-4" />
+            <span>چەسپاندن و پاشەکەوتکردنی یاساکانی ڕیسک</span>
           </button>
         </div>
       </div>

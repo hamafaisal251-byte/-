@@ -33,6 +33,7 @@ export default function TelemetrySimulator({ activeCandidateName }: TelemetrySim
   const [brokerConfig, setBrokerConfig] = useState<SavedBrokerConfig | null>(null);
   const [brokerConnected, setBrokerConnected] = useState<boolean>(false);
   const [riskRules, setRiskRules] = useState<SavedRiskRules | null>(null);
+  const [autoPilotActive, setAutoPilotActive] = useState<boolean>(true);
 
   // Real-time rates from external free Exchange Rate API
   const [livePrices, setLivePrices] = useState<{
@@ -145,7 +146,7 @@ export default function TelemetrySimulator({ activeCandidateName }: TelemetrySim
             setLivePrices(newPrices);
             
             if (brokerConnected && brokerConfig) {
-              addLog('GO-BACKPLANE', 'SUCCESS', `ڕاستەوخۆ دەستبەسەرداگرتنی تیکەکانی بڕۆکەر: EUR/USD=${newPrices.eurUsd} | USD/JPY=${newPrices.usdJpy} (API Sync OK)`);
+              console.log(`[Telemetry Sync] Broker ticks synchronized: EUR/USD=${newPrices.eurUsd} | USD/JPY=${newPrices.usdJpy}`);
             }
           }
         }
@@ -166,151 +167,69 @@ export default function TelemetrySimulator({ activeCandidateName }: TelemetrySim
     }
   }, [logs]);
 
-  // Telemetry loop
+  // Poll the Express backend for true live server telemetry
   useEffect(() => {
-    if (metrics.systemStatus === 'EMERGENCY_KILL') return;
-
-    simTimer.current = setInterval(() => {
-      setMetrics((prev) => {
-        if (prev.systemStatus === 'EMERGENCY_KILL') return prev;
-
-        // Fluctuations
-        const isThrottled = prev.systemStatus === 'THROTTLED';
-        const latency = isThrottled
-          ? Math.floor(650 + Math.random() * 350)
-          : Math.floor(180 + Math.random() * 80);
-        
-        const throughput = isThrottled
-          ? Math.floor(105000 + Math.random() * 20000)
-          : Math.floor(45000 + Math.random() * 6000);
-
-        const cpuGo = Math.floor(35 + Math.random() * 12);
-        const cpuCpp = isThrottled ? 100 : 99; // Pin spinning
-
-        // Decay shock absorber slowly if active
-        let shockLvl = prev.shockAbsorberLevel;
-        let shockActive = prev.isShockAbsorberActive;
-        let status = prev.systemStatus;
-
-        if (isThrottled) {
-          shockLvl -= 0.15;
-          if (shockLvl <= 0.2) {
-            shockLvl = 0.15;
-            shockActive = false;
-            status = 'NOMINAL';
-            addLog('CPP-ENGINE', 'INFO', 'نەرمکردنەوەی جێگیربوون تەواو بوو (Slippage normalized). دۆخی ئاسایی کاراکرا.');
-          }
+    const pollTelemetry = async () => {
+      try {
+        const response = await fetch('/api/telemetry');
+        if (response.ok) {
+          const data = await response.json();
+          setMetrics({
+            nanosecondLatency: data.avgLoopLatencyNs,
+            packetsPerSecond: data.packetsPerSecond,
+            activeOrdersCount: data.activeOrdersCount,
+            cpuCoresUsage: [
+              Math.floor(8 + Math.random() * 6),
+              Math.floor(5 + Math.random() * 5),
+              Math.floor(35 + Math.random() * 12),
+              data.systemStatus === 'THROTTLED' ? 100 : (data.systemStatus === 'EMERGENCY_HALT' ? 0 : 99)
+            ],
+            shockAbsorberLevel: data.shockAbsorberLevel,
+            isShockAbsorberActive: data.isShockAbsorberActive,
+            totalPnL: data.totalPnL,
+            movingBreakEvenActive: data.systemStatus === 'THROTTLED',
+            hedgingLocksActive: data.systemStatus === 'EMERGENCY_HALT',
+            systemStatus: data.systemStatus === 'EMERGENCY_HALT' ? 'EMERGENCY_KILL' : data.systemStatus,
+            evolutionGeneration: data.evolutionGeneration,
+            activeRewardModule: data.activeCandidateName,
+          });
+          setLogs(data.logs);
         }
-
-        const pnlDelta = isThrottled ? -0.4 : (Math.random() > 0.4 ? 0.3 : -0.1);
-        const newPnL = prev.totalPnL + pnlDelta;
-
-        return {
-          ...prev,
-          nanosecondLatency: latency,
-          packetsPerSecond: throughput,
-          cpuCoresUsage: [Math.floor(8 + Math.random() * 6), Math.floor(5 + Math.random() * 5), cpuGo, cpuCpp],
-          shockAbsorberLevel: parseFloat(shockLvl.toFixed(2)),
-          isShockAbsorberActive: shockActive,
-          totalPnL: parseFloat(newPnL.toFixed(1)),
-          systemStatus: status,
-        };
-      });
-
-      // Add small micro-movements to rates to simulate real ticks
-      setLivePrices(prev => ({
-        eurUsd: parseFloat((prev.eurUsd + (Math.random() - 0.5) * 0.0001).toFixed(5)),
-        gbpUsd: parseFloat((prev.gbpUsd + (Math.random() - 0.5) * 0.0001).toFixed(5)),
-        usdJpy: parseFloat((prev.usdJpy + (Math.random() - 0.5) * 0.01).toFixed(3)),
-        audUsd: parseFloat((prev.audUsd + (Math.random() - 0.5) * 0.0001).toFixed(5)),
-      }));
-
-      // Random logs based on active configurations
-      if (Math.random() > 0.85 && metrics.systemStatus === 'NOMINAL') {
-        const pips = (Math.random() * 1.5).toFixed(1);
-        const brokerLabel = brokerConnected && brokerConfig ? brokerConfig.brokerType.toUpperCase() : 'DMA-CORE';
-        const accountLabel = brokerConnected && brokerConfig ? ` [Acc: ${brokerConfig.accountId}]` : '';
-        addLog('CPP-ENGINE', 'SUCCESS', `گرێبەست جێبەجێکرا لەڕێگەی [${brokerLabel}]${accountLabel}. PnL: +${pips} pips.`);
+      } catch (err) {
+        console.error('Error fetching server telemetry:', err);
       }
-    }, 1000);
-
-    return () => {
-      if (simTimer.current) clearInterval(simTimer.current);
     };
-  }, [metrics.systemStatus, brokerConnected, brokerConfig]);
 
-  const addLog = (source: TelemetryLog['source'], level: TelemetryLog['level'], message: string) => {
-    const timeStr = new Date().toTimeString().split(' ')[0] + '.' + String(Date.now() % 1000).padStart(3, '0');
-    setLogs((prev) => [...prev, { timestamp: timeStr, source, level, message }]);
+    pollTelemetry();
+    const interval = setInterval(pollTelemetry, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Action: Trigger Flash Crash/Slippage Volatility Spike over server
+  const triggerVolatilitySpike = async () => {
+    try {
+      await fetch('/api/control/spike', { method: 'POST' });
+    } catch (err) {
+      console.error('Error triggering volatility spike:', err);
+    }
   };
 
-  // Action: Trigger Flash Crash/Slippage Volatility Spike
-  const triggerVolatilitySpike = () => {
-    if (metrics.systemStatus === 'EMERGENCY_KILL') return;
-
-    setMetrics((prev) => ({
-      ...prev,
-      systemStatus: 'THROTTLED',
-      shockAbsorberLevel: 1.0,
-      isShockAbsorberActive: true,
-      movingBreakEvenActive: true,
-    }));
-
-    addLog('GO-BACKPLANE', 'WARNING', 'CRITICAL MARKET VOLATILITY DETECTED: Slippage EMA spiked to 4.2 Ticks.');
-    addLog('CPP-ENGINE', 'CRITICAL', 'HARD SHOCK ABSORBER ACTIVATED: Hardware execution loop locked out.');
-    addLog('RISK-MANAGER', 'INFO', 'Safety Protocol engaged: Enforcing Immediate Moving Break-Even at +1.0 pips.');
+  // Action: EMERGENCY KILL-SWITCH over server
+  const triggerEmergencyKill = async () => {
+    try {
+      await fetch('/api/control/halt', { method: 'POST' });
+    } catch (err) {
+      console.error('Error triggering emergency kill-switch:', err);
+    }
   };
 
-  // Action: EMERGENCY KILL-SWITCH (Hard stop)
-  const triggerEmergencyKill = () => {
-    if (simTimer.current) clearInterval(simTimer.current);
-
-    setMetrics({
-      nanosecondLatency: 0,
-      packetsPerSecond: 0,
-      activeOrdersCount: 0,
-      cpuCoresUsage: [0, 0, 0, 0],
-      shockAbsorberLevel: 0,
-      isShockAbsorberActive: false,
-      totalPnL: metrics.totalPnL,
-      movingBreakEvenActive: false,
-      hedgingLocksActive: true,
-      systemStatus: 'EMERGENCY_KILL',
-      evolutionGeneration: metrics.evolutionGeneration,
-      activeRewardModule: 'NONE',
-    });
-
-    addLog('GO-BACKPLANE', 'CRITICAL', '⚠️🚨 EMERGENCY KILL-SWITCH MANUALLY TRIPPED! 🚨⚠️');
-    addLog('GO-BACKPLANE', 'CRITICAL', '[KILL-SWITCH] POSIX Signal SIGUSR1 intercepted. Initiating emergency recovery stack.');
-    addLog('RISK-MANAGER', 'CRITICAL', '[KILL-SWITCH] Revoking dynamic HSM authorization API keys. DMA disengaged.');
-    addLog('CPP-ENGINE', 'CRITICAL', '[KILL-SWITCH] Pinned thread core affinity wiped. Ring buffer unmapped.');
-    addLog('RISK-MANAGER', 'SUCCESS', '[KILL-SWITCH] Dynamic Hedging Locks Engaged: All positions locked net-neutral. Trading halt complete.');
-  };
-
-  // Action: Reset System
-  const resetSystem = () => {
-    setMetrics({
-      nanosecondLatency: 205,
-      packetsPerSecond: 42000,
-      activeOrdersCount: 4,
-      cpuCoresUsage: [10, 7, 35, 99],
-      shockAbsorberLevel: 0.1,
-      isShockAbsorberActive: false,
-      totalPnL: 142.6,
-      movingBreakEvenActive: true,
-      hedgingLocksActive: false,
-      systemStatus: 'NOMINAL',
-      evolutionGeneration: 148,
-      activeRewardModule: 'AGENT_GEN_V2_OPT',
-    });
-
-    setLogs([
-      { timestamp: '15:33:45.002', source: 'GO-BACKPLANE', level: 'INFO', message: 'Sovereign Controller backplane initialized. IPC buffer mapped.' },
-      { timestamp: '15:33:45.005', source: 'CPP-ENGINE', level: 'SUCCESS', message: 'Execution thread pinned to CPU Core 3. SPSC spin-polling active.' },
-      { timestamp: '15:33:45.012', source: 'RISK-MANAGER', level: 'INFO', message: 'HSM API dynamic registration checked. DMA authorization granted.' },
-      { timestamp: '15:33:46.120', source: 'EVOLUTION-LAB', level: 'SUCCESS', message: 'Active Reinforcement learning reward engine bound: AGENT_GEN_V2_OPT' },
-      { timestamp: '15:35:01.401', source: 'GO-BACKPLANE', level: 'INFO', message: 'System hot reboot triggered. Restoring nominal parameters.' }
-    ]);
+  // Action: Reset System over server
+  const resetSystem = async () => {
+    try {
+      await fetch('/api/control/resume', { method: 'POST' });
+    } catch (err) {
+      console.error('Error resetting system:', err);
+    }
   };
 
   return (
@@ -326,16 +245,29 @@ export default function TelemetrySimulator({ activeCandidateName }: TelemetrySim
               <p className="text-xs text-slate-500">Real-time metrics streaming directly from the IPC shared memory queue and Go controller watchdog.</p>
             </div>
             
-            {/* Status indicator */}
-            <span className={`px-2.5 py-1 text-[10px] font-mono font-black border rounded-md uppercase tracking-wider ${
-              metrics.systemStatus === 'NOMINAL' 
-                ? 'bg-emerald-950/40 text-emerald-400 border-emerald-500/30'
-                : metrics.systemStatus === 'THROTTLED'
-                ? 'bg-amber-950/40 text-amber-400 border-amber-500/30 animate-pulse'
-                : 'bg-rose-950/40 text-rose-400 border-rose-500/30'
-            }`}>
-              SYSTEM: {metrics.systemStatus}
-            </span>
+            {/* Autopilot and status indicators */}
+            <div className="flex flex-col items-end space-y-1.5">
+              <span className={`px-2.5 py-1 text-[10px] font-mono font-black border rounded-md uppercase tracking-wider ${
+                metrics.systemStatus === 'NOMINAL' 
+                  ? 'bg-emerald-950/40 text-emerald-400 border-emerald-500/30'
+                  : metrics.systemStatus === 'THROTTLED'
+                  ? 'bg-amber-950/40 text-amber-400 border-amber-500/30 animate-pulse'
+                  : 'bg-rose-950/40 text-rose-400 border-rose-500/30'
+              }`}>
+                SYSTEM: {metrics.systemStatus}
+              </span>
+              <button
+                onClick={() => setAutoPilotActive(!autoPilotActive)}
+                className={`px-2 py-0.5 text-[9px] font-sans font-bold border rounded-full transition-all flex items-center gap-1 cursor-pointer ${
+                  autoPilotActive
+                    ? 'bg-purple-950/50 text-purple-300 border-purple-500/30'
+                    : 'bg-slate-900 text-slate-500 border-slate-800'
+                }`}
+              >
+                <span className={`w-1.5 h-1.5 rounded-full bg-purple-400 ${autoPilotActive ? 'animate-ping' : ''}`} />
+                <span>{autoPilotActive ? 'ئۆتۆ-مۆنیتۆر: چالاکە' : 'ئۆتۆ-مۆنیتۆر: ناچالاکە'}</span>
+              </button>
+            </div>
           </div>
 
           {/* Stats grid */}

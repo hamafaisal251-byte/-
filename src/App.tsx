@@ -12,12 +12,14 @@ import EvolutionLab from './components/EvolutionLab';
 import RiskBrokerManager from './components/RiskBrokerManager';
 import AlienBrainLab from './components/AlienBrainLab';
 import BacktestArena from './components/BacktestArena';
+import AIPilotLab from './components/AIPilotLab';
 import { EvolutionCandidate } from './types/quant';
 
-type TabId = 'architecture' | 'telemetry' | 'evolution' | 'risk-broker' | 'alien-brain' | 'reward-playground' | 'backtest-arena';
+type TabId = 'architecture' | 'telemetry' | 'evolution' | 'risk-broker' | 'alien-brain' | 'reward-playground' | 'backtest-arena' | 'ai-pilot-lab';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<TabId>('architecture');
+  const [emergencyFrozen, setEmergencyFrozen] = useState<boolean>(false);
   const [candidates, setCandidates] = useState<EvolutionCandidate[]>(() => {
     const saved = localStorage.getItem('SOVEREIGN_EVO_CANDIDATES');
     if (saved) {
@@ -56,34 +58,77 @@ export default function App() {
     return localStorage.getItem('SOVEREIGN_SELECTED_CANDIDATE_ID') || 'candidate-a';
   });
 
-  // Keep state synchronized with local storage actions
+  // Load initial state from backend server, keep synchronized with client actions
   useEffect(() => {
-    const handleStorageChange = () => {
-      const savedCands = localStorage.getItem('SOVEREIGN_EVO_CANDIDATES');
-      const savedSel = localStorage.getItem('SOVEREIGN_SELECTED_CANDIDATE_ID');
-      if (savedCands) {
-        try {
-          setCandidates(JSON.parse(savedCands));
-        } catch (e) {}
-      }
-      if (savedSel) {
-        setSelectedId(savedSel);
+    const fetchInitialState = async () => {
+      try {
+        const response = await fetch('/api/candidates');
+        if (response.ok) {
+          const data = await response.json();
+          setCandidates(data.candidates);
+          setSelectedId(data.activeCandidateId);
+        }
+      } catch (err) {
+        console.error('Error syncing candidates from server:', err);
       }
     };
-    window.addEventListener('storage', handleStorageChange);
-    // Initial fetch
-    handleStorageChange();
-    return () => window.removeEventListener('storage', handleStorageChange);
+    fetchInitialState();
+
+    // Also poll telemetry periodically to sync emergency stop status!
+    const syncStatus = async () => {
+      try {
+        const response = await fetch('/api/telemetry');
+        if (response.ok) {
+          const data = await response.json();
+          setEmergencyFrozen(data.systemStatus === 'EMERGENCY_HALT');
+        }
+      } catch (err) {
+        console.error('Status sync error:', err);
+      }
+    };
+    const statusInterval = setInterval(syncStatus, 1500);
+    return () => clearInterval(statusInterval);
   }, []);
 
-  // Sync state to local storage when changed locally
-  useEffect(() => {
-    localStorage.setItem('SOVEREIGN_EVO_CANDIDATES', JSON.stringify(candidates));
-  }, [candidates]);
+  // Hook selections to write directly to server
+  const handleSelectCandidateId = async (id: string) => {
+    setSelectedId(id);
+    localStorage.setItem('SOVEREIGN_SELECTED_CANDIDATE_ID', id);
+    try {
+      await fetch('/api/candidates/select', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id })
+      });
+    } catch (err) {
+      console.error('Error selecting candidate on server:', err);
+    }
+  };
 
-  useEffect(() => {
-    localStorage.setItem('SOVEREIGN_SELECTED_CANDIDATE_ID', selectedId);
-  }, [selectedId]);
+  const handleUpdateCandidates = async (value: EvolutionCandidate[] | ((prev: EvolutionCandidate[]) => EvolutionCandidate[])) => {
+    let newCands: EvolutionCandidate[] = [];
+    if (typeof value === 'function') {
+      newCands = value(candidates);
+    } else {
+      newCands = value;
+    }
+    setCandidates(newCands);
+    localStorage.setItem('SOVEREIGN_EVO_CANDIDATES', JSON.stringify(newCands));
+
+    // Detect if any candidate is new, and adopt it on server-side
+    const added = newCands.filter(nc => !candidates.some(c => c.id === nc.id));
+    for (const cand of added) {
+      try {
+        await fetch('/api/candidates/adopt', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(cand)
+        });
+      } catch (err) {
+        console.error('Error adopting candidate on server:', err);
+      }
+    }
+  };
 
   return (
     <div id="quant-app-container" className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-emerald-500/30">
@@ -104,39 +149,42 @@ export default function App() {
           </div>
         </div>
 
-        {/* Real-time status tags for authentic quant feel */}
-        <div id="header-status-grid" className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[10px] font-mono">
-          <div className="bg-slate-900/60 border border-slate-800 p-2 rounded flex flex-col">
-            <span className="text-slate-500 uppercase font-bold">کلیلی HSM پارێزراو</span>
-            <span className="text-emerald-400 font-black mt-0.5 flex items-center">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1.5 animate-pulse"></span>
-              SECURE LOCK
-            </span>
+        {/* Real-time status tags & Emergency Button */}
+        <div className="flex items-center gap-4 flex-wrap md:flex-nowrap">
+          {/* Real-time status tags for authentic quant feel */}
+          <div id="header-status-grid" className="grid grid-cols-2 gap-2 text-[10px] font-mono">
+            <div className="bg-slate-900/60 border border-slate-800 p-1.5 px-2 rounded flex flex-col min-w-[100px]">
+              <span className="text-slate-500 uppercase font-bold">کلیلی HSM پارێزراو</span>
+              <span className="text-emerald-400 font-black mt-0.5 flex items-center">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1 animate-pulse"></span>
+                SECURE
+              </span>
+            </div>
+
+            <div className="bg-slate-900/60 border border-slate-800 p-1.5 px-2 rounded flex flex-col min-w-[100px]">
+              <span className="text-slate-500 uppercase font-bold">پەرەپێدانی خودکار</span>
+              <span className={emergencyFrozen ? "text-rose-500 font-black mt-0.5 flex items-center" : "text-purple-400 font-black mt-0.5 flex items-center"}>
+                <span className={`w-1.5 h-1.5 rounded-full mr-1 ${emergencyFrozen ? 'bg-rose-500' : 'bg-purple-500 animate-ping'}`}></span>
+                {emergencyFrozen ? 'OFFLINE' : 'AUTOPILOT'}
+              </span>
+            </div>
           </div>
 
-          <div className="bg-slate-900/60 border border-slate-800 p-2 rounded flex flex-col">
-            <span className="text-slate-500 uppercase font-bold">بزوێنەری C++ SPSC</span>
-            <span className="text-sky-400 font-black mt-0.5 flex items-center">
-              <span className="w-1.5 h-1.5 rounded-full bg-sky-500 mr-1.5 animate-pulse"></span>
-              CORE PINNED
-            </span>
-          </div>
-
-          <div className="bg-slate-900/60 border border-slate-800 p-2 rounded flex flex-col">
-            <span className="text-slate-500 uppercase font-bold">چاودێری و پشکنین</span>
-            <span className="text-purple-400 font-black mt-0.5 flex items-center">
-              <span className="w-1.5 h-1.5 rounded-full bg-purple-500 mr-1.5 animate-pulse"></span>
-              NOMINAL
-            </span>
-          </div>
-
-          <div className="bg-slate-900/60 border border-slate-800 p-2 rounded flex flex-col">
-            <span className="text-slate-500 uppercase font-bold">پەرەپێدانی خودکار</span>
-            <span className="text-amber-400 font-black mt-0.5 flex items-center">
-              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 mr-1.5 animate-pulse"></span>
-              STANDBY
-            </span>
-          </div>
+          {/* Global Emergency Stop Button (دوگمەی ئێمرجنسی) */}
+          <button
+            onClick={() => setEmergencyFrozen(!emergencyFrozen)}
+            className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 border transition-all cursor-pointer ${
+              emergencyFrozen
+                ? 'bg-rose-600 hover:bg-rose-500 text-white border-rose-500 animate-pulse shadow-md shadow-rose-950/50'
+                : 'bg-rose-950/20 hover:bg-rose-900/30 text-rose-400 border-rose-900/40'
+            }`}
+          >
+            <ShieldAlert className={`w-4 h-4 shrink-0 ${emergencyFrozen ? 'animate-bounce' : ''}`} />
+            <div className="text-right" dir="rtl">
+              <span className="block text-[8px] text-slate-400">باری فریاگوزاری</span>
+              <span className="block text-[11px] font-black">{emergencyFrozen ? 'سیستەم ڕاگیراوە 🛑' : 'دوگمەی ئێمرجنسی'}</span>
+            </div>
+          </button>
         </div>
       </header>
 
@@ -184,6 +232,20 @@ export default function App() {
           >
             <ShieldAlert className="w-4 h-4 shrink-0 text-rose-400" />
             <span>03. تاقیگەی گەشەکردن | AI Sandbox</span>
+          </button>
+
+          {/* New Tab: Professor AI Co-Pilot & Swarm Arbitrage */}
+          <button
+            id="tab-btn-ai-pilot-lab"
+            onClick={() => setActiveTab('ai-pilot-lab')}
+            className={`px-4 py-2.5 rounded-lg text-xs font-semibold font-mono flex items-center space-x-2 border transition-all cursor-pointer whitespace-nowrap ${
+              activeTab === 'ai-pilot-lab'
+                ? 'bg-slate-900 border-purple-800 text-purple-200 shadow-sm'
+                : 'bg-transparent border-transparent text-purple-400 hover:text-purple-300'
+            }`}
+          >
+            <Brain className="w-4 h-4 shrink-0 text-purple-400 animate-pulse" />
+            <span className="text-purple-300 font-bold">★ پڕۆفیسۆری ژیری و ئاڵوگۆڕ | AI Co-Pilot & Swarm</span>
           </button>
 
           {/* Tab 4: Risk & Broker Connection */}
@@ -248,26 +310,54 @@ export default function App() {
       {/* Main Container workspace */}
       <main id="quant-main-workspace" className="flex-1 p-6 max-w-7xl w-full mx-auto space-y-6">
         
-        {/* Analytical Top Banner */}
-        <div id="analytical-banner" className="p-4 bg-gradient-to-r from-slate-900 to-[#0b101f] border border-slate-800 rounded-xl text-xs text-slate-400 flex items-start space-x-3 shadow-md text-right" dir="rtl">
-          <Info className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5 ml-3" />
-          <div className="leading-relaxed space-y-1">
-            <span className="font-semibold text-slate-200 block">ژینگەی شیکاری سیستەمە سەربەخۆکانی بازرگانی (Sovereign Systems Analytics)</span>
-            <p>
-              ئەم بەشە نوێنەرایەتی ڕووکاری بازرگانی خۆکار دەکات. دەتوانیت لۆگەکانی چاودێری لایڤ، کاتی جێبەجێکردنی فۆرمولەی C++، یاساکانی بەستنەوەی بڕۆکەرەکان و مەترسییەکان دیاری بکەیت، هەروەها تاقیکردنەوەی تووند لەسەر داتای ڕابردووی بازار ئەنجام بدەیت.
+        {/* Emergency Halt Banner */}
+        {emergencyFrozen ? (
+          <div id="emergency-lockdown-banner" className="p-5 bg-rose-950/40 border-2 border-rose-500/80 rounded-xl text-right animate-pulse space-y-3 shadow-lg shadow-rose-950/40" dir="rtl">
+            <div className="flex items-center gap-3 justify-end text-rose-200">
+              <h3 className="text-base font-black">🚨 باری فریاگوزاری چالاکە - سیستەم ڕاگیراوە (EMERGENCY HALT ACTIVE)</h3>
+              <ShieldAlert className="w-6 h-6 text-rose-400" />
+            </div>
+            <p className="text-xs text-rose-300 leading-relaxed">
+              هەموو کارە خۆکارەکان، فۆرمولە تاقیکارییەکان، ئۆپتیمایزکردنەکانی C++، و چالاکییەکانی بازرگانی کاتیی بە توندی قوفڵ کراون بۆ پاراستنی سەرجەم سەرمایەکان. تەنها زیادکردنی کلیلەکانی API و کۆنتڕۆڵی دوگمەی فریاگوزاری چالاکن.
             </p>
+            <div className="flex gap-2 justify-end pt-1">
+              <button
+                onClick={() => setActiveTab('alien-brain')}
+                className="px-4 py-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-750 text-slate-200 text-xs font-bold rounded-lg transition-all cursor-pointer"
+              >
+                بەڕێوەبردنی کلیلی بڕۆکەرەکان (Manage APIs)
+              </button>
+              <button
+                onClick={() => setEmergencyFrozen(false)}
+                className="px-4 py-1.5 bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold rounded-lg transition-all cursor-pointer"
+              >
+                بڵاوکردنەوەی دۆخی ئاسایی (Disengage Emergency Lock)
+              </button>
+            </div>
           </div>
-        </div>
+        ) : (
+          /* Analytical Top Banner */
+          <div id="analytical-banner" className="p-4 bg-gradient-to-r from-slate-900 to-[#0b101f] border border-slate-800 rounded-xl text-xs text-slate-400 flex items-start space-x-3 shadow-md text-right" dir="rtl">
+            <Info className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5 ml-3" />
+            <div className="leading-relaxed space-y-1">
+              <span className="font-semibold text-slate-200 block">ژینگەی شیکاری سیستەمە سەربەخۆکانی بازرگانی (Sovereign Systems Analytics)</span>
+              <p>
+                ئەم بەشە نوێنەرایەتی ڕووکاری بازرگانی خۆکار دەکات. دەتوانیت لۆگەکانی چاودێری لایڤ، کاتی جێبەجێکردنی فۆرمولەی C++، یاساکانی بەستنەوەی بڕۆکەرەکان و مەترسییەکان دیاری بکەیت، هەروەها تاقیکردنەوەی تووند لەسەر داتای ڕابردووی بازار ئەنجام بدەیت.
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* Tab content switcher */}
         <div id="tab-content-container" className="transition-opacity duration-300">
           {activeTab === 'architecture' && <ArchitectureMap />}
           {activeTab === 'telemetry' && <TelemetrySimulator activeCandidateName={candidates.find(c => c.id === selectedId)?.name} />}
-          {activeTab === 'evolution' && <EvolutionLab candidates={candidates} setCandidates={setCandidates} selectedId={selectedId} setSelectedId={setSelectedId} />}
+          {activeTab === 'evolution' && <EvolutionLab candidates={candidates} setCandidates={handleUpdateCandidates} selectedId={selectedId} setSelectedId={handleSelectCandidateId} />}
           {activeTab === 'risk-broker' && <RiskBrokerManager />}
           {activeTab === 'alien-brain' && <AlienBrainLab />}
           {activeTab === 'reward-playground' && <RewardPlayground />}
-          {activeTab === 'backtest-arena' && <BacktestArena candidates={candidates} selectedCandidateId={selectedId} setSelectedCandidateId={setSelectedId} />}
+          {activeTab === 'backtest-arena' && <BacktestArena candidates={candidates} selectedCandidateId={selectedId} setSelectedCandidateId={handleSelectCandidateId} />}
+          {activeTab === 'ai-pilot-lab' && <AIPilotLab candidates={candidates} setCandidates={handleUpdateCandidates} selectedId={selectedId} setSelectedId={handleSelectCandidateId} emergencyFrozen={emergencyFrozen} />}
         </div>
 
       </main>

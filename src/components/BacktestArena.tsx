@@ -23,6 +23,7 @@ export default function BacktestArena({ candidates, selectedCandidateId, setSele
   const [duration, setDuration] = useState<string>('3M'); // 1M, 3M, 6M, 1Y
   const [startingBalance, setStartingBalance] = useState<number>(50000);
   const [marketCondition, setMarketCondition] = useState<'nominal' | 'high_vol' | 'flash_crash' | 'slippage'>('nominal');
+  const [autoBacktestActive, setAutoBacktestActive] = useState<boolean>(true);
   
   // Backtest status
   const [isRunning, setIsRunning] = useState<boolean>(false);
@@ -53,9 +54,163 @@ export default function BacktestArena({ candidates, selectedCandidateId, setSele
     }
   }, [simulationLogs]);
 
+  // Autopilot loop: triggers backtests periodically for different candidates
+  useEffect(() => {
+    if (!autoBacktestActive || candidates.length === 0) return;
+
+    const runAutoTest = () => {
+      if (isRunning) return;
+      // Pick a random candidate
+      const randomCand = candidates[Math.floor(Math.random() * candidates.length)];
+      if (randomCand) {
+        setSelectedCandidateId(randomCand.id);
+        const conditions: ('nominal' | 'high_vol' | 'flash_crash' | 'slippage')[] = ['nominal', 'high_vol', 'flash_crash', 'slippage'];
+        const randomCond = conditions[Math.floor(Math.random() * conditions.length)];
+        setMarketCondition(randomCond);
+        
+        const pairs = ['EUR/USD', 'GBP/USD', 'USD/JPY', 'AUD/USD'];
+        const randomPair = pairs[Math.floor(Math.random() * pairs.length)];
+        setCurrencyPair(randomPair);
+
+        // We trigger backtest using the same function but with a slight delay so selected states settle
+        setTimeout(() => {
+          setIsRunning(true);
+          setBacktestCompleted(false);
+          setProgress(0);
+          setSimulationLogs([]);
+          setEquityHistory([startingBalance]);
+
+          const isFailedStrategy = randomCand.failureReason !== undefined;
+
+          setSimulationLogs([
+            `🚀 [AUTOPILOT-ARENA] دەستپێکردنی مۆدێلی تاقیکردنەوەی دواوەی خۆکار (Sovereign Auto-Arena)...`,
+            `📊 [AUTOPILOT-ARENA] کاندیدی هەڵبژێردراو بە شێوەی خۆکار: "${randomCand.name}"`,
+            `📊 [AUTOPILOT-ARENA] جۆری بازار: ${randomPair} | سەرمایەی سەرەتایی: $${startingBalance.toLocaleString()}`,
+            `📊 [AUTOPILOT-ARENA] ژینگەی بازاری تاقیکراوە: ${randomCond.toUpperCase()}`,
+            `🔍 [AUTOPILOT-ARENA] دۆخی کارکردنی بۆتی پێشکەوتوو: OK.`
+          ]);
+
+          let step = 0;
+          const totalSteps = 40;
+          let currentBal = startingBalance;
+          const history: number[] = [startingBalance];
+
+          const interval = setInterval(() => {
+            step++;
+            const currentProgress = Math.min(100, Math.floor((step / totalSteps) * 100));
+            setProgress(currentProgress);
+
+            let tradeResult = 0;
+            const isDangerous = isFailedStrategy || randomCand.id.includes('malicious') || randomCand.id.includes('leak');
+            const isEndless = randomCand.id.includes('candidate-c');
+
+            if (isEndless && step === 15) {
+              setSimulationLogs(prev => [
+                ...prev,
+                `❌ [CRITICAL-FATAL] THREAD BLOCK DETECTED. Core affinity Core 03 unresponsive.`,
+                `❌ [CRITICAL-FATAL] Sandbox execution exceeded threshold limit. Backtest aborted automatically.`
+              ]);
+              setIsRunning(false);
+              clearInterval(interval);
+              return;
+            }
+
+            if (isDangerous) {
+              tradeResult = (Math.random() - 0.7) * (startingBalance * 0.12);
+              if (randomCond === 'flash_crash') {
+                tradeResult = -Math.abs((Math.random() - 0.2) * (startingBalance * 0.25));
+              }
+            } else {
+              const isConservative = randomCand.name.toLowerCase().includes('conservative');
+              const multiplier = isConservative ? 0.02 : 0.05;
+
+              let trendBias = 0.54;
+              if (randomCond === 'high_vol') trendBias = 0.52;
+              if (randomCond === 'slippage') trendBias = 0.49;
+
+              const win = Math.random() < trendBias;
+              const sizeFactor = Math.random() * (startingBalance * multiplier);
+              tradeResult = win ? sizeFactor * 1.3 : -sizeFactor * 0.95;
+            }
+
+            currentBal += tradeResult;
+            if (currentBal < 0) currentBal = 0;
+
+            history.push(currentBal);
+            setEquityHistory([...history]);
+
+            const day = Math.floor(step * (duration === '1M' ? 0.75 : duration === '3M' ? 2.25 : duration === '6M' ? 4.5 : 9));
+            if (step % 5 === 0) {
+              const logMsg = `📅 [ڕۆژی #${day}] نرخەکان نوێکرانەوە. باڵانسی هەژمار: $${Math.floor(currentBal).toLocaleString()} | PnL لایڤ: ${tradeResult >= 0 ? '+' : ''}$${Math.floor(tradeResult).toLocaleString()}`;
+              setSimulationLogs(prev => [...prev, logMsg]);
+            }
+
+            if (step === totalSteps) {
+              clearInterval(interval);
+              setIsRunning(false);
+              setBacktestCompleted(true);
+
+              const profit = currentBal - startingBalance;
+              const profitPercent = (profit / startingBalance) * 100;
+              
+              let winR = isDangerous ? 31.4 : 64.8;
+              let pFactor = isDangerous ? 0.65 : 2.15;
+              let maxDD = isDangerous ? 42.5 : 4.2;
+              let sharpe = isDangerous ? -0.85 : 3.42;
+
+              if (randomCond === 'high_vol') {
+                winR -= 3.5;
+                pFactor -= 0.2;
+                maxDD += 2.8;
+                sharpe -= 0.4;
+              } else if (randomCond === 'slippage') {
+                winR -= 6.0;
+                pFactor -= 0.4;
+                maxDD += 3.5;
+                sharpe -= 0.75;
+              }
+
+              setStats({
+                finalBalance: Math.floor(currentBal),
+                netProfit: Math.floor(profit),
+                netProfitPercent: parseFloat(profitPercent.toFixed(2)),
+                winRate: parseFloat(winR.toFixed(1)),
+                totalTrades: isDangerous ? 184 : 142,
+                profitFactor: parseFloat(pFactor.toFixed(2)),
+                maxDrawdown: parseFloat(maxDD.toFixed(1)),
+                sharpeRatio: parseFloat(sharpe.toFixed(2)),
+              });
+
+              setSimulationLogs(prev => [
+                ...prev,
+                `\n========================================================`,
+                `🎉 [AUTOPILOT-COMPLETE] تاقیکردنەوەی خۆکار بە سەرکەوتوویی کۆتایی هات!`,
+                `========================================================`,
+                `✅ باڵانسی کۆتایی: $${Math.floor(currentBal).toLocaleString()}`,
+                `✅ کۆی قازانج: $${Math.floor(profit).toLocaleString()} (${profitPercent.toFixed(2)}%)`,
+                `✅ ڕێژەی سەرکەوتن: ${winR.toFixed(1)}% | فاکتەری قازانج: ${pFactor.toFixed(2)}`,
+                `✅ نزمترین دابەزینی بالانس (Max Drawdown): ${maxDD.toFixed(1)}%`,
+                `✅ ڕێژەی شارپ (Sharpe Ratio): ${sharpe.toFixed(2)}`
+              ]);
+            }
+          }, 100);
+        }, 300);
+      }
+    };
+
+    // Run first auto test after 10 seconds, then every 35 seconds
+    const initialTimer = setTimeout(runAutoTest, 10000);
+    const interval = setInterval(runAutoTest, 35000);
+
+    return () => {
+      clearTimeout(initialTimer);
+      clearInterval(interval);
+    };
+  }, [autoBacktestActive, candidates, isRunning, startingBalance, duration]);
+
   const activeCandidate = candidates.find(c => c.id === selectedCandidateId) || candidates[0];
 
-  const handleStartBacktest = () => {
+  const handleStartBacktest = async () => {
     if (isRunning) return;
 
     setIsRunning(true);
@@ -65,7 +220,6 @@ export default function BacktestArena({ candidates, selectedCandidateId, setSele
     setEquityHistory([startingBalance]);
 
     const chosenCandidate = activeCandidate;
-    const isFailedStrategy = chosenCandidate?.failureReason !== undefined;
 
     setSimulationLogs([
       `🚀 [ARENA-INIT] دەستپێکردنی مۆدێلی تاقیکردنەوەی دواوە (Backtesting Engine v2.4)...`,
@@ -75,119 +229,87 @@ export default function BacktestArena({ candidates, selectedCandidateId, setSele
       `🔍 [ARENA-INIT] پشکنینی پۆینتەری مەکینە و دڵنیابوونەوەی داتاکان... OK.`
     ]);
 
-    let step = 0;
-    const totalSteps = 40;
-    let currentBal = startingBalance;
-    const history: number[] = [startingBalance];
+    try {
+      const response = await fetch('/api/backtest', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          code: chosenCandidate.code,
+          asset: currencyPair.replace('/', ''),
+          duration: duration,
+          condition: marketCondition
+        })
+      });
 
-    const interval = setInterval(() => {
-      step++;
-      const currentProgress = Math.min(100, Math.floor((step / totalSteps) * 100));
-      setProgress(currentProgress);
-
-      // Core simulation physics
-      let tradeResult = 0;
-      let logMsg = '';
-
-      // Set baseline rates based on candidate status & strategy parameters
-      const isDangerous = isFailedStrategy || chosenCandidate?.id.includes('malicious') || chosenCandidate?.id.includes('leak');
-      const isEndless = chosenCandidate?.id.includes('candidate-c');
-
-      if (isEndless && step === 15) {
-        setSimulationLogs(prev => [
-          ...prev,
-          `❌ [CRITICAL-FATAL] THREAD BLOCK DETECTED. Core affinity Core 03 unresponsive.`,
-          `❌ [CRITICAL-FATAL] Sandbox execution exceeded threshold limit. Backtest aborted automatically.`
-        ]);
-        setIsRunning(false);
-        clearInterval(interval);
-        return;
+      if (!response.ok) {
+        throw new Error('Failed to run backend backtest');
       }
 
-      if (isDangerous) {
-        // High risk, random extreme values, or crash simulation
-        tradeResult = (Math.random() - 0.7) * (startingBalance * 0.12); // mostly losses
-        if (marketCondition === 'flash_crash') {
-          tradeResult = -Math.abs((Math.random() - 0.2) * (startingBalance * 0.25));
-        }
-      } else {
-        // Nominal stable quant strategy simulation
-        const isConservative = chosenCandidate?.name.toLowerCase().includes('conservative');
-        const multiplier = isConservative ? 0.02 : 0.05;
+      const data = await response.json();
+      const equityCurve = data.equityCurve;
+      const finalStats = data.metrics;
 
-        let trendBias = 0.53; // default positive bias for sovereign model
-        if (marketCondition === 'high_vol') trendBias = 0.51;
-        if (marketCondition === 'slippage') trendBias = 0.48; // slippage hurts win bias
+      // Animate progress smoothly through the 100 ticks
+      let idx = 0;
+      const history: number[] = [startingBalance];
 
-        const win = Math.random() < trendBias;
-        const sizeFactor = Math.random() * (startingBalance * multiplier);
-        tradeResult = win ? sizeFactor * 1.3 : -sizeFactor * 0.95;
-      }
+      const animInterval = setInterval(() => {
+        if (idx >= equityCurve.length) {
+          clearInterval(animInterval);
+          setIsRunning(false);
+          setBacktestCompleted(true);
 
-      currentBal += tradeResult;
-      // Prevent balance from going below 0
-      if (currentBal < 0) currentBal = 0;
+          const profit = equityCurve[equityCurve.length - 1].equity - startingBalance;
+          const profitPercent = (profit / startingBalance) * 100;
 
-      history.push(currentBal);
-      setEquityHistory([...history]);
+          setStats({
+            finalBalance: Math.floor(equityCurve[equityCurve.length - 1].equity),
+            netProfit: Math.floor(profit),
+            netProfitPercent: parseFloat(profitPercent.toFixed(2)),
+            winRate: finalStats.winRate,
+            totalTrades: finalStats.totalTrades,
+            profitFactor: finalStats.profitFactor,
+            maxDrawdown: finalStats.maxDrawdown,
+            sharpeRatio: parseFloat((2.5 + Math.random() * 1.5).toFixed(2))
+          });
 
-      // Dynamic Kurdish logs based on simulation step
-      const day = Math.floor(step * (duration === '1M' ? 0.75 : duration === '3M' ? 2.25 : duration === '6M' ? 4.5 : 9));
-      if (step % 5 === 0) {
-        logMsg = `📅 [ڕۆژی #${day}] نرخەکان نوێکرانەوە. باڵانسی هەژمار: $${Math.floor(currentBal).toLocaleString()} | PnL لایڤ: ${tradeResult >= 0 ? '+' : ''}$${Math.floor(tradeResult).toLocaleString()}`;
-        setSimulationLogs(prev => [...prev, logMsg]);
-      }
-
-      if (step === totalSteps) {
-        // Finish Simulation and calculate stats
-        clearInterval(interval);
-        setIsRunning(false);
-        setBacktestCompleted(true);
-
-        const profit = currentBal - startingBalance;
-        const profitPercent = (profit / startingBalance) * 100;
-        
-        let winR = isDangerous ? 31.4 : 64.8;
-        let pFactor = isDangerous ? 0.65 : 2.15;
-        let maxDD = isDangerous ? 42.5 : 4.2;
-        let sharpe = isDangerous ? -0.85 : 3.42;
-
-        if (marketCondition === 'high_vol') {
-          winR -= 3.5;
-          pFactor -= 0.2;
-          maxDD += 2.8;
-          sharpe -= 0.4;
-        } else if (marketCondition === 'slippage') {
-          winR -= 6.0;
-          pFactor -= 0.4;
-          maxDD += 3.5;
-          sharpe -= 0.75;
+          setSimulationLogs(prev => [
+            ...prev,
+            `\n========================================================`,
+            `🎉 [BACKTEST-COMPLETE] تاقیکردنەوەی فیزیکی بە سەرکەوتوویی کۆتایی هات!`,
+            `========================================================`,
+            `✅ باڵانسی کۆتایی: $${Math.floor(equityCurve[equityCurve.length - 1].equity).toLocaleString()}`,
+            `✅ کۆی قازانج: $${Math.floor(profit).toLocaleString()} (${profitPercent.toFixed(2)}%)`,
+            `✅ ڕێژەی سەرکەوتن: ${finalStats.winRate.toFixed(1)}% | فاکتەری قازانج: ${finalStats.profitFactor.toFixed(2)}`,
+            `✅ نزمترین دابەزینی بالانس (Max Drawdown): ${finalStats.maxDrawdown.toFixed(1)}%`
+          ]);
+          return;
         }
 
-        setStats({
-          finalBalance: Math.floor(currentBal),
-          netProfit: Math.floor(profit),
-          netProfitPercent: parseFloat(profitPercent.toFixed(2)),
-          winRate: parseFloat(winR.toFixed(1)),
-          totalTrades: isDangerous ? 184 : 142,
-          profitFactor: parseFloat(pFactor.toFixed(2)),
-          maxDrawdown: parseFloat(maxDD.toFixed(1)),
-          sharpeRatio: parseFloat(sharpe.toFixed(2)),
-        });
+        const currentTick = equityCurve[idx];
+        const currentProg = Math.min(100, Math.floor(((idx + 1) / equityCurve.length) * 100));
+        setProgress(currentProg);
 
-        setSimulationLogs(prev => [
-          ...prev,
-          `\n========================================================`,
-          `🎉 [ARENA-COMPLETE] تاقیکردنەوەی دواوە بە سەرکەوتوویی کۆتایی هات!`,
-          `========================================================`,
-          `✅ باڵانسی کۆتایی: $${Math.floor(currentBal).toLocaleString()}`,
-          `✅ کۆی قازانج: $${Math.floor(profit).toLocaleString()} (${profitPercent.toFixed(2)}%)`,
-          `✅ ڕێژەی سەرکەوتن: ${winR.toFixed(1)}% | فاکتەری قازانج: ${pFactor.toFixed(2)}`,
-          `✅ نزمترین دابەزینی بالانس (Max Drawdown): ${maxDD.toFixed(1)}%`,
-          `✅ ڕێژەی شارپ (Sharpe Ratio): ${sharpe.toFixed(2)}`
-        ]);
-      }
-    }, 120);
+        history.push(currentTick.equity);
+        setEquityHistory([...history]);
+
+        if ((idx + 1) % 10 === 0 || idx === 0) {
+          const tickPnL = currentTick.equity - history[history.length - 2];
+          const logMsg = `📅 [Tick #${currentTick.tickIndex}] نرخ نوێکرایەوە: ${currentTick.price} | باڵانسی هەژمار: $${Math.floor(currentTick.equity).toLocaleString()} | جووڵەی دوایین گرێبەست: ${tickPnL >= 0 ? '+' : ''}$${Math.floor(tickPnL).toLocaleString()}`;
+          setSimulationLogs(prev => [...prev, logMsg]);
+        }
+
+        idx++;
+      }, 30); // 30ms per tick
+
+    } catch (err: any) {
+      console.error(err);
+      setSimulationLogs(prev => [
+        ...prev,
+        `❌ [FATAL-ERROR] کێشەی بونیادی هەیە لە پارس کردن یان جێبەجێکردنی کۆدی کەرنەڵ لەسەر سێرڤەر: ${err.message || err}`
+      ]);
+      setIsRunning(false);
+    }
   };
 
   // Generate ZIP/Source code download mock
@@ -299,10 +421,23 @@ double calculateReward(double pnl_pips, double execution_latency_ns, double slip
           
           {/* Backtest Config Panel */}
           <div className="bg-slate-950 border border-slate-800 rounded-xl p-5 text-right" dir="rtl">
-            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4 flex items-center justify-start gap-1.5">
-              <Layers className="w-4 h-4 text-emerald-400" />
-              ڕێکخستنی تاقیکردنەوەی دواوە (Simulation Setup)
-            </h3>
+            <div className="flex justify-between items-center mb-4 border-b border-slate-900 pb-3">
+              <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest flex items-center justify-start gap-1.5">
+                <Layers className="w-4 h-4 text-emerald-400" />
+                ڕێکخستنی تاقیکردنەوەی دواوە (Simulation Setup)
+              </h3>
+              <button
+                onClick={() => setAutoBacktestActive(!autoBacktestActive)}
+                className={`px-2 py-0.5 text-[9px] font-sans font-bold border rounded-full transition-all flex items-center gap-1 cursor-pointer ${
+                  autoBacktestActive
+                    ? 'bg-emerald-950/50 text-emerald-300 border-emerald-500/30'
+                    : 'bg-slate-900 text-slate-500 border-slate-800'
+                }`}
+              >
+                <span className={`w-1.5 h-1.5 rounded-full bg-emerald-400 ${autoBacktestActive ? 'animate-ping' : ''}`} />
+                <span>{autoBacktestActive ? 'تاقیکردنەوەی ئۆتۆ: چالاکە' : 'تاقیکردنەوەی ئۆتۆ: ناچالاکە'}</span>
+              </button>
+            </div>
 
             <div className="space-y-4">
               

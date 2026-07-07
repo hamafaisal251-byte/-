@@ -44,6 +44,7 @@ export default function EvolutionLab({ candidates, setCandidates, selectedId, se
   const [trainingLogs, setTrainingLogs] = useState<string[]>([]);
   const [saveTrainedReady, setSaveTrainedReady] = useState<boolean>(false);
   const [saveTrainedStatus, setSaveTrainedStatus] = useState<boolean>(false);
+  const [autoTrainingMode, setAutoTrainingMode] = useState<boolean>(true);
   const trainLogRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -112,6 +113,38 @@ export default function EvolutionLab({ candidates, setCandidates, selectedId, se
           `🎉 [METRICS] Final Loss (Mean Squared Error): ${tempLoss[tempLoss.length - 1]?.toFixed(5) || '0.00124'}`,
           `مۆدێلی C++ ئامادەیە بۆ ڕاوانەکردن و پاشەکەوتکردن.`
         ]);
+
+        if (autoTrainingMode) {
+          const autoId = `trained-auto-${Date.now()}`;
+          const autoName = `★ Auto-Evo Strategy: ${trainingAsset} [PPO Gen ${Math.floor(Math.random()*800+200)}]`;
+          const autoCode = `double calculateReward(double pnl_pips, double execution_latency_ns, double slippage_ticks, double volatility_spike, double position_lots) {
+    // مۆدێلی خۆکاری گەشەسەندوو (Sovereign Autonomous Agent)
+    double reward_weight = pnl_pips * position_lots * ${(15 + Math.random()*5).toFixed(2)};
+    double slippage_penalty = std::pow(std::abs(slippage_ticks), 1.4) * 2.2;
+    double protective_multiplier = volatility_spike > 2.8 ? 0.4 : 1.0;
+    return (reward_weight - slippage_penalty) * protective_multiplier;
+}`;
+          const autoCandidate: EvolutionCandidate = {
+            id: autoId,
+            name: autoName,
+            creator: 'AGENT_GEN_V3_PATCH',
+            status: 'PASSED',
+            code: autoCode,
+            metrics: {
+              avgReward: parseFloat((52 + Math.random() * 25).toFixed(1)),
+              maxDrawdown: parseFloat((0.4 + Math.random() * 0.6).toFixed(1)),
+              avgLatencyNs: Math.floor(130 + Math.random() * 30),
+              leaksBytes: 0,
+              astWarningsCount: 0
+            }
+          };
+          setCandidates(prev => {
+            const filtered = prev.filter(c => !c.name.includes('Sovereign Auto-Kernel') || Math.random() > 0.3);
+            return [autoCandidate, ...filtered];
+          });
+          setSelectedId(autoId);
+          setTrainingLogs(prev => [...prev, `💾 [AUTO-SAVE] ستراتیژی نوێ بە شێوەیەکی خۆکار پاشەکەوت کرا و ڕاوانە کرا!`]);
+        }
         return;
       }
 
@@ -143,7 +176,29 @@ export default function EvolutionLab({ candidates, setCandidates, selectedId, se
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [isTraining]);
+  }, [isTraining, autoTrainingMode, trainingAsset, learningRate, totalEpochs, batchSize]);
+
+  // Autopilot training trigger loop
+  useEffect(() => {
+    if (!autoTrainingMode) return;
+
+    const interval = setInterval(() => {
+      if (!isTraining) {
+        const assets = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'EURUSD', 'GBPUSD'];
+        const chosenAsset = assets[Math.floor(Math.random() * assets.length)];
+        setTrainingAsset(chosenAsset);
+        setLearningRate(parseFloat((0.0005 + Math.random() * 0.002).toFixed(4)));
+        setSaveTrainedReady(false);
+        setSaveTrainedStatus(false);
+        setCurrentEpoch(0);
+        setTrainingLoss([]);
+        setRewardConvergence([]);
+        setIsTraining(true);
+      }
+    }, 25000); // Trigger training runs every 25 seconds
+
+    return () => clearInterval(interval);
+  }, [autoTrainingMode, isTraining]);
 
   // Handle start/stop training
   const handleToggleTraining = () => {
@@ -654,11 +709,22 @@ export default function EvolutionLab({ candidates, setCandidates, selectedId, se
       <div id="ai-live-training-panel" className="p-5 bg-gradient-to-r from-slate-950 via-slate-950 to-purple-950/20 border border-slate-800 rounded-xl space-y-5">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-slate-900 pb-4 text-right" dir="rtl">
           <div>
-            <div className="flex items-center gap-2 justify-start">
+            <div className="flex items-center gap-2 justify-start flex-wrap">
               <span className="p-1.5 bg-purple-950/80 border border-purple-500/20 rounded text-purple-400">
                 <Flame className="w-4 h-4 text-purple-400 animate-pulse" />
               </span>
               <h3 className="text-sm font-bold text-slate-100 uppercase tracking-wide">بزوێنەری ڕاهێنانی بەردەوامی زیرەکی دەستکرد لەسەر داتای ڕاستەوخۆ (AI Continuous Training)</h3>
+              <button
+                onClick={() => setAutoTrainingMode(!autoTrainingMode)}
+                className={`px-2 py-0.5 text-[9px] font-sans font-bold border rounded-full transition-all flex items-center gap-1 cursor-pointer mr-2 ${
+                  autoTrainingMode
+                    ? 'bg-purple-950/50 text-purple-300 border-purple-500/30'
+                    : 'bg-slate-900 text-slate-500 border-slate-800'
+                }`}
+              >
+                <span className={`w-1.5 h-1.5 rounded-full bg-purple-400 ${autoTrainingMode ? 'animate-ping' : ''}`} />
+                <span>{autoTrainingMode ? 'ڕاهێنانی خودکار: چالاکە' : 'ڕاهێنانی خودکار: ناچالاکە'}</span>
+              </button>
             </div>
             <p className="text-xs text-slate-500 mt-1">ئۆپتیمایزکردنی سیاسەتەکانی بۆت بە فێربوونی بەردەوام (Reinforcement Learning) لەسەر نرخی کاتیی بازاڕ.</p>
           </div>
