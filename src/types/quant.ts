@@ -47,6 +47,8 @@ export interface EvolutionCandidate {
     leaksBytes: number;
     astWarningsCount: number;
   };
+  researchSources?: { title: string; uri: string }[];
+  groundedText?: string;
 }
 
 export interface ArchitectureComponent {

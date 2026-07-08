@@ -205,37 +205,56 @@ export default function AIPilotLab({ candidates, setCandidates, selectedId, setS
   // Fetch real-time live price from public Binance API and simulate drift on other exchanges
   useEffect(() => {
     const fetchBasePrice = async () => {
+      let bPrice = 0;
+      let cbPrice = 0;
+      let krPrice = 0;
+
+      const symbol = arbitrageAsset === 'BTC' ? 'BTCUSDT' : arbitrageAsset === 'ETH' ? 'ETHUSDT' : 'SOLUSDT';
+      const cbSymbol = arbitrageAsset === 'BTC' ? 'BTC-USD' : arbitrageAsset === 'ETH' ? 'ETH-USD' : 'SOL-USD';
+      const krPair = arbitrageAsset === 'BTC' ? 'XBTUSD' : arbitrageAsset === 'ETH' ? 'ETHUSD' : 'SOLUSD';
+
+      // 1. Fetch Binance
       try {
-        const symbol = arbitrageAsset === 'BTC' ? 'BTCUSDT' : arbitrageAsset === 'ETH' ? 'ETHUSDT' : 'SOLUSDT';
         const res = await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${symbol}`);
         if (res.ok) {
           const data = await res.json();
-          const basePrice = parseFloat(data.price);
-          
-          // Generate small natural differences across other exchanges for real-time arbitrage simulation
-          const cbDiff = (Math.random() - 0.48) * (basePrice * 0.00015);
-          const krDiff = (Math.random() - 0.52) * (basePrice * 0.00018);
-          const oaDiff = (Math.random() - 0.5) * (basePrice * 0.00022);
-
-          setExchangePrices({
-            binance: basePrice,
-            coinbase: parseFloat((basePrice + cbDiff).toFixed(2)),
-            kraken: parseFloat((basePrice + krDiff).toFixed(2)),
-            oanda: parseFloat((basePrice + oaDiff).toFixed(2))
-          });
+          bPrice = parseFloat(data.price);
         }
-      } catch (err) {
-        // Fallback simulation in case of internet/CORS issues
-        const mockBase = arbitrageAsset === 'BTC' ? 62450 : arbitrageAsset === 'ETH' ? 3420 : 138.5;
-        const drift = (Math.random() - 0.5) * (mockBase * 0.001);
-        const finalBase = mockBase + drift;
-        setExchangePrices({
-          binance: parseFloat(finalBase.toFixed(2)),
-          coinbase: parseFloat((finalBase + (Math.random() - 0.48) * 4).toFixed(2)),
-          kraken: parseFloat((finalBase + (Math.random() - 0.52) * 5).toFixed(2)),
-          oanda: parseFloat((finalBase + (Math.random() - 0.5) * 6).toFixed(2))
-        });
+      } catch (e) {
+        console.warn("Binance API error");
       }
+
+      // 2. Fetch Coinbase
+      try {
+        const res = await fetch(`https://api.coinbase.com/v2/prices/${cbSymbol}/spot`);
+        if (res.ok) {
+          const data = await res.json();
+          cbPrice = parseFloat(data.data.amount);
+        }
+      } catch (e) {
+        console.warn("Coinbase API error");
+      }
+
+      // 3. Fetch Kraken
+      try {
+        const res = await fetch(`https://api.kraken.com/0/public/Ticker?pair=${krPair}`);
+        if (res.ok) {
+          const data = await res.json();
+          const pairKey = Object.keys(data.result)[0];
+          krPrice = parseFloat(data.result[pairKey].c[0]);
+        }
+      } catch (e) {
+        console.warn("Kraken API error");
+      }
+
+      const resolvedBase = bPrice || cbPrice || krPrice || (arbitrageAsset === 'BTC' ? 62450 : arbitrageAsset === 'ETH' ? 3420 : 138.5);
+
+      setExchangePrices({
+        binance: bPrice || resolvedBase,
+        coinbase: cbPrice || parseFloat((resolvedBase + (Math.random() - 0.45) * (resolvedBase * 0.00015)).toFixed(2)),
+        kraken: krPrice || parseFloat((resolvedBase + (Math.random() - 0.55) * (resolvedBase * 0.00018)).toFixed(2)),
+        oanda: parseFloat((resolvedBase + (Math.random() - 0.5) * (resolvedBase * 0.00022)).toFixed(2))
+      });
     };
 
     fetchBasePrice();

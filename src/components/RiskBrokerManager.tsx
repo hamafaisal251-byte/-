@@ -299,53 +299,28 @@ export default function RiskBrokerManager() {
     // Save configurations so they are instantly persisted and shared across tabs
     localStorage.setItem('SOVEREIGN_BROKER_CONFIG', JSON.stringify(brokerConfig));
 
-    // Handle DEMO credentials immediately for easy testing without keys
-    if (brokerConfig.apiToken.toLowerCase() === 'demo' || brokerConfig.accountId.toLowerCase() === 'demo') {
-      setTimeout(() => {
+    try {
+      const response = await fetch('/api/brokers/connect', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          brokerType: brokerConfig.brokerType,
+          apiUrl: brokerConfig.apiUrl,
+          accountId: brokerConfig.accountId,
+          apiToken: brokerConfig.apiToken
+        })
+      });
+
+      if (response.ok) {
         setConnectionStatus('CONNECTED');
         localStorage.setItem('SOVEREIGN_BROKER_CONNECTED', 'true');
         window.dispatchEvent(new Event('storage'));
-      }, 1000);
-      return;
-    }
-
-    try {
-      if (brokerConfig.brokerType === 'oanda') {
-        const isLive = brokerConfig.apiUrl.includes('fxtrade');
-        const baseUrl = isLive ? 'https://api-fxtrade.oanda.com' : 'https://api-fxpractice.oanda.com';
-        
-        // Fetch to test real OANDA connectivity and check token authorization
-        const response = await fetch(`${baseUrl}/v3/accounts`, {
-          headers: {
-            'Authorization': `Bearer ${brokerConfig.apiToken}`,
-            'Content-Type': 'application/json'
-          }
-        });
-
-        if (response.ok) {
-          setConnectionStatus('CONNECTED');
-          localStorage.setItem('SOVEREIGN_BROKER_CONNECTED', 'true');
-          window.dispatchEvent(new Event('storage'));
-        } else {
-          const errorData = await response.json().catch(() => ({}));
-          const errorMsg = errorData.errorMessage || 'ناسنامەی هەژمارەکە یان کلیلی API نامەقبووڵە (Invalid credentials).';
-          
-          setConnectionStatus('ERROR');
-          setErrorMessage(`نەتوانرا بە بڕۆکەری OANDA ببەسرێتەوە: ${errorMsg}`);
-        }
       } else {
-        // For MT5 or Interactive Brokers or FIX, perform a direct connection check to their URL
-        const testUrl = brokerConfig.apiUrl || 'https://open.er-api.com/v6/latest/USD';
-        const response = await fetch(testUrl).catch(() => null);
-        
-        if (response && response.ok) {
-          setConnectionStatus('CONNECTED');
-          localStorage.setItem('SOVEREIGN_BROKER_CONNECTED', 'true');
-          window.dispatchEvent(new Event('storage'));
-        } else {
-          setConnectionStatus('ERROR');
-          setErrorMessage('هەڵە لە ناونیشانی URL-ی پلاتفۆڕم یان ناچالاک بوونی ڕاوتەر. تکایە دڵنیابەرەوە لە ڕێگەی دەستگەیشتن.');
-        }
+        const errData = await response.json().catch(() => ({}));
+        setConnectionStatus('ERROR');
+        setErrorMessage(errData.error || 'نەتوانرا لەگەڵ بڕۆکەر پەیوەندی ببەسرێت.');
       }
     } catch (error: any) {
       setConnectionStatus('ERROR');
@@ -353,7 +328,14 @@ export default function RiskBrokerManager() {
     }
   };
 
-  const handleDisconnect = () => {
+  const handleDisconnect = async () => {
+    try {
+      await fetch('/api/brokers/disconnect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ brokerType: brokerConfig.brokerType })
+      });
+    } catch (e) {}
     setConnectionStatus('DISCONNECTED');
     localStorage.removeItem('SOVEREIGN_BROKER_CONNECTED');
     window.dispatchEvent(new Event('storage'));
