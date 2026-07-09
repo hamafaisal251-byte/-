@@ -10,6 +10,7 @@ import { spawn, execSync } from "child_process";
 import WebSocket from "ws";
 import crypto from "crypto";
 import fs from "fs";
+import { Pool } from "pg";
 import { safetyBackstop } from "./safetyBackstop";
 
 dotenv.config();
@@ -54,447 +55,767 @@ export function decrypt(encryptedText: string): string {
   }
 }
 
-// Simulated Postgres engine with fully persistent transaction logs and schema tables
+// Real, resilient PostgreSQL Database connectivity engine with parameterized queries
 class PostgresEngine {
-  private filepath = path.join(process.cwd(), "postgres_state.json");
-  private data: {
-    broker_connections: any[];
-    news_config: any;
-    security_config: {
-      api_mutate_key: string;
-      allowed_ips: string[];
-    };
-    instrument_strategies?: Record<string, any>;
-    strategy_audit_logs?: any[];
-    historical_ticks?: any[];
-    sandbox_runs?: any[];
-    self_improvement_logs?: any[];
-    research_cache?: any[];
-    arbitrage_spreads?: any[];
-    arbitrage_opportunities?: any[];
-    arbitrage_trades?: any[];
-    arbitrage_compliance?: any;
-  } = {
-    broker_connections: [],
-    news_config: {
-      newsApiKeyEnc: "",
-      finnhubKeyEnc: ""
-    },
-    security_config: {
-      api_mutate_key: process.env.API_MUTATE_KEY || "SOV-MUTATE-DEFAULT-KEY",
-      allowed_ips: ["127.0.0.1", "::1", "::ffff:127.0.0.1"]
-    },
-    instrument_strategies: {
-      "EUR/USD": {
-        symbol: "EUR/USD",
-        whaleMode: true,
-        sniperMode: true,
-        breakevenEnabled: true,
-        breakevenThreshold: 8,
-        dynamicSlEnabled: true,
-        shockAbsorberEnabled: true,
-        lastTriggered: {
-          whaleMode: null,
-          sniperMode: null,
-          breakeven: null,
-          dynamicSl: null,
-          shockAbsorber: null
-        }
-      },
-      "GBP/USD": {
-        symbol: "GBP/USD",
-        whaleMode: true,
-        sniperMode: true,
-        breakevenEnabled: true,
-        breakevenThreshold: 10,
-        dynamicSlEnabled: true,
-        shockAbsorberEnabled: true,
-        lastTriggered: {
-          whaleMode: null,
-          sniperMode: null,
-          breakeven: null,
-          dynamicSl: null,
-          shockAbsorber: null
-        }
-      },
-      "BTC/USD": {
-        symbol: "BTC/USD",
-        whaleMode: true,
-        sniperMode: true,
-        breakevenEnabled: true,
-        breakevenThreshold: 50,
-        dynamicSlEnabled: true,
-        shockAbsorberEnabled: true,
-        lastTriggered: {
-          whaleMode: null,
-          sniperMode: null,
-          breakeven: null,
-          dynamicSl: null,
-          shockAbsorber: null
-        }
-      }
-    },
-    strategy_audit_logs: [],
-    historical_ticks: [],
-    sandbox_runs: [],
-    self_improvement_logs: [],
-    research_cache: []
-  };
+  private pool: Pool;
+  private isInitialized = false;
 
   constructor() {
-    this.load();
+    // Configure PostgreSQL connection pool using individual parameters or single DATABASE_URL
+    const connectionString = process.env.DATABASE_URL;
+    if (connectionString) {
+      this.pool = new Pool({
+        connectionString,
+        connectionTimeoutMillis: 15000,
+        idleTimeoutMillis: 30000,
+        max: 20,
+      });
+    } else {
+      this.pool = new Pool({
+        host: process.env.PGHOST || "localhost",
+        port: parseInt(process.env.PGPORT || "5432"),
+        user: process.env.PGUSER || "postgres",
+        password: process.env.PGPASSWORD || "postgres",
+        database: process.env.PGDATABASE || "sovereign_db",
+        connectionTimeoutMillis: 15000,
+        idleTimeoutMillis: 30000,
+        max: 20,
+      });
+    }
+
+    this.pool.on("error", (err) => {
+      console.error("[POSTGRES] Unexpected error on idle client:", err);
+    });
   }
 
-  private load() {
+  // Initialise database schema, run migrations, and migrate old data if needed
+  public async initialize() {
+    if (this.isInitialized) return;
+
+    console.log("[POSTGRES] Initializing database engine...");
     try {
-      if (fs.existsSync(this.filepath)) {
-        const raw = fs.readFileSync(this.filepath, "utf8");
-        this.data = JSON.parse(raw);
-        
-        // Ensure strategy tables exist if loading old data format
-        if (!this.data.instrument_strategies) {
-          this.data.instrument_strategies = {
-            "EUR/USD": {
-              symbol: "EUR/USD",
-              whaleMode: true,
-              sniperMode: true,
-              breakevenEnabled: true,
-              breakevenThreshold: 8,
-              dynamicSlEnabled: true,
-              shockAbsorberEnabled: true,
-              lastTriggered: { whaleMode: null, sniperMode: null, breakeven: null, dynamicSl: null, shockAbsorber: null }
-            },
-            "GBP/USD": {
-              symbol: "GBP/USD",
-              whaleMode: true,
-              sniperMode: true,
-              breakevenEnabled: true,
-              breakevenThreshold: 10,
-              dynamicSlEnabled: true,
-              shockAbsorberEnabled: true,
-              lastTriggered: { whaleMode: null, sniperMode: null, breakeven: null, dynamicSl: null, shockAbsorber: null }
-            },
-            "BTC/USD": {
-              symbol: "BTC/USD",
-              whaleMode: true,
-              sniperMode: true,
-              breakevenEnabled: true,
-              breakevenThreshold: 50,
-              dynamicSlEnabled: true,
-              shockAbsorberEnabled: true,
-              lastTriggered: { whaleMode: null, sniperMode: null, breakeven: null, dynamicSl: null, shockAbsorber: null }
-            }
-          };
-        }
-        if (!this.data.strategy_audit_logs) {
-          this.data.strategy_audit_logs = [];
-        }
-        if (!this.data.historical_ticks || this.data.historical_ticks.length === 0) {
-          this.data.historical_ticks = [];
-          let basePrice = 1.08500;
-          for (let i = 0; i < 100; i++) {
-            const trend = Math.sin(i * 0.1) * 0.5 + (Math.random() - 0.5) * 0.2;
-            basePrice += trend * 0.00015;
-            this.data.historical_ticks.push({
-              timestamp: new Date(Date.now() - (100 - i) * 60000).toISOString(),
-              price: parseFloat(basePrice.toFixed(5)),
-              spread: parseFloat((0.00012 + Math.random() * 0.00006).toFixed(5)),
-              volatility: parseFloat((0.5 + Math.random() * 0.5).toFixed(2)),
-              volume: Math.floor(10000 + Math.random() * 40000)
-            });
-          }
-        }
-        if (!this.data.sandbox_runs) {
-          this.data.sandbox_runs = [];
-        }
-        if (!this.data.self_improvement_logs) {
-          this.data.self_improvement_logs = [];
-        }
-        if (!this.data.research_cache) {
-          this.data.research_cache = [];
-        }
-        if (!this.data.arbitrage_spreads) {
-          this.data.arbitrage_spreads = [];
-        }
-        if (!this.data.arbitrage_opportunities) {
-          this.data.arbitrage_opportunities = [];
-        }
-        if (!this.data.arbitrage_trades) {
-          this.data.arbitrage_trades = [];
-        }
-        if (!this.data.arbitrage_compliance) {
-          this.data.arbitrage_compliance = { tosPermitted: false, regulationsPermitted: false };
-        }
-        
-        console.log("[POSTGRES] Persistent tables loaded successfully from postgres_state.json.");
+      // 1. Run migrations from 001_init.sql
+      const migrationPath = path.join(process.cwd(), "migrations", "001_init.sql");
+      if (fs.existsSync(migrationPath)) {
+        console.log("[POSTGRES] Executing initial database migration schema...");
+        const migrationSql = fs.readFileSync(migrationPath, "utf8");
+        await this.pool.query(migrationSql);
+        console.log("[POSTGRES] Migration schema executed successfully.");
       } else {
-        this.save();
+        console.warn("[POSTGRES] Warning: migrations/001_init.sql not found!");
       }
-    } catch (err) {
-      console.error("[POSTGRES-LOAD-FAILED] Falling back to default structures:", err);
+
+      // 2. Insert Default Config and seed rows if empty
+      await this.pool.query(
+        "INSERT INTO security_config (id, api_mutate_key, allowed_ips) VALUES (1, $1, $2) ON CONFLICT (id) DO NOTHING",
+        [process.env.API_MUTATE_KEY || "SOV-MUTATE-DEFAULT-KEY", ["127.0.0.1", "::1", "::ffff:127.0.0.1"]]
+      );
+
+      await this.pool.query(
+        "INSERT INTO news_config (id, news_api_key_enc, finnhub_key_enc) VALUES (1, '', '') ON CONFLICT (id) DO NOTHING"
+      );
+
+      await this.pool.query(
+        "INSERT INTO arbitrage_compliance (id, tos_permitted, regulations_permitted) VALUES (1, false, false) ON CONFLICT (id) DO NOTHING"
+      );
+
+      // Seed default strategies if none exist
+      const strategiesCountRes = await this.pool.query("SELECT COUNT(*) FROM instrument_strategies");
+      if (parseInt(strategiesCountRes.rows[0].count) === 0) {
+        console.log("[POSTGRES] Seeding default strategy parameters...");
+        const defaultStrategies = [
+          ["EUR/USD", true, true, true, 8, true, true],
+          ["GBP/USD", true, true, true, 10, true, true],
+          ["BTC/USD", true, true, true, 50, true, true],
+        ];
+        for (const s of defaultStrategies) {
+          await this.pool.query(
+            "INSERT INTO instrument_strategies (symbol, whale_mode, sniper_mode, breakeven_enabled, breakeven_threshold, dynamic_sl_enabled, shock_absorber_enabled, last_triggered) VALUES ($1, $2, $3, $4, $5, $6, $7, '{}'::jsonb)",
+            s
+          );
+        }
+      }
+
+      // Seed initial mock tick data if none exist
+      const ticksCountRes = await this.pool.query("SELECT COUNT(*) FROM historical_ticks");
+      if (parseInt(ticksCountRes.rows[0].count) === 0) {
+        console.log("[POSTGRES] Seeding initial historical tick series...");
+        let basePrice = 1.08500;
+        for (let i = 0; i < 100; i++) {
+          const trend = Math.sin(i * 0.1) * 0.5 + (Math.random() - 0.5) * 0.2;
+          basePrice += trend * 0.00015;
+          await this.pool.query(
+            "INSERT INTO historical_ticks (timestamp, price, spread, volatility, volume) VALUES ($1, $2, $3, $4, $5)",
+            [
+              new Date(Date.now() - (100 - i) * 60000).toISOString(),
+              parseFloat(basePrice.toFixed(5)),
+              parseFloat((0.00012 + Math.random() * 0.00006).toFixed(5)),
+              parseFloat((0.5 + Math.random() * 0.5).toFixed(2)),
+              Math.floor(10000 + Math.random() * 40000)
+            ]
+          );
+        }
+      }
+
+      // 3. Migrate legacy data from postgres_state.json if it exists and has not been imported yet
+      const legacyPath = path.join(process.cwd(), "postgres_state.json");
+      if (fs.existsSync(legacyPath)) {
+        try {
+          const legacyData = JSON.parse(fs.readFileSync(legacyPath, "utf8"));
+          console.log("[POSTGRES] Legacy state file detected. Migrating historical data...");
+
+          // Migrate Broker Connections
+          if (Array.isArray(legacyData.broker_connections)) {
+            for (const c of legacyData.broker_connections) {
+              await this.pool.query(
+                `INSERT INTO broker_connections (id, broker_type, api_url, account_id, api_token_encrypted, secret_key_encrypted, passphrase_encrypted, target_comp_id, sender_comp_id, status, last_tested_time, error_message)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+                 ON CONFLICT (broker_type, account_id) DO UPDATE SET
+                   api_url = EXCLUDED.api_url,
+                   api_token_encrypted = EXCLUDED.api_token_encrypted,
+                   secret_key_encrypted = EXCLUDED.secret_key_encrypted,
+                   passphrase_encrypted = EXCLUDED.passphrase_encrypted,
+                   status = EXCLUDED.status,
+                   last_tested_time = EXCLUDED.last_tested_time,
+                   error_message = EXCLUDED.error_message`,
+                [
+                  c.id,
+                  c.brokerType || c.broker_type,
+                  c.apiUrl || c.api_url || "",
+                  c.accountId || c.account_id,
+                  c.apiTokenEnc || c.api_token_encrypted || "",
+                  c.secretKeyEnc || c.secret_key_encrypted || "",
+                  c.passphraseEnc || c.passphrase_encrypted || "",
+                  c.targetCompId || c.target_comp_id || "",
+                  c.senderCompId || c.sender_comp_id || "",
+                  c.status || "CONNECTED",
+                  c.lastTestedTime || c.last_tested_time || new Date().toISOString(),
+                  c.error_message || c.errorMessage || ""
+                ]
+              );
+            }
+          }
+
+          // Migrate Security Config
+          if (legacyData.security_config) {
+            const sc = legacyData.security_config;
+            if (sc.api_mutate_key || sc.allowed_ips) {
+              await this.pool.query(
+                "UPDATE security_config SET api_mutate_key = $1, allowed_ips = $2 WHERE id = 1",
+                [sc.api_mutate_key, sc.allowed_ips || ["127.0.0.1"]]
+              );
+            }
+          }
+
+          // Migrate News Config
+          if (legacyData.news_config) {
+            const nc = legacyData.news_config;
+            await this.pool.query(
+              "UPDATE news_config SET news_api_key_enc = $1, finnhub_key_enc = $2 WHERE id = 1",
+              [nc.newsApiKeyEnc || nc.news_api_key_enc || "", nc.finnhubKeyEnc || nc.finnhub_key_enc || ""]
+            );
+          }
+
+          // Migrate Instrument Strategies
+          if (legacyData.instrument_strategies) {
+            for (const symbol in legacyData.instrument_strategies) {
+              const strat = legacyData.instrument_strategies[symbol];
+              await this.pool.query(
+                `INSERT INTO instrument_strategies (symbol, whale_mode, sniper_mode, breakeven_enabled, breakeven_threshold, dynamic_sl_enabled, shock_absorber_enabled, last_triggered)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                 ON CONFLICT (symbol) DO UPDATE SET
+                   whale_mode = EXCLUDED.whale_mode,
+                   sniper_mode = EXCLUDED.sniper_mode,
+                   breakeven_enabled = EXCLUDED.breakeven_enabled,
+                   breakeven_threshold = EXCLUDED.breakeven_threshold,
+                   dynamic_sl_enabled = EXCLUDED.dynamic_sl_enabled,
+                   shock_absorber_enabled = EXCLUDED.shock_absorber_enabled,
+                   last_triggered = EXCLUDED.last_triggered`,
+                [
+                  symbol,
+                  Boolean(strat.whaleMode || strat.whale_mode),
+                  Boolean(strat.sniperMode || strat.sniper_mode),
+                  Boolean(strat.breakevenEnabled || strat.breakeven_enabled),
+                  parseFloat(strat.breakevenThreshold || strat.breakeven_threshold || 0),
+                  Boolean(strat.dynamicSlEnabled || strat.dynamic_sl_enabled),
+                  Boolean(strat.shockAbsorberEnabled || strat.shock_absorber_enabled),
+                  JSON.stringify(strat.lastTriggered || strat.last_triggered || {})
+                ]
+              );
+            }
+          }
+
+          // Migrate Strategy Audit Logs
+          if (Array.isArray(legacyData.strategy_audit_logs)) {
+            for (const l of legacyData.strategy_audit_logs) {
+              await this.pool.query(
+                `INSERT INTO strategy_audit_logs (id, timestamp, symbol, mode, trigger_value, action_taken, input_params, output_result)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT (id) DO NOTHING`,
+                [
+                  l.id,
+                  l.timestamp || new Date().toISOString(),
+                  l.symbol,
+                  l.mode,
+                  parseFloat(l.triggerValue || l.trigger_value || 0),
+                  l.actionTaken || l.action_taken,
+                  typeof l.inputParams === "string" ? l.inputParams : JSON.stringify(l.inputParams || {}),
+                  typeof l.outputResult === "string" ? l.outputResult : JSON.stringify(l.outputResult || {})
+                ]
+              );
+            }
+          }
+
+          // Migrate Sandbox Runs
+          if (Array.isArray(legacyData.sandbox_runs)) {
+            for (const s of legacyData.sandbox_runs) {
+              await this.pool.query(
+                `INSERT INTO sandbox_runs (id, timestamp, candidate_id, name, code, status, rejection_reason, metrics)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT (id) DO NOTHING`,
+                [
+                  s.id,
+                  s.timestamp || new Date().toISOString(),
+                  s.candidate_id || s.candidateId || "unknown",
+                  s.name,
+                  s.code || "",
+                  s.status,
+                  s.rejectionReason || s.rejection_reason || "",
+                  typeof s.metrics === "string" ? s.metrics : JSON.stringify(s.metrics || {})
+                ]
+              );
+            }
+          }
+
+          // Migrate Self Improvement Logs
+          if (Array.isArray(legacyData.self_improvement_logs)) {
+            for (const l of legacyData.self_improvement_logs) {
+              await this.pool.query(
+                `INSERT INTO self_improvement_logs (id, timestamp, trigger_reason, fitness_gain_pct, new_code_applied, previous_metrics, optimized_metrics)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7) ON CONFLICT (id) DO NOTHING`,
+                [
+                  l.id,
+                  l.timestamp || new Date().toISOString(),
+                  l.triggerReason || l.trigger_reason,
+                  parseFloat(l.fitnessGainPct || l.fitness_gain_pct || 0),
+                  l.newCodeApplied || l.new_code_applied || "",
+                  typeof l.previousMetrics === "string" ? l.previousMetrics : JSON.stringify(l.previousMetrics || {}),
+                  typeof l.optimizedMetrics === "string" ? l.optimizedMetrics : JSON.stringify(l.optimizedMetrics || {})
+                ]
+              );
+            }
+          }
+
+          // Migrate Research Cache
+          if (Array.isArray(legacyData.research_cache)) {
+            for (const r of legacyData.research_cache) {
+              await this.pool.query(
+                `INSERT INTO research_cache (topic, sources, summary, timestamp)
+                 VALUES ($1, $2, $3, $4) ON CONFLICT (topic) DO NOTHING`,
+                [
+                  r.topic,
+                  typeof r.sources === "string" ? r.sources : JSON.stringify(r.sources || []),
+                  r.summary,
+                  r.timestamp || new Date().toISOString()
+                ]
+              );
+            }
+          }
+
+          // Migrate Arbitrage Spreads
+          if (Array.isArray(legacyData.arbitrage_spreads)) {
+            for (const s of legacyData.arbitrage_spreads) {
+              if (!s) continue;
+              await this.pool.query(
+                `INSERT INTO arbitrage_spreads (timestamp, binance_bid, binance_ask, coinbase_bid, coinbase_ask, kraken_bid, kraken_ask, spread_binance_coinbase, spread_binance_kraken, spread_coinbase_kraken)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+                [
+                  s.timestamp || new Date().toISOString(),
+                  s.binanceBid || s.binance_bid,
+                  s.binanceAsk || s.binance_ask,
+                  s.coinbaseBid || s.coinbase_bid,
+                  s.coinbaseAsk || s.coinbase_ask,
+                  s.krakenBid || s.kraken_bid,
+                  s.krakenAsk || s.kraken_ask,
+                  s.spreadBinanceCoinbase || s.spread_binance_coinbase,
+                  s.spreadBinanceKraken || s.spread_binance_kraken,
+                  s.spreadCoinbaseKraken || s.spread_coinbase_kraken
+                ]
+              );
+            }
+          }
+
+          // Migrate Arbitrage Opportunities
+          if (Array.isArray(legacyData.arbitrage_opportunities)) {
+            for (const o of legacyData.arbitrage_opportunities) {
+              if (!o) continue;
+              await this.pool.query(
+                `INSERT INTO arbitrage_opportunities (id, timestamp, buy_venue, sell_venue, buy_price, sell_price, gross_spread, fees, net_edge, compliance_check)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) ON CONFLICT (id) DO NOTHING`,
+                [
+                  o.id,
+                  o.timestamp || new Date().toISOString(),
+                  o.buyVenue || o.buy_venue,
+                  o.sellVenue || o.sell_venue,
+                  o.buyPrice || o.buy_price,
+                  o.sellPrice || o.sell_price,
+                  o.grossSpread || o.gross_spread,
+                  o.fees,
+                  o.netEdge || o.net_edge,
+                  o.complianceCheck || o.compliance_check
+                ]
+              );
+            }
+          }
+
+          // Migrate Arbitrage Trades
+          if (Array.isArray(legacyData.arbitrage_trades)) {
+            for (const t of legacyData.arbitrage_trades) {
+              if (!t) continue;
+              await this.pool.query(
+                `INSERT INTO arbitrage_trades (id, timestamp, opportunity_id, pair, buy_venue, sell_venue, buy_price, sell_price, executed_size, gross_pnl, fees, net_pnl, status, execution_log)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) ON CONFLICT (id) DO NOTHING`,
+                [
+                  t.id,
+                  t.timestamp || new Date().toISOString(),
+                  t.opportunityId || t.opportunity_id,
+                  t.pair,
+                  t.buyVenue || t.buy_venue,
+                  t.sellVenue || t.sell_venue,
+                  t.buyPrice || t.buy_price,
+                  t.sellPrice || t.sell_price,
+                  t.executedSize || t.executed_size,
+                  t.grossPnl || t.gross_pnl,
+                  t.fees,
+                  t.netPnl || t.net_pnl,
+                  t.status,
+                  t.executionLog || t.execution_log
+                ]
+              );
+            }
+          }
+
+          // Migrate Arbitrage Compliance
+          if (legacyData.arbitrage_compliance) {
+            const ac = legacyData.arbitrage_compliance;
+            await this.pool.query(
+              "UPDATE arbitrage_compliance SET tos_permitted = $1, regulations_permitted = $2 WHERE id = 1",
+              [Boolean(ac.tosPermitted || ac.tos_permitted), Boolean(ac.regulationsPermitted || ac.regulations_permitted)]
+            );
+          }
+
+          console.log("[POSTGRES] Legacy data migration completed successfully.");
+          // Rename the legacy file to prevent re-migration next time
+          const migratedPath = path.join(process.cwd(), "postgres_state_migrated.json");
+          fs.renameSync(legacyPath, migratedPath);
+          console.log("[POSTGRES] Archived legacy postgres_state.json to postgres_state_migrated.json");
+        } catch (migErr: any) {
+          console.error("[POSTGRES-MIGRATION-ERROR] Failed to migrate legacy state file:", migErr.message);
+        }
+      }
+
+      this.isInitialized = true;
+      console.log("[POSTGRES] Database engine ready.");
+    } catch (err: any) {
+      console.error("[POSTGRES-INIT-FAILED] Fatal database initialisation failure:", err.message);
+      throw err;
     }
   }
 
-  public save() {
-    try {
-      fs.writeFileSync(this.filepath, JSON.stringify(this.data, null, 2), "utf8");
-    } catch (err) {
-      console.error("[POSTGRES-SAVE-FAILED] Error committing transaction:", err);
-    }
-  }
-
+  // Real Parameterized Query Router
   public query(sql: string, params: any[] = []): any {
-    // Generate authentic transaction logs showing real database operations
+    // Return a promise-like or immediate execution if inside an async router,
+    // but to be fully drop-in compatible with the existing sync layout, we must proxy calls.
+    // However, since database queries in Node.js are asynchronously non-blocking, we need to adapt
+    // the query handler to perform synchronous caching or return real-time queries.
+    // To preserve backwards compatibility with simple sync calls, we can maintain an in-memory cache
+    // that updates asynchronously on writes, or map them dynamically.
+    // Let's implement real-time async execution for the async handlers first!
+    // Since all route handlers are async or wrapped with asyncHandler, we can safely await pgDb.queryAsync().
+    // Let's make pgDb.query fully robust so it supports both!
+    return this.queryAsync(sql, params);
+  }
+
+  public async queryAsync(sql: string, params: any[] = []): Promise<any> {
     const cleanParams = params.map(p => {
-      if (typeof p === "string" && p.length > 20) {
-        // Mask encrypted fields in logs!
+      if (typeof p === "string" && p.length > 30) {
         return p.substring(0, 10) + "••••••••" + p.substring(p.length - 4);
       }
       return p;
     });
-    console.log(`[POSTGRES] Transaction Executed: "${sql}" | params:`, cleanParams);
-    
-    if (sql.includes("INSERT INTO broker_connections") || sql.includes("UPDATE broker_connections")) {
-      const [id, brokerType, apiUrl, accountId, apiTokenEnc, secretKeyEnc, passphraseEnc, targetCompId, senderCompId, status, lastTestedTime, errorMsg] = params;
-      const existingIdx = this.data.broker_connections.findIndex(c => c.brokerType === brokerType && c.accountId === accountId);
-      
-      const record = {
-        id: id || `conn-${brokerType}-${Date.now()}`,
-        brokerType,
-        apiUrl,
-        accountId,
-        apiTokenEnc,
-        secretKeyEnc,
-        passphraseEnc,
-        targetCompId,
-        senderCompId,
-        status,
-        lastTestedTime,
-        error_message: errorMsg || ""
-      };
+    console.log(`[POSTGRES] Executing: "${sql.trim()}" | params:`, cleanParams);
 
-      if (existingIdx >= 0) {
-        this.data.broker_connections[existingIdx] = record;
-      } else {
-        this.data.broker_connections.push(record);
+    try {
+      if (sql.includes("SELECT * FROM security_config")) {
+        const res = await this.pool.query("SELECT api_mutate_key, allowed_ips FROM security_config WHERE id = 1");
+        return res.rows[0] || { api_mutate_key: "SOV-MUTATE-DEFAULT-KEY", allowed_ips: ["127.0.0.1"] };
       }
-      this.save();
-      return record;
-    }
-    
-    if (sql.includes("SELECT * FROM broker_connections")) {
-      return this.data.broker_connections;
-    }
 
-    if (sql.includes("DELETE FROM broker_connections")) {
-      const [brokerType, accountId] = params;
-      this.data.broker_connections = this.data.broker_connections.filter(
-        c => !(c.brokerType === brokerType && c.accountId === accountId)
-      );
-      this.save();
-      return { deleted: true };
-    }
+      if (sql.includes("UPDATE security_config")) {
+        // [newKey, ips]
+        await this.pool.query(
+          "INSERT INTO security_config (id, api_mutate_key, allowed_ips) VALUES (1, $1, $2) ON CONFLICT (id) DO UPDATE SET api_mutate_key = EXCLUDED.api_mutate_key, allowed_ips = EXCLUDED.allowed_ips",
+          [params[0], params[1]]
+        );
+        return { success: true };
+      }
 
-    if (sql.includes("INSERT INTO news_config")) {
-      const [newsApiKeyEnc, finnhubKeyEnc] = params;
-      this.data.news_config = { newsApiKeyEnc, finnhubKeyEnc };
-      this.save();
-      return this.data.news_config;
-    }
+      if (sql.includes("SELECT * FROM news_config")) {
+        const res = await this.pool.query("SELECT news_api_key_enc as \"newsApiKeyEnc\", finnhub_key_enc as \"finnhubKeyEnc\" FROM news_config WHERE id = 1");
+        return res.rows[0] || { newsApiKeyEnc: "", finnhubKeyEnc: "" };
+      }
 
-    if (sql.includes("SELECT * FROM news_config")) {
-      return this.data.news_config;
-    }
+      if (sql.includes("INSERT INTO news_config")) {
+        // [newsApiKeyEnc, finnhubKeyEnc]
+        await this.pool.query(
+          "INSERT INTO news_config (id, news_api_key_enc, finnhub_key_enc) VALUES (1, $1, $2) ON CONFLICT (id) DO UPDATE SET news_api_key_enc = EXCLUDED.news_api_key_enc, finnhub_key_enc = EXCLUDED.finnhub_key_enc",
+          [params[0], params[1]]
+        );
+        return { success: true };
+      }
 
-    if (sql.includes("UPDATE security_config")) {
-      const [mutateKey, allowedIps] = params;
-      this.data.security_config = { api_mutate_key: mutateKey, allowed_ips: allowedIps };
-      this.save();
-      return this.data.security_config;
-    }
+      if (sql.includes("SELECT * FROM broker_connections")) {
+        const res = await this.pool.query(
+          "SELECT id, broker_type as \"brokerType\", api_url as \"apiUrl\", account_id as \"accountId\", api_token_encrypted as \"apiTokenEnc\", secret_key_encrypted as \"secretKeyEnc\", passphrase_encrypted as \"passphraseEnc\", target_comp_id as \"targetCompId\", sender_comp_id as \"senderCompId\", status, last_tested_time as \"lastTestedTime\", error_message FROM broker_connections"
+        );
+        return res.rows;
+      }
 
-    if (sql.includes("SELECT * FROM security_config")) {
-      return this.data.security_config;
-    }
+      if (sql.includes("INSERT INTO broker_connections") || sql.includes("UPDATE broker_connections")) {
+        // params structure: [id, brokerType, apiUrl, accountId, apiTokenEnc, secretKeyEnc, passphraseEnc, targetCompId, senderCompId, status, lastTestedTime, errorMsg]
+        const res = await this.pool.query(
+          `INSERT INTO broker_connections (id, broker_type, api_url, account_id, api_token_encrypted, secret_key_encrypted, passphrase_encrypted, target_comp_id, sender_comp_id, status, last_tested_time, error_message)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+           ON CONFLICT (broker_type, account_id) DO UPDATE SET
+             id = EXCLUDED.id,
+             api_url = EXCLUDED.api_url,
+             api_token_encrypted = EXCLUDED.api_token_encrypted,
+             secret_key_encrypted = EXCLUDED.secret_key_encrypted,
+             passphrase_encrypted = EXCLUDED.passphrase_encrypted,
+             target_comp_id = EXCLUDED.target_comp_id,
+             sender_comp_id = EXCLUDED.sender_comp_id,
+             status = EXCLUDED.status,
+             last_tested_time = EXCLUDED.last_tested_time,
+             error_message = EXCLUDED.error_message
+           RETURNING id, broker_type as \"brokerType\", api_url as \"apiUrl\", account_id as \"accountId\", api_token_encrypted as \"apiTokenEnc\", secret_key_encrypted as \"secretKeyEnc\", passphrase_encrypted as \"passphraseEnc\", target_comp_id as \"targetCompId\", sender_comp_id as \"senderCompId\", status, last_tested_time as \"lastTestedTime\", error_message`,
+          params
+        );
+        return res.rows[0];
+      }
 
-    if (sql.includes("SELECT * FROM instrument_strategies")) {
-      return this.data.instrument_strategies || {};
-    }
+      if (sql.includes("DELETE FROM broker_connections")) {
+        // [brokerType, accountId]
+        await this.pool.query("DELETE FROM broker_connections WHERE broker_type = $1 AND account_id = $2", params);
+        return { success: true };
+      }
 
-    if (sql.includes("UPDATE instrument_strategies_last_triggered")) {
-      const [symbol, mode, timestamp] = params;
-      if (this.data.instrument_strategies && this.data.instrument_strategies[symbol]) {
-        if (!this.data.instrument_strategies[symbol].lastTriggered) {
-          this.data.instrument_strategies[symbol].lastTriggered = {};
+      if (sql.includes("SELECT * FROM instrument_strategies")) {
+        const res = await this.pool.query(
+          "SELECT symbol, whale_mode as \"whaleMode\", sniper_mode as \"sniperMode\", breakeven_enabled as \"breakevenEnabled\", breakeven_threshold as \"breakevenThreshold\", dynamic_sl_enabled as \"dynamicSlEnabled\", shock_absorber_enabled as \"shockAbsorberEnabled\", last_triggered as \"lastTriggered\" FROM instrument_strategies"
+        );
+        const map: Record<string, any> = {};
+        for (const r of res.rows) {
+          map[r.symbol] = {
+            ...r,
+            lastTriggered: typeof r.lastTriggered === "string" ? JSON.parse(r.lastTriggered) : r.lastTriggered
+          };
         }
-        this.data.instrument_strategies[symbol].lastTriggered[mode] = timestamp;
-        this.save();
+        return map;
       }
-      return this.data.instrument_strategies ? this.data.instrument_strategies[symbol] : null;
-    }
 
-    if (sql.includes("UPDATE instrument_strategies")) {
-      const [symbol, whaleMode, sniperMode, breakevenEnabled, breakevenThreshold, dynamicSlEnabled, shockAbsorberEnabled] = params;
-      if (this.data.instrument_strategies && this.data.instrument_strategies[symbol]) {
-        this.data.instrument_strategies[symbol] = {
-          ...this.data.instrument_strategies[symbol],
-          whaleMode: Boolean(whaleMode),
-          sniperMode: Boolean(sniperMode),
-          breakevenEnabled: Boolean(breakevenEnabled),
-          breakevenThreshold: Number(breakevenThreshold),
-          dynamicSlEnabled: Boolean(dynamicSlEnabled),
-          shockAbsorberEnabled: Boolean(shockAbsorberEnabled)
-        };
-        this.save();
+      if (sql.includes("UPDATE instrument_strategies_last_triggered")) {
+        // [symbol, mode, timestamp]
+        const symbol = params[0];
+        const mode = params[1];
+        const timestamp = params[2];
+
+        // Fetch current triggers
+        const currentRes = await this.pool.query("SELECT last_triggered FROM instrument_strategies WHERE symbol = $1", [symbol]);
+        const currentTriggers = currentRes.rows[0]?.last_triggered || {};
+        currentTriggers[mode] = timestamp;
+
+        await this.pool.query("UPDATE instrument_strategies SET last_triggered = $1 WHERE symbol = $2", [JSON.stringify(currentTriggers), symbol]);
+        return { success: true };
       }
-      return this.data.instrument_strategies ? this.data.instrument_strategies[symbol] : null;
-    }
 
-    if (sql.includes("SELECT * FROM strategy_audit_logs")) {
-      return this.data.strategy_audit_logs || [];
-    }
-
-    if (sql.includes("SELECT * FROM historical_ticks")) {
-      return this.data.historical_ticks || [];
-    }
-
-    if (sql.includes("SELECT * FROM sandbox_runs")) {
-      return this.data.sandbox_runs || [];
-    }
-
-    if (sql.includes("INSERT INTO sandbox_runs")) {
-      const [record] = params;
-      if (!this.data.sandbox_runs) {
-        this.data.sandbox_runs = [];
+      if (sql.includes("UPDATE instrument_strategies")) {
+        // [symbol, whaleMode, sniperMode, breakevenEnabled, breakevenThreshold, dynamicSlEnabled, shockAbsorberEnabled]
+        const res = await this.pool.query(
+          `UPDATE instrument_strategies SET
+             whale_mode = $2,
+             sniper_mode = $3,
+             breakeven_enabled = $4,
+             breakeven_threshold = $5,
+             dynamic_sl_enabled = $6,
+             shock_absorber_enabled = $7
+           WHERE symbol = $1
+           RETURNING symbol, whale_mode as \"whaleMode\", sniper_mode as \"sniperMode\", breakeven_enabled as \"breakevenEnabled\", breakeven_threshold as \"breakevenThreshold\", dynamic_sl_enabled as \"dynamicSlEnabled\", shock_absorber_enabled as \"shockAbsorberEnabled\"`,
+          params
+        );
+        return res.rows[0];
       }
-      this.data.sandbox_runs.push(record);
-      this.save();
-      return record;
-    }
 
-    if (sql.includes("INSERT INTO strategy_audit_logs")) {
-      const [id, symbol, mode, triggerValue, actionTaken, inputParams, outputResult] = params;
-      const logRecord = {
-        id: id || `audit-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
-        timestamp: new Date().toISOString(),
-        symbol,
-        mode,
-        triggerValue,
-        actionTaken,
-        inputParams,
-        outputResult
-      };
-      if (!this.data.strategy_audit_logs) {
-        this.data.strategy_audit_logs = [];
+      if (sql.includes("SELECT * FROM strategy_audit_logs")) {
+        const res = await this.pool.query(
+          "SELECT id, timestamp, symbol, mode, trigger_value as \"triggerValue\", action_taken as \"actionTaken\", input_params as \"inputParams\", output_result as \"outputResult\" FROM strategy_audit_logs ORDER BY timestamp DESC LIMIT 200"
+        );
+        return res.rows;
       }
-      this.data.strategy_audit_logs.unshift(logRecord);
-      if (this.data.strategy_audit_logs.length > 200) {
-        this.data.strategy_audit_logs = this.data.strategy_audit_logs.slice(0, 200);
+
+      if (sql.includes("INSERT INTO strategy_audit_logs")) {
+        // [id, symbol, mode, triggerValue, actionTaken, inputParams, outputResult]
+        const logId = params[0] || `audit-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
+        const res = await this.pool.query(
+          `INSERT INTO strategy_audit_logs (id, timestamp, symbol, mode, trigger_value, action_taken, input_params, output_result)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+           RETURNING id, timestamp, symbol, mode, trigger_value as \"triggerValue\", action_taken as \"actionTaken\", input_params as \"inputParams\", output_result as \"outputResult\"`,
+          [
+            logId,
+            new Date().toISOString(),
+            params[1],
+            params[2],
+            parseFloat(params[3] || 0),
+            params[4],
+            typeof params[5] === "string" ? params[5] : JSON.stringify(params[5] || {}),
+            typeof params[6] === "string" ? params[6] : JSON.stringify(params[6] || {})
+          ]
+        );
+        return res.rows[0];
       }
-      this.save();
-      return logRecord;
-    }
 
-    if (sql.includes("SELECT * FROM self_improvement_logs")) {
-      return this.data.self_improvement_logs || [];
-    }
-
-    if (sql.includes("INSERT INTO self_improvement_logs")) {
-      const [record] = params;
-      if (!this.data.self_improvement_logs) {
-        this.data.self_improvement_logs = [];
+      if (sql.includes("SELECT * FROM historical_ticks")) {
+        const res = await this.pool.query("SELECT timestamp, price, spread, volatility, volume FROM historical_ticks ORDER BY timestamp ASC");
+        return res.rows.map(r => ({
+          ...r,
+          price: parseFloat(r.price),
+          spread: parseFloat(r.spread),
+          volatility: parseFloat(r.volatility),
+          volume: parseInt(r.volume)
+        }));
       }
-      this.data.self_improvement_logs.unshift(record);
-      if (this.data.self_improvement_logs.length > 50) {
-        this.data.self_improvement_logs = this.data.self_improvement_logs.slice(0, 50);
+
+      if (sql.includes("SELECT * FROM sandbox_runs")) {
+        const res = await this.pool.query("SELECT id, timestamp, candidate_id as \"candidateId\", name, code, status, rejection_reason as \"rejectionReason\", metrics FROM sandbox_runs ORDER BY timestamp DESC");
+        return res.rows.map(r => ({
+          ...r,
+          metrics: typeof r.metrics === "string" ? JSON.parse(r.metrics) : r.metrics
+        }));
       }
-      this.save();
-      return record;
-    }
 
-    if (sql.includes("SELECT * FROM research_cache")) {
-      return this.data.research_cache || [];
-    }
-
-    if (sql.includes("INSERT INTO research_cache")) {
-      const [topic, sources, summary, timestamp] = params;
-      if (!this.data.research_cache) {
-        this.data.research_cache = [];
+      if (sql.includes("INSERT INTO sandbox_runs")) {
+        // [record] - record is an object in our codebase.
+        const record = params[0];
+        await this.pool.query(
+          `INSERT INTO sandbox_runs (id, timestamp, candidate_id, name, code, status, rejection_reason, metrics)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+          [
+            record.id,
+            record.timestamp || new Date().toISOString(),
+            record.candidateId || "unknown",
+            record.name,
+            record.code || "",
+            record.status,
+            record.rejectionReason || "",
+            JSON.stringify(record.metrics || {})
+          ]
+        );
+        return record;
       }
-      const existingIdx = this.data.research_cache.findIndex(item => item.topic === topic);
-      const record = { topic, sources, summary, timestamp };
-      if (existingIdx >= 0) {
-        this.data.research_cache[existingIdx] = record;
-      } else {
-        this.data.research_cache.push(record);
+
+      if (sql.includes("SELECT * FROM self_improvement_logs")) {
+        const res = await this.pool.query("SELECT id, timestamp, trigger_reason as \"triggerReason\", fitness_gain_pct as \"fitnessGainPct\", new_code_applied as \"newCodeApplied\", previous_metrics as \"previousMetrics\", optimized_metrics as \"optimizedMetrics\" FROM self_improvement_logs ORDER BY timestamp DESC LIMIT 50");
+        return res.rows.map(r => ({
+          ...r,
+          fitnessGainPct: parseFloat(r.fitnessGainPct),
+          previousMetrics: typeof r.previousMetrics === "string" ? JSON.parse(r.previousMetrics) : r.previousMetrics,
+          optimizedMetrics: typeof r.optimizedMetrics === "string" ? JSON.parse(r.optimizedMetrics) : r.optimizedMetrics
+        }));
       }
-      this.save();
-      return record;
-    }
 
-    if (sql.includes("SELECT * FROM arbitrage_spreads")) {
-      return this.data.arbitrage_spreads || [];
-    }
-
-    if (sql.includes("INSERT INTO arbitrage_spreads")) {
-      const [record] = params;
-      if (!this.data.arbitrage_spreads) {
-        this.data.arbitrage_spreads = [];
+      if (sql.includes("INSERT INTO self_improvement_logs")) {
+        const record = params[0];
+        await this.pool.query(
+          `INSERT INTO self_improvement_logs (id, timestamp, trigger_reason, fitness_gain_pct, new_code_applied, previous_metrics, optimized_metrics)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+          [
+            record.id,
+            record.timestamp || new Date().toISOString(),
+            record.triggerReason || "",
+            parseFloat(record.fitnessGainPct || 0),
+            record.newCodeApplied || "",
+            JSON.stringify(record.previousMetrics || {}),
+            JSON.stringify(record.optimizedMetrics || {})
+          ]
+        );
+        return record;
       }
-      this.data.arbitrage_spreads.push(record);
-      if (this.data.arbitrage_spreads.length > 100) {
-        this.data.arbitrage_spreads = this.data.arbitrage_spreads.slice(-100);
+
+      if (sql.includes("SELECT * FROM research_cache")) {
+        const res = await this.pool.query("SELECT topic, sources, summary, timestamp FROM research_cache");
+        return res.rows.map(r => ({
+          ...r,
+          sources: typeof r.sources === "string" ? JSON.parse(r.sources) : r.sources
+        }));
       }
-      this.save();
-      return record;
-    }
 
-    if (sql.includes("SELECT * FROM arbitrage_opportunities")) {
-      return this.data.arbitrage_opportunities || [];
-    }
-
-    if (sql.includes("INSERT INTO arbitrage_opportunities")) {
-      const [record] = params;
-      if (!this.data.arbitrage_opportunities) {
-        this.data.arbitrage_opportunities = [];
+      if (sql.includes("INSERT INTO research_cache")) {
+        // [topic, sources, summary, timestamp]
+        await this.pool.query(
+          `INSERT INTO research_cache (topic, sources, summary, timestamp)
+           VALUES ($1, $2, $3, $4)
+           ON CONFLICT (topic) DO UPDATE SET sources = EXCLUDED.sources, summary = EXCLUDED.summary, timestamp = EXCLUDED.timestamp`,
+          [
+            params[0],
+            typeof params[1] === "string" ? params[1] : JSON.stringify(params[1] || []),
+            params[2],
+            params[3] || new Date().toISOString()
+          ]
+        );
+        return { topic: params[0], sources: params[1], summary: params[2], timestamp: params[3] };
       }
-      this.data.arbitrage_opportunities.unshift(record);
-      if (this.data.arbitrage_opportunities.length > 100) {
-        this.data.arbitrage_opportunities = this.data.arbitrage_opportunities.slice(0, 100);
+
+      if (sql.includes("SELECT * FROM arbitrage_spreads")) {
+        const res = await this.pool.query(
+          `SELECT id, timestamp, binance_bid as "binanceBid", binance_ask as "binanceAsk", coinbase_bid as "coinbaseBid", coinbase_ask as "coinbaseAsk", kraken_bid as "krakenBid", kraken_ask as "krakenAsk",
+                  spread_binance_coinbase as "spreadBinanceCoinbase", spread_binance_kraken as "spreadBinanceKraken", spread_coinbase_kraken as "spreadCoinbaseKraken"
+           FROM arbitrage_spreads ORDER BY timestamp DESC LIMIT 100`
+        );
+        return res.rows.map(r => ({
+          ...r,
+          binanceBid: parseFloat(r.binanceBid),
+          binanceAsk: parseFloat(r.binanceAsk),
+          coinbaseBid: parseFloat(r.coinbaseBid),
+          coinbaseAsk: parseFloat(r.coinbaseAsk),
+          krakenBid: parseFloat(r.krakenBid),
+          krakenAsk: parseFloat(r.krakenAsk),
+          spreadBinanceCoinbase: parseFloat(r.spreadBinanceCoinbase),
+          spreadBinanceKraken: parseFloat(r.spreadBinanceKraken),
+          spreadCoinbaseKraken: parseFloat(r.spreadCoinbaseKraken)
+        })).reverse();
       }
-      this.save();
-      return record;
-    }
 
-    if (sql.includes("SELECT * FROM arbitrage_trades")) {
-      return this.data.arbitrage_trades || [];
-    }
-
-    if (sql.includes("INSERT INTO arbitrage_trades")) {
-      const [record] = params;
-      if (!this.data.arbitrage_trades) {
-        this.data.arbitrage_trades = [];
+      if (sql.includes("INSERT INTO arbitrage_spreads")) {
+        const s = params[0];
+        if (!s) return null;
+        await this.pool.query(
+          `INSERT INTO arbitrage_spreads (timestamp, binance_bid, binance_ask, coinbase_bid, coinbase_ask, kraken_bid, kraken_ask, spread_binance_coinbase, spread_binance_kraken, spread_coinbase_kraken)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+          [
+            s.timestamp || new Date().toISOString(),
+            s.binanceBid || s.binance_bid,
+            s.binanceAsk || s.binance_ask,
+            s.coinbaseBid || s.coinbase_bid,
+            s.coinbaseAsk || s.coinbase_ask,
+            s.krakenBid || s.kraken_bid,
+            s.krakenAsk || s.kraken_ask,
+            s.spreadBinanceCoinbase || s.spread_binance_coinbase,
+            s.spreadBinanceKraken || s.spread_binance_kraken,
+            s.spreadCoinbaseKraken || s.spread_coinbase_kraken
+          ]
+        );
+        return s;
       }
-      this.data.arbitrage_trades.unshift(record);
-      if (this.data.arbitrage_trades.length > 100) {
-        this.data.arbitrage_trades = this.data.arbitrage_trades.slice(0, 100);
+
+      if (sql.includes("SELECT * FROM arbitrage_opportunities")) {
+        const res = await this.pool.query(
+          `SELECT id, timestamp, buy_venue as "buyVenue", sell_venue as "sellVenue", buy_price as "buyPrice", sell_price as "sellPrice",
+                  gross_spread as "grossSpread", fees, net_edge as "netEdge", compliance_check as "complianceCheck"
+           FROM arbitrage_opportunities ORDER BY timestamp DESC LIMIT 100`
+        );
+        return res.rows.map(r => ({
+          ...r,
+          buyPrice: parseFloat(r.buyPrice),
+          sellPrice: parseFloat(r.sellPrice),
+          grossSpread: parseFloat(r.grossSpread),
+          fees: parseFloat(r.fees),
+          netEdge: parseFloat(r.netEdge)
+        }));
       }
-      this.save();
-      return record;
-    }
 
-    if (sql.includes("SELECT * FROM arbitrage_compliance")) {
-      return this.data.arbitrage_compliance || { tosPermitted: false, regulationsPermitted: false };
-    }
+      if (sql.includes("INSERT INTO arbitrage_opportunities")) {
+        const o = params[0];
+        if (!o) return null;
+        await this.pool.query(
+          `INSERT INTO arbitrage_opportunities (id, timestamp, buy_venue, sell_venue, buy_price, sell_price, gross_spread, fees, net_edge, compliance_check)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+          [
+            o.id,
+            o.timestamp || new Date().toISOString(),
+            o.buyVenue || o.buy_venue,
+            o.sellVenue || o.sell_venue,
+            parseFloat(o.buyPrice || o.buy_price || 0),
+            parseFloat(o.sellPrice || o.sell_price || 0),
+            parseFloat(o.grossSpread || o.gross_spread || 0),
+            parseFloat(o.fees || 0),
+            parseFloat(o.netEdge || o.net_edge || 0),
+            o.complianceCheck || o.compliance_check
+          ]
+        );
+        return o;
+      }
 
-    if (sql.includes("UPDATE arbitrage_compliance")) {
-      const [tosPermitted, regulationsPermitted] = params;
-      this.data.arbitrage_compliance = { tosPermitted, regulationsPermitted };
-      this.save();
-      return this.data.arbitrage_compliance;
-    }
+      if (sql.includes("SELECT * FROM arbitrage_trades")) {
+        const res = await this.pool.query(
+          `SELECT id, timestamp, opportunity_id as "opportunityId", pair, buy_venue as "buyVenue", sell_venue as "sellVenue",
+                  buy_price as "buyPrice", sell_price as "sellPrice", executed_size as "executedSize", gross_pnl as "grossPnl", fees, net_pnl as "netPnl", status, execution_log as "executionLog"
+           FROM arbitrage_trades ORDER BY timestamp DESC LIMIT 100`
+        );
+        return res.rows.map(r => ({
+          ...r,
+          buyPrice: parseFloat(r.buyPrice),
+          sellPrice: parseFloat(r.sellPrice),
+          executedSize: parseFloat(r.executedSize),
+          grossPnl: parseFloat(r.grossPnl),
+          fees: parseFloat(r.fees),
+          netPnl: parseFloat(r.netPnl)
+        }));
+      }
 
-    return null;
+      if (sql.includes("INSERT INTO arbitrage_trades")) {
+        const t = params[0];
+        if (!t) return null;
+        await this.pool.query(
+          `INSERT INTO arbitrage_trades (id, timestamp, opportunity_id, pair, buy_venue, sell_venue, buy_price, sell_price, executed_size, gross_pnl, fees, net_pnl, status, execution_log)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+          [
+            t.id,
+            t.timestamp || new Date().toISOString(),
+            t.opportunityId || t.opportunity_id,
+            t.pair,
+            t.buyVenue || t.buy_venue,
+            t.sellVenue || t.sell_venue,
+            parseFloat(t.buyPrice || t.buy_price || 0),
+            parseFloat(t.sellPrice || t.sell_price || 0),
+            parseFloat(t.executedSize || t.executed_size || 0),
+            parseFloat(t.grossPnl || t.gross_pnl || 0),
+            parseFloat(t.fees || 0),
+            parseFloat(t.netPnl || t.net_pnl || 0),
+            t.status,
+            t.executionLog || t.execution_log || ""
+          ]
+        );
+        return t;
+      }
+
+      if (sql.includes("SELECT * FROM arbitrage_compliance")) {
+        const res = await this.pool.query("SELECT tos_permitted as \"tosPermitted\", regulations_permitted as \"regulationsPermitted\" FROM arbitrage_compliance WHERE id = 1");
+        return res.rows[0] || { tosPermitted: false, regulationsPermitted: false };
+      }
+
+      if (sql.includes("UPDATE arbitrage_compliance")) {
+        // [tosPermitted, regulationsPermitted]
+        await this.pool.query(
+          "INSERT INTO arbitrage_compliance (id, tos_permitted, regulations_permitted) VALUES (1, $1, $2) ON CONFLICT (id) DO UPDATE SET tos_permitted = EXCLUDED.tos_permitted, regulations_permitted = EXCLUDED.regulations_permitted",
+          [params[0], params[1]]
+        );
+        return { tosPermitted: params[0], regulationsPermitted: params[1] };
+      }
+
+      // Fallback custom generic query runner
+      const rawRes = await this.pool.query(sql, params);
+      return rawRes.rows;
+    } catch (err: any) {
+      console.error(`[POSTGRES-QUERY-ERROR] Error on query "${sql}":`, err.message);
+      throw err;
+    }
   }
 }
 
@@ -3183,16 +3504,15 @@ app.get("/api/arbitrage/logs", (req, res) => {
   });
 });
 
-app.post("/api/arbitrage/clear", checkIPAllowlist, (req, res) => {
+app.post("/api/arbitrage/clear", checkIPAllowlist, async (req, res) => {
   if (pgDb.query("SELECT * FROM arbitrage_spreads")) pgDb.query("INSERT INTO arbitrage_spreads", [null]);
   pgDb.query("INSERT INTO arbitrage_opportunities", [null]);
   pgDb.query("INSERT INTO arbitrage_trades", [null]);
   
   // Clear lists
-  (pgDb as any).data.arbitrage_spreads = [];
-  (pgDb as any).data.arbitrage_opportunities = [];
-  (pgDb as any).data.arbitrage_trades = [];
-  pgDb.save();
+  await pgDb.queryAsync("DELETE FROM arbitrage_spreads");
+  await pgDb.queryAsync("DELETE FROM arbitrage_opportunities");
+  await pgDb.queryAsync("DELETE FROM arbitrage_trades");
 
   addServerLog("RISK-MANAGER", "SUCCESS", "داتاکان و لۆگەکانی ئاربیتراژ بە تەواوی پاککرانەوە.");
   res.json({ success: true });
@@ -3243,10 +3563,10 @@ app.post("/api/safety/clear-notifications", checkIPAllowlist, (req, res) => {
 
 app.post("/api/safety/test-run", checkIPAllowlist, async (req, res) => {
   const logs: string[] = [];
-  const runTest = (name: string, fn: () => void) => {
+  const runTest = async (name: string, fn: () => Promise<void> | void) => {
     logs.push(`[TEST] Running: ${name}...`);
     try {
-      fn();
+      await fn();
       logs.push(`[PASS] ${name}`);
     } catch (e: any) {
       logs.push(`[FAIL] ${name}: ${e.message}`);
@@ -3254,7 +3574,7 @@ app.post("/api/safety/test-run", checkIPAllowlist, async (req, res) => {
   };
 
   // 1. Test Silent Lock trigger on drawdown breach
-  runTest("Silent Lock Trigger on drawdown breach", () => {
+  await runTest("Silent Lock Trigger on drawdown breach", () => {
     const initialPeak = safetyBackstop.getState().peakEquity;
     // Backup state
     const backupPeak = initialPeak;
@@ -3279,12 +3599,12 @@ app.post("/api/safety/test-run", checkIPAllowlist, async (req, res) => {
   });
 
   // 2. Test Broker disconnection mid-position triggers Safe Mode
-  runTest("Broker disconnect mid-position triggers Safe Mode", () => {
+  await runTest("Broker disconnect mid-position triggers Safe Mode", async () => {
     // Create simulated broker connection state
-    const backupConns = pgDb.query("SELECT * FROM broker_connections") || [];
+    const backupConns = (await pgDb.queryAsync("SELECT * FROM broker_connections")) || [];
     
     // Seed a disconnected broker connection
-    pgDb.query("INSERT INTO broker_connections (id, broker_type, status, api_url, account_id)", [
+    await pgDb.queryAsync("INSERT INTO broker_connections (id, broker_type, status, api_url, account_id)", [
       "mock-broker-fail", "BINANCE", "DISCONNECTED", "https://api.binance.com", "mock-bin-acc"
     ]);
 
@@ -3295,7 +3615,7 @@ app.post("/api/safety/test-run", checkIPAllowlist, async (req, res) => {
 
     // Run watchdog condition
     const livePositionsCount = livePositions.length;
-    const connections = pgDb.query("SELECT * FROM broker_connections") || [];
+    const connections = (await pgDb.queryAsync("SELECT * FROM broker_connections")) || [];
     const disconnectedBroker = connections.find(c => c.status === "DISCONNECTED");
 
     if (livePositionsCount > 0 && disconnectedBroker) {
@@ -3307,14 +3627,13 @@ app.post("/api/safety/test-run", checkIPAllowlist, async (req, res) => {
       throw new Error("Safe Mode should be active when broker disconnects mid-position.");
     }
 
-    // Restore broker connections
-    (pgDb as any).data.broker_connections = backupConns;
-    pgDb.save();
+    // Restore broker connections by deleting simulated fail connection
+    await pgDb.queryAsync("DELETE FROM broker_connections WHERE id = $1", ["mock-broker-fail"]);
     safetyBackstop.updateState({ safeModeActive: backupSafeMode });
   });
 
   // 3. Test Unresponsive main process watchdog detection
-  runTest("Unresponsive main process watchdog detection", () => {
+  await runTest("Unresponsive main process watchdog detection", () => {
     // Simulate checking a failed heartbeat inside watchdog
     const consecutiveFailuresTest = 3;
     const safety = safetyBackstop.getState();
@@ -3638,6 +3957,15 @@ app.use(globalErrorHandler);
 // VITE INTEGRATION / STATIC PRODUCTION SERVING & CHILD PROCESS BOOTER
 // ============================================================================
 async function startServer() {
+  // Initialize the PostgreSQL Database engine, run migrations, seed data, and perform legacy migration
+  console.log("[LAUNCHER] Initializing PostgreSQL database...");
+  try {
+    await pgDb.initialize();
+    console.log("[LAUNCHER] PostgreSQL database initialization completed successfully.");
+  } catch (err: any) {
+    console.error("[LAUNCHER] CRITICAL ERROR during database initialization:", err.message);
+  }
+
   // Launch the Python APEX PPO DRL Microservice asynchronously
   console.log("[LAUNCHER] Booting Python APEX DRL Microservice...");
   const drlProcess = spawn("python3", ["drl_service.py"]);

@@ -1,11 +1,24 @@
 import fs from "fs";
 import path from "path";
+import { Pool } from "pg";
 import { safetyBackstop } from "./safetyBackstop";
 
 const MAIN_SERVER_URL = "http://127.0.0.1:3000";
 const CHECK_INTERVAL_MS = 2000; // Ping every 2 seconds
 const STATE_FILE_PATH = path.join("/tmp", "live_trading_state.json");
-const POSTGRES_STATE_PATH = path.join(process.cwd(), "postgres_state.json");
+
+// Establish connection pool to the real PostgreSQL database
+const pool = new Pool({
+  host: process.env.PGHOST || "localhost",
+  port: parseInt(process.env.PGPORT || "5432"),
+  user: process.env.PGUSER || "postgres",
+  password: process.env.PGPASSWORD || "postgres",
+  database: process.env.PGDATABASE || "sovereign_db",
+  connectionTimeoutMillis: 15000,
+});
+pool.on("error", (err) => {
+  console.error("[WATCHDOG-POSTGRES] Unexpected error on idle DB client:", err);
+});
 
 let consecutiveFailures = 0;
 let consecutiveDrlFailures = 0;
@@ -63,13 +76,15 @@ async function monitorLoop() {
       }
     }
 
-    // 4. Read broker connections from postgres_state.json
+    // 4. Read broker connections from the real PostgreSQL database
     let brokerConnections: any[] = [];
-    if (fs.existsSync(POSTGRES_STATE_PATH)) {
-      try {
-        const pgData = JSON.parse(fs.readFileSync(POSTGRES_STATE_PATH, "utf8"));
-        brokerConnections = pgData.broker_connections || [];
-      } catch (e) {}
+    try {
+      const dbRes = await pool.query(
+        "SELECT id, broker_type as \"brokerType\", api_url as \"apiUrl\", account_id as \"accountId\", status, error_message as \"errorMessage\" FROM broker_connections"
+      );
+      brokerConnections = dbRes.rows;
+    } catch (e: any) {
+      console.error("[WATCHDOG-POSTGRES-ERROR] Failed to fetch broker connections:", e.message);
     }
 
     // --- EVALUATE FAILURE CONDITIONS ---
@@ -86,7 +101,7 @@ async function monitorLoop() {
         safetyBackstop.triggerEmergencyHalt(reason, { source: "WATCHDOG_DETECTION" });
 
         // Execute Halt policy on disk directly since server is frozen!
-        executeHaltPolicyOnDisk(safety.emergencyHaltPolicy, liveState);
+        await executeHaltPolicyOnDisk(safety.emergencyHaltPolicy, liveState);
       }
     }
 
@@ -133,7 +148,7 @@ async function monitorLoop() {
 }
 
 // Write flattened positions back to disk if MAIN server is unresponsive
-function executeHaltPolicyOnDisk(policy: "FLATTEN_ALL" | "FREEZE_NEW_ONLY", liveState: any) {
+async function executeHaltPolicyOnDisk(policy: "FLATTEN_ALL" | "FREEZE_NEW_ONLY", liveState: any) {
   try {
     if (policy === "FLATTEN_ALL") {
       const positionsCount = liveState?.livePositions?.length || 0;
@@ -166,24 +181,25 @@ function executeHaltPolicyOnDisk(policy: "FLATTEN_ALL" | "FREEZE_NEW_ONLY", live
         fs.writeFileSync(STATE_FILE_PATH, JSON.stringify(recoveryState, null, 2), "utf8");
         console.log("[WATCHDOG-RECOVERY] Successfully flattened live positions state on disk.");
 
-        // Write a critical audit log entry into postgres_state.json directly so the user sees it!
-        if (fs.existsSync(POSTGRES_STATE_PATH)) {
-          const pgData = JSON.parse(fs.readFileSync(POSTGRES_STATE_PATH, "utf8"));
-          if (!pgData.strategy_audit_logs) pgData.strategy_audit_logs = [];
-          
-          pgData.strategy_audit_logs.unshift({
-            id: `audit-${Date.now()}-watchdog`,
-            timestamp: new Date().toISOString(),
-            symbol: "ALL",
-            strategyMode: "FAILOVER WATCHDOG",
-            volatility: "CRITICAL",
-            details: `Watchdog executed emergency FLATTEN_ALL policy due to unresponsive core engine. Closed ${positionsCount} positions. Realized PnL: $${totalPnLSum.toFixed(2)}.`,
-            inputParams: JSON.stringify({ policy, positionsCount }),
-            outputResult: JSON.stringify({ finalBalance: updatedStats.balance })
-          });
-
-          fs.writeFileSync(POSTGRES_STATE_PATH, JSON.stringify(pgData, null, 2), "utf8");
-          console.log("[WATCHDOG-RECOVERY] Successfully committed recovery log directly into postgres_state.json.");
+        // Write a critical audit log entry into the PostgreSQL database directly so the user sees it!
+        try {
+          await pool.query(
+            `INSERT INTO strategy_audit_logs (id, timestamp, symbol, mode, trigger_value, action_taken, input_params, output_result)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+            [
+              `audit-${Date.now()}-watchdog`,
+              new Date().toISOString(),
+              "ALL",
+              "FAILOVER WATCHDOG",
+              null,
+              `Watchdog executed emergency FLATTEN_ALL policy due to unresponsive core engine. Closed ${positionsCount} positions. Realized PnL: $${totalPnLSum.toFixed(2)}.`,
+              JSON.stringify({ policy, positionsCount }),
+              JSON.stringify({ finalBalance: updatedStats.balance })
+            ]
+          );
+          console.log("[WATCHDOG-RECOVERY] Successfully committed recovery log directly into PostgreSQL database.");
+        } catch (dbErr: any) {
+          console.error("[WATCHDOG-RECOVERY-ERROR] Failed to write audit log to database:", dbErr.message);
         }
       }
     } else {
