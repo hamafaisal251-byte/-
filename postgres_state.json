@@ -1,0 +1,2067 @@
+{
+  "broker_connections": [],
+  "news_config": {
+    "newsApiKeyEnc": "",
+    "finnhubKeyEnc": ""
+  },
+  "security_config": {
+    "api_mutate_key": "SOV-MUTATE-DEFAULT-KEY",
+    "allowed_ips": [
+      "127.0.0.1",
+      "::1",
+      "::ffff:127.0.0.1"
+    ]
+  },
+  "instrument_strategies": {
+    "EUR/USD": {
+      "symbol": "EUR/USD",
+      "whaleMode": true,
+      "sniperMode": true,
+      "breakevenEnabled": true,
+      "breakevenThreshold": 8,
+      "dynamicSlEnabled": true,
+      "shockAbsorberEnabled": true,
+      "lastTriggered": {
+        "whaleMode": "2026-07-08T23:17:57.547Z",
+        "sniperMode": "2026-07-08T23:15:56.449Z",
+        "breakeven": "2026-07-08T23:08:08.083Z",
+        "dynamicSl": null,
+        "shockAbsorber": null
+      }
+    },
+    "GBP/USD": {
+      "symbol": "GBP/USD",
+      "whaleMode": true,
+      "sniperMode": true,
+      "breakevenEnabled": true,
+      "breakevenThreshold": 10,
+      "dynamicSlEnabled": true,
+      "shockAbsorberEnabled": true,
+      "lastTriggered": {
+        "whaleMode": "2026-07-08T23:17:57.548Z",
+        "sniperMode": null,
+        "breakeven": null,
+        "dynamicSl": null,
+        "shockAbsorber": null
+      }
+    },
+    "BTC/USD": {
+      "symbol": "BTC/USD",
+      "whaleMode": true,
+      "sniperMode": true,
+      "breakevenEnabled": true,
+      "breakevenThreshold": 50,
+      "dynamicSlEnabled": true,
+      "shockAbsorberEnabled": true,
+      "lastTriggered": {
+        "whaleMode": "2026-07-08T23:17:51.545Z",
+        "sniperMode": null,
+        "breakeven": null,
+        "dynamicSl": null,
+        "shockAbsorber": null
+      }
+    }
+  },
+  "strategy_audit_logs": [
+    {
+      "id": "audit-1783552677549-rp7s",
+      "timestamp": "2026-07-08T23:17:57.549Z",
+      "symbol": "GBP/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.87 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":74649,\"asksVolume\":29609,\"tickVolume\":129746,\"avgVolume\":46338.2}",
+      "outputResult": "{\"whale_signal_strength\":0.87}"
+    },
+    {
+      "id": "audit-1783552677548-gjtq",
+      "timestamp": "2026-07-08T23:17:57.548Z",
+      "symbol": "EUR/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.91 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":60731,\"asksVolume\":24605,\"tickVolume\":144586,\"avgVolume\":51637.95}",
+      "outputResult": "{\"whale_signal_strength\":0.91}"
+    },
+    {
+      "id": "audit-1783552675547-yoev",
+      "timestamp": "2026-07-08T23:17:55.547Z",
+      "symbol": "EUR/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.85 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.1x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":23810,\"asksVolume\":74428,\"tickVolume\":22273,\"avgVolume\":51779.95}",
+      "outputResult": "{\"whale_signal_strength\":0.85}"
+    },
+    {
+      "id": "audit-1783552671546-b689",
+      "timestamp": "2026-07-08T23:17:51.546Z",
+      "symbol": "BTC/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.94 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":61777,\"asksVolume\":70283,\"tickVolume\":146830,\"avgVolume\":52439.45}",
+      "outputResult": "{\"whale_signal_strength\":0.94}"
+    },
+    {
+      "id": "audit-1783552671545-spbq",
+      "timestamp": "2026-07-08T23:17:51.545Z",
+      "symbol": "EUR/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.96 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":40105,\"asksVolume\":31911,\"tickVolume\":142650,\"avgVolume\":50946.75}",
+      "outputResult": "{\"whale_signal_strength\":0.96}"
+    },
+    {
+      "id": "audit-1783552666539-kx2k",
+      "timestamp": "2026-07-08T23:17:46.539Z",
+      "symbol": "EUR/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.88 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 4.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":74153,\"asksVolume\":16341,\"tickVolume\":13699,\"avgVolume\":53916.35}",
+      "outputResult": "{\"whale_signal_strength\":0.88}"
+    },
+    {
+      "id": "audit-1783552665539-t6p7",
+      "timestamp": "2026-07-08T23:17:45.539Z",
+      "symbol": "EUR/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.93 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":39972,\"asksVolume\":60626,\"tickVolume\":143558,\"avgVolume\":51271}",
+      "outputResult": "{\"whale_signal_strength\":0.93}"
+    },
+    {
+      "id": "audit-1783552664538-mnid",
+      "timestamp": "2026-07-08T23:17:44.538Z",
+      "symbol": "EUR/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.83 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":35565,\"asksVolume\":59966,\"tickVolume\":149405,\"avgVolume\":53359.2}",
+      "outputResult": "{\"whale_signal_strength\":0.83}"
+    },
+    {
+      "id": "audit-1783552663536-g9ys",
+      "timestamp": "2026-07-08T23:17:43.536Z",
+      "symbol": "EUR/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.73 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 4.2x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":64434,\"asksVolume\":15209,\"tickVolume\":28717,\"avgVolume\":54684.65}",
+      "outputResult": "{\"whale_signal_strength\":0.73}"
+    },
+    {
+      "id": "audit-1783552662536-wu64",
+      "timestamp": "2026-07-08T23:17:42.536Z",
+      "symbol": "EUR/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.75 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":37010,\"asksVolume\":50657,\"tickVolume\":151841,\"avgVolume\":54229.25}",
+      "outputResult": "{\"whale_signal_strength\":0.75}"
+    },
+    {
+      "id": "audit-1783552661536-v24g",
+      "timestamp": "2026-07-08T23:17:41.536Z",
+      "symbol": "BTC/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.72 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":47226,\"asksVolume\":18266,\"tickVolume\":161188,\"avgVolume\":57567.35}",
+      "outputResult": "{\"whale_signal_strength\":0.72}"
+    },
+    {
+      "id": "audit-1783552659534-kmbi",
+      "timestamp": "2026-07-08T23:17:39.534Z",
+      "symbol": "GBP/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.82 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.2x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":22441,\"asksVolume\":70986,\"tickVolume\":16276,\"avgVolume\":48885.15}",
+      "outputResult": "{\"whale_signal_strength\":0.82}"
+    },
+    {
+      "id": "audit-1783552656535-le70",
+      "timestamp": "2026-07-08T23:17:36.535Z",
+      "symbol": "BTC/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.72 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.7x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":79370,\"asksVolume\":21490,\"tickVolume\":16060,\"avgVolume\":52778.1}",
+      "outputResult": "{\"whale_signal_strength\":0.72}"
+    },
+    {
+      "id": "audit-1783552656534-4o9b",
+      "timestamp": "2026-07-08T23:17:36.534Z",
+      "symbol": "GBP/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.84 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.4x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":79299,\"asksVolume\":23249,\"tickVolume\":22157,\"avgVolume\":47606.3}",
+      "outputResult": "{\"whale_signal_strength\":0.84}"
+    },
+    {
+      "id": "audit-1783552654532-3vo5",
+      "timestamp": "2026-07-08T23:17:34.532Z",
+      "symbol": "BTC/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.89 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.6x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":71384,\"asksVolume\":19964,\"tickVolume\":9633,\"avgVolume\":52008.35}",
+      "outputResult": "{\"whale_signal_strength\":0.89}"
+    },
+    {
+      "id": "audit-1783552651532-4zkr",
+      "timestamp": "2026-07-08T23:17:31.532Z",
+      "symbol": "BTC/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.96 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":22124,\"asksVolume\":26235,\"tickVolume\":147797,\"avgVolume\":52784.95}",
+      "outputResult": "{\"whale_signal_strength\":0.96}"
+    },
+    {
+      "id": "audit-1783552650530-6hsk",
+      "timestamp": "2026-07-08T23:17:30.530Z",
+      "symbol": "GBP/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.74 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":57591,\"asksVolume\":46928,\"tickVolume\":138615,\"avgVolume\":49505.5}",
+      "outputResult": "{\"whale_signal_strength\":0.74}"
+    },
+    {
+      "id": "audit-1783552649530-fo83",
+      "timestamp": "2026-07-08T23:17:29.530Z",
+      "symbol": "EUR/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.88 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":44130,\"asksVolume\":33761,\"tickVolume\":142546,\"avgVolume\":50909.4}",
+      "outputResult": "{\"whale_signal_strength\":0.88}"
+    },
+    {
+      "id": "audit-1783552643528-s957",
+      "timestamp": "2026-07-08T23:17:23.528Z",
+      "symbol": "GBP/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.8 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.7x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":21282,\"asksVolume\":79387,\"tickVolume\":35604,\"avgVolume\":48286.65}",
+      "outputResult": "{\"whale_signal_strength\":0.8}"
+    },
+    {
+      "id": "audit-1783552642526-umb3",
+      "timestamp": "2026-07-08T23:17:22.526Z",
+      "symbol": "GBP/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.83 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":75800,\"asksVolume\":51120,\"tickVolume\":130622,\"avgVolume\":46650.9}",
+      "outputResult": "{\"whale_signal_strength\":0.83}"
+    },
+    {
+      "id": "audit-1783552641526-9it9",
+      "timestamp": "2026-07-08T23:17:21.526Z",
+      "symbol": "BTC/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.98 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.0x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":16444,\"asksVolume\":50008,\"tickVolume\":33526,\"avgVolume\":49323.5}",
+      "outputResult": "{\"whale_signal_strength\":0.98}"
+    },
+    {
+      "id": "audit-1783552641525-mdta",
+      "timestamp": "2026-07-08T23:17:21.525Z",
+      "symbol": "GBP/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.7 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.3x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":20644,\"asksVolume\":68713,\"tickVolume\":37544,\"avgVolume\":49397.65}",
+      "outputResult": "{\"whale_signal_strength\":0.7}"
+    },
+    {
+      "id": "audit-1783552637522-yycj",
+      "timestamp": "2026-07-08T23:17:17.522Z",
+      "symbol": "BTC/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.76 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":36951,\"asksVolume\":29733,\"tickVolume\":132143,\"avgVolume\":47193.95}",
+      "outputResult": "{\"whale_signal_strength\":0.76}"
+    },
+    {
+      "id": "audit-1783552636529-2eaw",
+      "timestamp": "2026-07-08T23:17:16.529Z",
+      "symbol": "BTC/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.93 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":58461,\"asksVolume\":48925,\"tickVolume\":131290,\"avgVolume\":46889.55}",
+      "outputResult": "{\"whale_signal_strength\":0.93}"
+    },
+    {
+      "id": "audit-1783552636522-w2ph",
+      "timestamp": "2026-07-08T23:17:16.522Z",
+      "symbol": "EUR/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.72 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.1x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":16917,\"asksVolume\":53039,\"tickVolume\":16823,\"avgVolume\":46875.9}",
+      "outputResult": "{\"whale_signal_strength\":0.72}"
+    },
+    {
+      "id": "audit-1783552633522-p53u",
+      "timestamp": "2026-07-08T23:17:13.522Z",
+      "symbol": "GBP/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.72 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":30036,\"asksVolume\":19421,\"tickVolume\":140842,\"avgVolume\":50300.9}",
+      "outputResult": "{\"whale_signal_strength\":0.72}"
+    },
+    {
+      "id": "audit-1783552632522-t3k1",
+      "timestamp": "2026-07-08T23:17:12.522Z",
+      "symbol": "GBP/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.7 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 4.4x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":17739,\"asksVolume\":77236,\"tickVolume\":33974,\"avgVolume\":48895.8}",
+      "outputResult": "{\"whale_signal_strength\":0.7}"
+    },
+    {
+      "id": "audit-1783552628519-o7hv",
+      "timestamp": "2026-07-08T23:17:08.519Z",
+      "symbol": "BTC/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.99 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 4.9x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":77621,\"asksVolume\":15904,\"tickVolume\":35858,\"avgVolume\":48069.3}",
+      "outputResult": "{\"whale_signal_strength\":0.99}"
+    },
+    {
+      "id": "audit-1783552626518-p57u",
+      "timestamp": "2026-07-08T23:17:06.518Z",
+      "symbol": "BTC/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.74 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":56440,\"asksVolume\":65858,\"tickVolume\":135281,\"avgVolume\":48314.65}",
+      "outputResult": "{\"whale_signal_strength\":0.74}"
+    },
+    {
+      "id": "audit-1783552625520-o09x",
+      "timestamp": "2026-07-08T23:17:05.520Z",
+      "symbol": "BTC/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.71 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":43329,\"asksVolume\":37298,\"tickVolume\":135716,\"avgVolume\":48470}",
+      "outputResult": "{\"whale_signal_strength\":0.71}"
+    },
+    {
+      "id": "audit-1783552625518-be14",
+      "timestamp": "2026-07-08T23:17:05.518Z",
+      "symbol": "EUR/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.81 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":22359,\"asksVolume\":49183,\"tickVolume\":121542,\"avgVolume\":43407.95}",
+      "outputResult": "{\"whale_signal_strength\":0.81}"
+    },
+    {
+      "id": "audit-1783552624517-9v2t",
+      "timestamp": "2026-07-08T23:17:04.517Z",
+      "symbol": "GBP/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.91 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":22588,\"asksVolume\":58391,\"tickVolume\":141240,\"avgVolume\":50443.1}",
+      "outputResult": "{\"whale_signal_strength\":0.91}"
+    },
+    {
+      "id": "audit-1783552623517-9c9a",
+      "timestamp": "2026-07-08T23:17:03.517Z",
+      "symbol": "BTC/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.81 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":33093,\"asksVolume\":38554,\"tickVolume\":134294,\"avgVolume\":47962.2}",
+      "outputResult": "{\"whale_signal_strength\":0.81}"
+    },
+    {
+      "id": "audit-1783552621517-brb6",
+      "timestamp": "2026-07-08T23:17:01.517Z",
+      "symbol": "BTC/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.94 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.8x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":71917,\"asksVolume\":18870,\"tickVolume\":25664,\"avgVolume\":45448.85}",
+      "outputResult": "{\"whale_signal_strength\":0.94}"
+    },
+    {
+      "id": "audit-1783552621516-7fqn",
+      "timestamp": "2026-07-08T23:17:01.516Z",
+      "symbol": "GBP/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.89 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 4.8x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":15605,\"asksVolume\":75227,\"tickVolume\":25032,\"avgVolume\":49864.85}",
+      "outputResult": "{\"whale_signal_strength\":0.89}"
+    },
+    {
+      "id": "audit-1783552619516-9389",
+      "timestamp": "2026-07-08T23:16:59.516Z",
+      "symbol": "GBP/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.89 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.1x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":72663,\"asksVolume\":23648,\"tickVolume\":29419,\"avgVolume\":49272.15}",
+      "outputResult": "{\"whale_signal_strength\":0.89}"
+    },
+    {
+      "id": "audit-1783552618518-j7m9",
+      "timestamp": "2026-07-08T23:16:58.518Z",
+      "symbol": "BTC/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.94 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":60876,\"asksVolume\":71113,\"tickVolume\":134248,\"avgVolume\":47946.05}",
+      "outputResult": "{\"whale_signal_strength\":0.94}"
+    },
+    {
+      "id": "audit-1783552618516-nc9e",
+      "timestamp": "2026-07-08T23:16:58.516Z",
+      "symbol": "GBP/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.85 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":23659,\"asksVolume\":78174,\"tickVolume\":134261,\"avgVolume\":47950.7}",
+      "outputResult": "{\"whale_signal_strength\":0.85}"
+    },
+    {
+      "id": "audit-1783552618516-aswc",
+      "timestamp": "2026-07-08T23:16:58.516Z",
+      "symbol": "EUR/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.93 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.2x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":24059,\"asksVolume\":77705,\"tickVolume\":10937,\"avgVolume\":47157.8}",
+      "outputResult": "{\"whale_signal_strength\":0.93}"
+    },
+    {
+      "id": "audit-1783552616515-g99v",
+      "timestamp": "2026-07-08T23:16:56.515Z",
+      "symbol": "GBP/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.89 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":39307,\"asksVolume\":26088,\"tickVolume\":125343,\"avgVolume\":44765.45}",
+      "outputResult": "{\"whale_signal_strength\":0.89}"
+    },
+    {
+      "id": "audit-1783552615515-evpn",
+      "timestamp": "2026-07-08T23:16:55.515Z",
+      "symbol": "GBP/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.97 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.4x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":19194,\"asksVolume\":66020,\"tickVolume\":25037,\"avgVolume\":46848.5}",
+      "outputResult": "{\"whale_signal_strength\":0.97}"
+    },
+    {
+      "id": "audit-1783552614513-4rlb",
+      "timestamp": "2026-07-08T23:16:54.513Z",
+      "symbol": "EUR/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.87 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.4x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":18291,\"asksVolume\":62909,\"tickVolume\":27247,\"avgVolume\":52613.55}",
+      "outputResult": "{\"whale_signal_strength\":0.87}"
+    },
+    {
+      "id": "audit-1783552613513-gbon",
+      "timestamp": "2026-07-08T23:16:53.513Z",
+      "symbol": "EUR/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.75 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":61012,\"asksVolume\":49049,\"tickVolume\":148267,\"avgVolume\":52952.7}",
+      "outputResult": "{\"whale_signal_strength\":0.75}"
+    },
+    {
+      "id": "audit-1783552612512-g5dh",
+      "timestamp": "2026-07-08T23:16:52.512Z",
+      "symbol": "EUR/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.88 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.1x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":64918,\"asksVolume\":21027,\"tickVolume\":15694,\"avgVolume\":53666.5}",
+      "outputResult": "{\"whale_signal_strength\":0.88}"
+    },
+    {
+      "id": "audit-1783552611511-8hl1",
+      "timestamp": "2026-07-08T23:16:51.511Z",
+      "symbol": "EUR/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.77 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":20135,\"asksVolume\":79557,\"tickVolume\":148469,\"avgVolume\":53024.7}",
+      "outputResult": "{\"whale_signal_strength\":0.77}"
+    },
+    {
+      "id": "audit-1783552609508-wqdc",
+      "timestamp": "2026-07-08T23:16:49.508Z",
+      "symbol": "EUR/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.95 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 4.0x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":19146,\"asksVolume\":77477,\"tickVolume\":23364,\"avgVolume\":50814.4}",
+      "outputResult": "{\"whale_signal_strength\":0.95}"
+    },
+    {
+      "id": "audit-1783552607506-a788",
+      "timestamp": "2026-07-08T23:16:47.506Z",
+      "symbol": "EUR/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.71 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":43070,\"asksVolume\":53501,\"tickVolume\":144646,\"avgVolume\":51659.3}",
+      "outputResult": "{\"whale_signal_strength\":0.71}"
+    },
+    {
+      "id": "audit-1783552603505-v19u",
+      "timestamp": "2026-07-08T23:16:43.505Z",
+      "symbol": "BTC/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.87 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.4x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":20408,\"asksVolume\":70330,\"tickVolume\":13262,\"avgVolume\":42805.9}",
+      "outputResult": "{\"whale_signal_strength\":0.87}"
+    },
+    {
+      "id": "audit-1783552602504-swy7",
+      "timestamp": "2026-07-08T23:16:42.504Z",
+      "symbol": "EUR/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.81 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":17821,\"asksVolume\":62133,\"tickVolume\":25404,\"avgVolume\":50895.8}",
+      "outputResult": "{\"whale_signal_strength\":0.81}"
+    },
+    {
+      "id": "audit-1783552600502-9dpg",
+      "timestamp": "2026-07-08T23:16:40.502Z",
+      "symbol": "GBP/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.97 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.1x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":71081,\"asksVolume\":22859,\"tickVolume\":25874,\"avgVolume\":44357.8}",
+      "outputResult": "{\"whale_signal_strength\":0.97}"
+    },
+    {
+      "id": "audit-1783552599504-9101",
+      "timestamp": "2026-07-08T23:16:39.504Z",
+      "symbol": "GBP/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.74 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.3x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":61528,\"asksVolume\":18717,\"tickVolume\":39520,\"avgVolume\":47503.5}",
+      "outputResult": "{\"whale_signal_strength\":0.74}"
+    },
+    {
+      "id": "audit-1783552599502-fr94",
+      "timestamp": "2026-07-08T23:16:39.502Z",
+      "symbol": "EUR/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.95 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 4.2x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":76168,\"asksVolume\":18208,\"tickVolume\":35503,\"avgVolume\":52169.25}",
+      "outputResult": "{\"whale_signal_strength\":0.95}"
+    },
+    {
+      "id": "audit-1783552598500-90q2",
+      "timestamp": "2026-07-08T23:16:38.500Z",
+      "symbol": "GBP/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.72 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.4x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":62955,\"asksVolume\":18405,\"tickVolume\":34768,\"avgVolume\":47167.75}",
+      "outputResult": "{\"whale_signal_strength\":0.72}"
+    },
+    {
+      "id": "audit-1783552597500-1gep",
+      "timestamp": "2026-07-08T23:16:37.500Z",
+      "symbol": "BTC/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.94 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":49787,\"asksVolume\":30002,\"tickVolume\":115756,\"avgVolume\":41341.45}",
+      "outputResult": "{\"whale_signal_strength\":0.94}"
+    },
+    {
+      "id": "audit-1783552596499-vmjm",
+      "timestamp": "2026-07-08T23:16:36.499Z",
+      "symbol": "BTC/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.88 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":57525,\"asksVolume\":71246,\"tickVolume\":119708,\"avgVolume\":42752.9}",
+      "outputResult": "{\"whale_signal_strength\":0.88}"
+    },
+    {
+      "id": "audit-1783552593493-v08y",
+      "timestamp": "2026-07-08T23:16:33.493Z",
+      "symbol": "BTC/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.8 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.6x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":60319,\"asksVolume\":16716,\"tickVolume\":32461,\"avgVolume\":41399.2}",
+      "outputResult": "{\"whale_signal_strength\":0.8}"
+    },
+    {
+      "id": "audit-1783552588477-6pnq",
+      "timestamp": "2026-07-08T23:16:28.477Z",
+      "symbol": "GBP/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.93 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":40743,\"asksVolume\":30234,\"tickVolume\":125045,\"avgVolume\":44659.25}",
+      "outputResult": "{\"whale_signal_strength\":0.93}"
+    },
+    {
+      "id": "audit-1783552587475-ogkt",
+      "timestamp": "2026-07-08T23:16:27.475Z",
+      "symbol": "GBP/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.75 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":56077,\"asksVolume\":33218,\"tickVolume\":127079,\"avgVolume\":45385.45}",
+      "outputResult": "{\"whale_signal_strength\":0.75}"
+    },
+    {
+      "id": "audit-1783552582471-v2iy",
+      "timestamp": "2026-07-08T23:16:22.471Z",
+      "symbol": "BTC/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.98 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":48528,\"asksVolume\":77692,\"tickVolume\":119516,\"avgVolume\":42684.55}",
+      "outputResult": "{\"whale_signal_strength\":0.98}"
+    },
+    {
+      "id": "audit-1783552581472-lezq",
+      "timestamp": "2026-07-08T23:16:21.472Z",
+      "symbol": "BTC/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.88 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":74932,\"asksVolume\":19735,\"tickVolume\":128857,\"avgVolume\":46020.6}",
+      "outputResult": "{\"whale_signal_strength\":0.88}"
+    },
+    {
+      "id": "audit-1783552581471-zte5",
+      "timestamp": "2026-07-08T23:16:21.471Z",
+      "symbol": "GBP/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.82 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":46246,\"asksVolume\":56518,\"tickVolume\":138867,\"avgVolume\":49595.55}",
+      "outputResult": "{\"whale_signal_strength\":0.82}"
+    },
+    {
+      "id": "audit-1783552580470-45zw",
+      "timestamp": "2026-07-08T23:16:20.470Z",
+      "symbol": "EUR/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.86 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.1x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":22376,\"asksVolume\":68881,\"tickVolume\":22287,\"avgVolume\":43776.35}",
+      "outputResult": "{\"whale_signal_strength\":0.86}"
+    },
+    {
+      "id": "audit-1783552579470-75su",
+      "timestamp": "2026-07-08T23:16:19.470Z",
+      "symbol": "BTC/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.77 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":26521,\"asksVolume\":69739,\"tickVolume\":137255,\"avgVolume\":49019.65}",
+      "outputResult": "{\"whale_signal_strength\":0.77}"
+    },
+    {
+      "id": "audit-1783552579469-ceq8",
+      "timestamp": "2026-07-08T23:16:19.469Z",
+      "symbol": "GBP/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.74 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":26226,\"asksVolume\":41699,\"tickVolume\":130027,\"avgVolume\":46438.4}",
+      "outputResult": "{\"whale_signal_strength\":0.74}"
+    },
+    {
+      "id": "audit-1783552578469-a3g2",
+      "timestamp": "2026-07-08T23:16:18.469Z",
+      "symbol": "BTC/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.8 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":55266,\"asksVolume\":66761,\"tickVolume\":128716,\"avgVolume\":45970.2}",
+      "outputResult": "{\"whale_signal_strength\":0.8}"
+    },
+    {
+      "id": "audit-1783552575467-w9qh",
+      "timestamp": "2026-07-08T23:16:15.468Z",
+      "symbol": "EUR/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.94 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":54702,\"asksVolume\":69714,\"tickVolume\":127633,\"avgVolume\":45583.4}",
+      "outputResult": "{\"whale_signal_strength\":0.94}"
+    },
+    {
+      "id": "audit-1783552574467-ruaf",
+      "timestamp": "2026-07-08T23:16:14.467Z",
+      "symbol": "GBP/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.84 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.2x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":56776,\"asksVolume\":17757,\"tickVolume\":26941,\"avgVolume\":47262.65}",
+      "outputResult": "{\"whale_signal_strength\":0.84}"
+    },
+    {
+      "id": "audit-1783552574466-pz1o",
+      "timestamp": "2026-07-08T23:16:14.466Z",
+      "symbol": "EUR/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.94 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.6x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":17187,\"asksVolume\":62205,\"tickVolume\":27559,\"avgVolume\":45120.8}",
+      "outputResult": "{\"whale_signal_strength\":0.94}"
+    },
+    {
+      "id": "audit-1783552573469-p7wu",
+      "timestamp": "2026-07-08T23:16:13.469Z",
+      "symbol": "BTC/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.74 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 4.6x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":16349,\"asksVolume\":75790,\"tickVolume\":19737,\"avgVolume\":47543.05}",
+      "outputResult": "{\"whale_signal_strength\":0.74}"
+    },
+    {
+      "id": "audit-1783552573467-ngqd",
+      "timestamp": "2026-07-08T23:16:13.467Z",
+      "symbol": "EUR/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.74 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.6x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":63093,\"asksVolume\":17520,\"tickVolume\":32024,\"avgVolume\":42031.95}",
+      "outputResult": "{\"whale_signal_strength\":0.74}"
+    },
+    {
+      "id": "audit-1783552572464-e4hx",
+      "timestamp": "2026-07-08T23:16:12.464Z",
+      "symbol": "BTC/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.83 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 4.0x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":18714,\"asksVolume\":74893,\"tickVolume\":13139,\"avgVolume\":45547.7}",
+      "outputResult": "{\"whale_signal_strength\":0.83}"
+    },
+    {
+      "id": "audit-1783552571464-q47c",
+      "timestamp": "2026-07-08T23:16:11.464Z",
+      "symbol": "EUR/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.76 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":27726,\"asksVolume\":24728,\"tickVolume\":115741,\"avgVolume\":41336.35}",
+      "outputResult": "{\"whale_signal_strength\":0.76}"
+    },
+    {
+      "id": "audit-1783552570464-tmad",
+      "timestamp": "2026-07-08T23:16:10.464Z",
+      "symbol": "BTC/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.92 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 4.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":76777,\"asksVolume\":17073,\"tickVolume\":28144,\"avgVolume\":46249.05}",
+      "outputResult": "{\"whale_signal_strength\":0.92}"
+    },
+    {
+      "id": "audit-1783552570464-lx5w",
+      "timestamp": "2026-07-08T23:16:10.464Z",
+      "symbol": "EUR/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.74 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":33222,\"asksVolume\":54534,\"tickVolume\":116589,\"avgVolume\":41639.2}",
+      "outputResult": "{\"whale_signal_strength\":0.74}"
+    },
+    {
+      "id": "audit-1783552569464-oowi",
+      "timestamp": "2026-07-08T23:16:09.464Z",
+      "symbol": "GBP/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.86 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":54014,\"asksVolume\":67001,\"tickVolume\":136782,\"avgVolume\":48851}",
+      "outputResult": "{\"whale_signal_strength\":0.86}"
+    },
+    {
+      "id": "audit-1783552566463-1jiv",
+      "timestamp": "2026-07-08T23:16:06.463Z",
+      "symbol": "GBP/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.82 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":70067,\"asksVolume\":47350,\"tickVolume\":130571,\"avgVolume\":46632.8}",
+      "outputResult": "{\"whale_signal_strength\":0.82}"
+    },
+    {
+      "id": "audit-1783552566461-31lf",
+      "timestamp": "2026-07-08T23:16:06.461Z",
+      "symbol": "EUR/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.98 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":29951,\"asksVolume\":58772,\"tickVolume\":109996,\"avgVolume\":39284.6}",
+      "outputResult": "{\"whale_signal_strength\":0.98}"
+    },
+    {
+      "id": "audit-1783552565461-5i8x",
+      "timestamp": "2026-07-08T23:16:05.461Z",
+      "symbol": "EUR/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.82 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":17477,\"asksVolume\":69498,\"tickVolume\":115231,\"avgVolume\":41154.25}",
+      "outputResult": "{\"whale_signal_strength\":0.82}"
+    },
+    {
+      "id": "audit-1783552561459-9o1p",
+      "timestamp": "2026-07-08T23:16:01.459Z",
+      "symbol": "GBP/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.99 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.1x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":19554,\"asksVolume\":59733,\"tickVolume\":16682,\"avgVolume\":48882.7}",
+      "outputResult": "{\"whale_signal_strength\":0.99}"
+    },
+    {
+      "id": "audit-1783552560458-ft36",
+      "timestamp": "2026-07-08T23:16:00.458Z",
+      "symbol": "GBP/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.86 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.8x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":72588,\"asksVolume\":19136,\"tickVolume\":19258,\"avgVolume\":50330.2}",
+      "outputResult": "{\"whale_signal_strength\":0.86}"
+    },
+    {
+      "id": "audit-1783552559454-qg89",
+      "timestamp": "2026-07-08T23:15:59.454Z",
+      "symbol": "EUR/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.91 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":16006,\"asksVolume\":72613,\"tickVolume\":125626,\"avgVolume\":44866.6}",
+      "outputResult": "{\"whale_signal_strength\":0.91}"
+    },
+    {
+      "id": "audit-1783552555448-fj60",
+      "timestamp": "2026-07-08T23:15:55.448Z",
+      "symbol": "EUR/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.84 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":27402,\"asksVolume\":64506,\"tickVolume\":139807,\"avgVolume\":49931.35}",
+      "outputResult": "{\"whale_signal_strength\":0.84}"
+    },
+    {
+      "id": "audit-1783552551446-jvij",
+      "timestamp": "2026-07-08T23:15:51.446Z",
+      "symbol": "EUR/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.9 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":56895,\"asksVolume\":46005,\"tickVolume\":137751,\"avgVolume\":49196.85}",
+      "outputResult": "{\"whale_signal_strength\":0.9}"
+    },
+    {
+      "id": "audit-1783552550445-hu28",
+      "timestamp": "2026-07-08T23:15:50.445Z",
+      "symbol": "BTC/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.71 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.9x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":15032,\"asksVolume\":58305,\"tickVolume\":28269,\"avgVolume\":44206.2}",
+      "outputResult": "{\"whale_signal_strength\":0.71}"
+    },
+    {
+      "id": "audit-1783552549445-vk4v",
+      "timestamp": "2026-07-08T23:15:49.445Z",
+      "symbol": "BTC/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.81 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.7x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":57673,\"asksVolume\":15579,\"tickVolume\":20435,\"avgVolume\":42712.85}",
+      "outputResult": "{\"whale_signal_strength\":0.81}"
+    },
+    {
+      "id": "audit-1783552547444-8k52",
+      "timestamp": "2026-07-08T23:15:47.444Z",
+      "symbol": "BTC/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.82 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":58337,\"asksVolume\":67252,\"tickVolume\":126111,\"avgVolume\":45039.75}",
+      "outputResult": "{\"whale_signal_strength\":0.82}"
+    },
+    {
+      "id": "audit-1783552547443-588g",
+      "timestamp": "2026-07-08T23:15:47.443Z",
+      "symbol": "GBP/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.85 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.7x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":72749,\"asksVolume\":19888,\"tickVolume\":27532,\"avgVolume\":50482.95}",
+      "outputResult": "{\"whale_signal_strength\":0.85}"
+    },
+    {
+      "id": "audit-1783552545443-p7yk",
+      "timestamp": "2026-07-08T23:15:45.443Z",
+      "symbol": "BTC/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.98 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":79339,\"asksVolume\":68071,\"tickVolume\":128707,\"avgVolume\":45966.8}",
+      "outputResult": "{\"whale_signal_strength\":0.98}"
+    },
+    {
+      "id": "audit-1783552545441-vbtw",
+      "timestamp": "2026-07-08T23:15:45.441Z",
+      "symbol": "GBP/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.72 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.9x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":15242,\"asksVolume\":59769,\"tickVolume\":33906,\"avgVolume\":47467.2}",
+      "outputResult": "{\"whale_signal_strength\":0.72}"
+    },
+    {
+      "id": "audit-1783552540437-v62x",
+      "timestamp": "2026-07-08T23:15:40.437Z",
+      "symbol": "GBP/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "1 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":79648,\"asksVolume\":28271,\"tickVolume\":134855,\"avgVolume\":48162.55}",
+      "outputResult": "{\"whale_signal_strength\":1}"
+    },
+    {
+      "id": "audit-1783552539435-x88p",
+      "timestamp": "2026-07-08T23:15:39.435Z",
+      "symbol": "EUR/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.79 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":20082,\"asksVolume\":71049,\"tickVolume\":21876,\"avgVolume\":51688.35}",
+      "outputResult": "{\"whale_signal_strength\":0.79}"
+    },
+    {
+      "id": "audit-1783552536433-7nqx",
+      "timestamp": "2026-07-08T23:15:36.433Z",
+      "symbol": "EUR/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.76 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.1x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":22617,\"asksVolume\":70922,\"tickVolume\":12650,\"avgVolume\":45505.65}",
+      "outputResult": "{\"whale_signal_strength\":0.76}"
+    },
+    {
+      "id": "audit-1783552530430-jm21",
+      "timestamp": "2026-07-08T23:15:30.430Z",
+      "symbol": "BTC/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.72 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.1x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":72530,\"asksVolume\":23516,\"tickVolume\":28148,\"avgVolume\":42249.8}",
+      "outputResult": "{\"whale_signal_strength\":0.72}"
+    },
+    {
+      "id": "audit-1783552530429-m756",
+      "timestamp": "2026-07-08T23:15:30.429Z",
+      "symbol": "EUR/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.93 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":41935,\"asksVolume\":30057,\"tickVolume\":137284,\"avgVolume\":49030}",
+      "outputResult": "{\"whale_signal_strength\":0.93}"
+    },
+    {
+      "id": "audit-1783552528427-5bnt",
+      "timestamp": "2026-07-08T23:15:28.427Z",
+      "symbol": "GBP/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.91 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":48665,\"asksVolume\":23800,\"tickVolume\":136574,\"avgVolume\":48776.55}",
+      "outputResult": "{\"whale_signal_strength\":0.91}"
+    },
+    {
+      "id": "audit-1783552525424-hd8q",
+      "timestamp": "2026-07-08T23:15:25.424Z",
+      "symbol": "EUR/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.88 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.7x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":18368,\"asksVolume\":68457,\"tickVolume\":35554,\"avgVolume\":48753.15}",
+      "outputResult": "{\"whale_signal_strength\":0.88}"
+    },
+    {
+      "id": "audit-1783552524424-kw7j",
+      "timestamp": "2026-07-08T23:15:24.424Z",
+      "symbol": "EUR/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.74 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.7x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":20952,\"asksVolume\":77957,\"tickVolume\":37451,\"avgVolume\":51069.4}",
+      "outputResult": "{\"whale_signal_strength\":0.74}"
+    },
+    {
+      "id": "audit-1783552523425-16oq",
+      "timestamp": "2026-07-08T23:15:23.425Z",
+      "symbol": "GBP/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.99 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.7x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":17435,\"asksVolume\":64907,\"tickVolume\":21075,\"avgVolume\":52313.7}",
+      "outputResult": "{\"whale_signal_strength\":0.99}"
+    },
+    {
+      "id": "audit-1783552521424-gj9e",
+      "timestamp": "2026-07-08T23:15:21.424Z",
+      "symbol": "GBP/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.99 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":40036,\"asksVolume\":77084,\"tickVolume\":155944,\"avgVolume\":55694.6}",
+      "outputResult": "{\"whale_signal_strength\":0.99}"
+    },
+    {
+      "id": "audit-1783552517420-be6r",
+      "timestamp": "2026-07-08T23:15:17.420Z",
+      "symbol": "BTC/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.98 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.2x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":78493,\"asksVolume\":24176,\"tickVolume\":10608,\"avgVolume\":44895.35}",
+      "outputResult": "{\"whale_signal_strength\":0.98}"
+    },
+    {
+      "id": "audit-1783552516420-7b4r",
+      "timestamp": "2026-07-08T23:15:16.420Z",
+      "symbol": "BTC/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.83 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":60041,\"asksVolume\":24308,\"tickVolume\":126229,\"avgVolume\":45082.05}",
+      "outputResult": "{\"whale_signal_strength\":0.83}"
+    },
+    {
+      "id": "audit-1783552514417-hnlx",
+      "timestamp": "2026-07-08T23:15:14.417Z",
+      "symbol": "EUR/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.93 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":50080,\"asksVolume\":60034,\"tickVolume\":136260,\"avgVolume\":48664.55}",
+      "outputResult": "{\"whale_signal_strength\":0.93}"
+    },
+    {
+      "id": "audit-1783552511416-1wd4",
+      "timestamp": "2026-07-08T23:15:11.416Z",
+      "symbol": "GBP/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.73 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":25562,\"asksVolume\":52125,\"tickVolume\":133614,\"avgVolume\":47719.45}",
+      "outputResult": "{\"whale_signal_strength\":0.73}"
+    },
+    {
+      "id": "audit-1783552506412-6tbo",
+      "timestamp": "2026-07-08T23:15:06.412Z",
+      "symbol": "BTC/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.7 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.2x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":61081,\"asksVolume\":18903,\"tickVolume\":15378,\"avgVolume\":49186.05}",
+      "outputResult": "{\"whale_signal_strength\":0.7}"
+    },
+    {
+      "id": "audit-1783552506411-ize2",
+      "timestamp": "2026-07-08T23:15:06.411Z",
+      "symbol": "EUR/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.84 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 4.8x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":77265,\"asksVolume\":16028,\"tickVolume\":24527,\"avgVolume\":44547.95}",
+      "outputResult": "{\"whale_signal_strength\":0.84}"
+    },
+    {
+      "id": "audit-1783552505410-39ov",
+      "timestamp": "2026-07-08T23:15:05.410Z",
+      "symbol": "GBP/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.72 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":41213,\"asksVolume\":46768,\"tickVolume\":143255,\"avgVolume\":51162.7}",
+      "outputResult": "{\"whale_signal_strength\":0.72}"
+    },
+    {
+      "id": "audit-1783552502407-czlx",
+      "timestamp": "2026-07-08T23:15:02.407Z",
+      "symbol": "EUR/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "1 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":55263,\"asksVolume\":36757,\"tickVolume\":112806,\"avgVolume\":40288}",
+      "outputResult": "{\"whale_signal_strength\":1}"
+    },
+    {
+      "id": "audit-1783552501407-odpu",
+      "timestamp": "2026-07-08T23:15:01.407Z",
+      "symbol": "GBP/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.74 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":20595,\"asksVolume\":51215,\"tickVolume\":126388,\"avgVolume\":45138.8}",
+      "outputResult": "{\"whale_signal_strength\":0.74}"
+    },
+    {
+      "id": "audit-1783552499404-dnxt",
+      "timestamp": "2026-07-08T23:14:59.404Z",
+      "symbol": "BTC/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.94 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.2x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":20091,\"asksVolume\":63445,\"tickVolume\":13349,\"avgVolume\":46654.3}",
+      "outputResult": "{\"whale_signal_strength\":0.94}"
+    },
+    {
+      "id": "audit-1783552498404-22bu",
+      "timestamp": "2026-07-08T23:14:58.404Z",
+      "symbol": "GBP/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.9 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":52400,\"asksVolume\":38289,\"tickVolume\":124744,\"avgVolume\":44551.75}",
+      "outputResult": "{\"whale_signal_strength\":0.9}"
+    },
+    {
+      "id": "audit-1783552493401-z6rg",
+      "timestamp": "2026-07-08T23:14:53.401Z",
+      "symbol": "GBP/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.89 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":53983,\"asksVolume\":15638,\"tickVolume\":31822,\"avgVolume\":51260.65}",
+      "outputResult": "{\"whale_signal_strength\":0.89}"
+    },
+    {
+      "id": "audit-1783552491402-88pz",
+      "timestamp": "2026-07-08T23:14:51.402Z",
+      "symbol": "BTC/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.91 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":32572,\"asksVolume\":64225,\"tickVolume\":139696,\"avgVolume\":49891.6}",
+      "outputResult": "{\"whale_signal_strength\":0.91}"
+    },
+    {
+      "id": "audit-1783552491401-i1uh",
+      "timestamp": "2026-07-08T23:14:51.401Z",
+      "symbol": "EUR/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.76 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.0x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":62357,\"asksVolume\":20727,\"tickVolume\":12707,\"avgVolume\":41139.9}",
+      "outputResult": "{\"whale_signal_strength\":0.76}"
+    },
+    {
+      "id": "audit-1783552489398-t3vp",
+      "timestamp": "2026-07-08T23:14:49.398Z",
+      "symbol": "BTC/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.98 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.2x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":49833,\"asksVolume\":15655,\"tickVolume\":15663,\"avgVolume\":49196.5}",
+      "outputResult": "{\"whale_signal_strength\":0.98}"
+    },
+    {
+      "id": "audit-1783552488398-dpe1",
+      "timestamp": "2026-07-08T23:14:48.398Z",
+      "symbol": "EUR/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.78 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":27034,\"asksVolume\":77757,\"tickVolume\":129760,\"avgVolume\":46343.15}",
+      "outputResult": "{\"whale_signal_strength\":0.78}"
+    },
+    {
+      "id": "audit-1783552486396-4kyx",
+      "timestamp": "2026-07-08T23:14:46.396Z",
+      "symbol": "EUR/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.97 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.1x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":74459,\"asksVolume\":24183,\"tickVolume\":12291,\"avgVolume\":48415.2}",
+      "outputResult": "{\"whale_signal_strength\":0.97}"
+    },
+    {
+      "id": "audit-1783552484394-clco",
+      "timestamp": "2026-07-08T23:14:44.394Z",
+      "symbol": "BTC/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.75 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":32260,\"asksVolume\":26307,\"tickVolume\":144443,\"avgVolume\":51586.9}",
+      "outputResult": "{\"whale_signal_strength\":0.75}"
+    },
+    {
+      "id": "audit-1783552479392-bu6t",
+      "timestamp": "2026-07-08T23:14:39.392Z",
+      "symbol": "BTC/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.99 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":18722,\"asksVolume\":32973,\"tickVolume\":144824,\"avgVolume\":51723.1}",
+      "outputResult": "{\"whale_signal_strength\":0.99}"
+    },
+    {
+      "id": "audit-1783552477390-08z0",
+      "timestamp": "2026-07-08T23:14:37.390Z",
+      "symbol": "EUR/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.9 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.4x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":22921,\"asksVolume\":77732,\"tickVolume\":14400,\"avgVolume\":48648.45}",
+      "outputResult": "{\"whale_signal_strength\":0.9}"
+    },
+    {
+      "id": "audit-1783552476389-m8eb",
+      "timestamp": "2026-07-08T23:14:36.389Z",
+      "symbol": "EUR/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.91 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 4.8x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":72199,\"asksVolume\":15021,\"tickVolume\":32753,\"avgVolume\":51031.3}",
+      "outputResult": "{\"whale_signal_strength\":0.91}"
+    },
+    {
+      "id": "audit-1783552473390-z5hm",
+      "timestamp": "2026-07-08T23:14:33.390Z",
+      "symbol": "BTC/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.97 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.6x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":78549,\"asksVolume\":22103,\"tickVolume\":30358,\"avgVolume\":48926.45}",
+      "outputResult": "{\"whale_signal_strength\":0.97}"
+    },
+    {
+      "id": "audit-1783552473387-0bvs",
+      "timestamp": "2026-07-08T23:14:33.387Z",
+      "symbol": "GBP/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.76 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":76607,\"asksVolume\":52984,\"tickVolume\":133885,\"avgVolume\":47816.3}",
+      "outputResult": "{\"whale_signal_strength\":0.76}"
+    },
+    {
+      "id": "audit-1783552472389-yf8r",
+      "timestamp": "2026-07-08T23:14:32.389Z",
+      "symbol": "BTC/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.74 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":20193,\"asksVolume\":25397,\"tickVolume\":142457,\"avgVolume\":50877.75}",
+      "outputResult": "{\"whale_signal_strength\":0.74}"
+    },
+    {
+      "id": "audit-1783552472386-0bns",
+      "timestamp": "2026-07-08T23:14:32.386Z",
+      "symbol": "GBP/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.86 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 4.6x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":17465,\"asksVolume\":79632,\"tickVolume\":30602,\"avgVolume\":50187}",
+      "outputResult": "{\"whale_signal_strength\":0.86}"
+    },
+    {
+      "id": "audit-1783552471389-yvzv",
+      "timestamp": "2026-07-08T23:14:31.389Z",
+      "symbol": "GBP/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.89 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":35225,\"asksVolume\":27033,\"tickVolume\":141325,\"avgVolume\":50473.45}",
+      "outputResult": "{\"whale_signal_strength\":0.89}"
+    },
+    {
+      "id": "audit-1783552471385-ndz8",
+      "timestamp": "2026-07-08T23:14:31.385Z",
+      "symbol": "EUR/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.85 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":78278,\"asksVolume\":21109,\"tickVolume\":147717,\"avgVolume\":52756.15}",
+      "outputResult": "{\"whale_signal_strength\":0.85}"
+    },
+    {
+      "id": "audit-1783552469384-z00e",
+      "timestamp": "2026-07-08T23:14:29.384Z",
+      "symbol": "BTC/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.81 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":55722,\"asksVolume\":34347,\"tickVolume\":143665,\"avgVolume\":51309.05}",
+      "outputResult": "{\"whale_signal_strength\":0.81}"
+    },
+    {
+      "id": "audit-1783552467382-6z16",
+      "timestamp": "2026-07-08T23:14:27.382Z",
+      "symbol": "GBP/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.74 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":76258,\"asksVolume\":16004,\"tickVolume\":145106,\"avgVolume\":51823.7}",
+      "outputResult": "{\"whale_signal_strength\":0.74}"
+    },
+    {
+      "id": "audit-1783552464379-ou33",
+      "timestamp": "2026-07-08T23:14:24.379Z",
+      "symbol": "BTC/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.93 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.1x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":64890,\"asksVolume\":20930,\"tickVolume\":38726,\"avgVolume\":50643.55}",
+      "outputResult": "{\"whale_signal_strength\":0.93}"
+    },
+    {
+      "id": "audit-1783552463378-iou9",
+      "timestamp": "2026-07-08T23:14:23.378Z",
+      "symbol": "BTC/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.88 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.7x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":18587,\"asksVolume\":69155,\"tickVolume\":39695,\"avgVolume\":50410}",
+      "outputResult": "{\"whale_signal_strength\":0.88}"
+    },
+    {
+      "id": "audit-1783552462377-tboi",
+      "timestamp": "2026-07-08T23:14:22.377Z",
+      "symbol": "GBP/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.85 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.4x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":20813,\"asksVolume\":70926,\"tickVolume\":31286,\"avgVolume\":54659.75}",
+      "outputResult": "{\"whale_signal_strength\":0.85}"
+    },
+    {
+      "id": "audit-1783552461376-ewaf",
+      "timestamp": "2026-07-08T23:14:21.376Z",
+      "symbol": "EUR/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.76 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":48187,\"asksVolume\":26038,\"tickVolume\":128367,\"avgVolume\":45845.4}",
+      "outputResult": "{\"whale_signal_strength\":0.76}"
+    },
+    {
+      "id": "audit-1783552460376-k78c",
+      "timestamp": "2026-07-08T23:14:20.376Z",
+      "symbol": "GBP/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "1 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":15985,\"asksVolume\":30808,\"tickVolume\":156192,\"avgVolume\":55783.2}",
+      "outputResult": "{\"whale_signal_strength\":1}"
+    },
+    {
+      "id": "audit-1783552458373-w1vj",
+      "timestamp": "2026-07-08T23:14:18.373Z",
+      "symbol": "GBP/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.93 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.2x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":75613,\"asksVolume\":23645,\"tickVolume\":22482,\"avgVolume\":54854.85}",
+      "outputResult": "{\"whale_signal_strength\":0.93}"
+    },
+    {
+      "id": "audit-1783552457375-d259",
+      "timestamp": "2026-07-08T23:14:17.375Z",
+      "symbol": "GBP/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.83 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":74137,\"asksVolume\":23051,\"tickVolume\":159720,\"avgVolume\":57042.95}",
+      "outputResult": "{\"whale_signal_strength\":0.83}"
+    },
+    {
+      "id": "audit-1783552457372-k4mu",
+      "timestamp": "2026-07-08T23:14:17.372Z",
+      "symbol": "EUR/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.95 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.6x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":21657,\"asksVolume\":77921,\"tickVolume\":16927,\"avgVolume\":48518.05}",
+      "outputResult": "{\"whale_signal_strength\":0.95}"
+    },
+    {
+      "id": "audit-1783552456371-wriv",
+      "timestamp": "2026-07-08T23:14:16.371Z",
+      "symbol": "EUR/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.8 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.9x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":73173,\"asksVolume\":18761,\"tickVolume\":12402,\"avgVolume\":46577.5}",
+      "outputResult": "{\"whale_signal_strength\":0.8}"
+    },
+    {
+      "id": "audit-1783552455372-ybgj",
+      "timestamp": "2026-07-08T23:14:15.372Z",
+      "symbol": "BTC/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.81 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":40024,\"asksVolume\":38613,\"tickVolume\":125787,\"avgVolume\":44924.05}",
+      "outputResult": "{\"whale_signal_strength\":0.81}"
+    },
+    {
+      "id": "audit-1783552447370-5lf6",
+      "timestamp": "2026-07-08T23:14:07.370Z",
+      "symbol": "BTC/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.98 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":73752,\"asksVolume\":20104,\"tickVolume\":112746,\"avgVolume\":40266.75}",
+      "outputResult": "{\"whale_signal_strength\":0.98}"
+    },
+    {
+      "id": "audit-1783552447368-kjk2",
+      "timestamp": "2026-07-08T23:14:07.368Z",
+      "symbol": "GBP/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.72 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":48646,\"asksVolume\":35121,\"tickVolume\":138899,\"avgVolume\":49606.8}",
+      "outputResult": "{\"whale_signal_strength\":0.72}"
+    },
+    {
+      "id": "audit-1783552446367-h27x",
+      "timestamp": "2026-07-08T23:14:06.367Z",
+      "symbol": "GBP/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.7 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 5.2x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":15046,\"asksVolume\":77741,\"tickVolume\":32208,\"avgVolume\":49202}",
+      "outputResult": "{\"whale_signal_strength\":0.7}"
+    },
+    {
+      "id": "audit-1783552442364-zaf8",
+      "timestamp": "2026-07-08T23:14:02.364Z",
+      "symbol": "EUR/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.81 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.1x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":69981,\"asksVolume\":22351,\"tickVolume\":18917,\"avgVolume\":45318.55}",
+      "outputResult": "{\"whale_signal_strength\":0.81}"
+    },
+    {
+      "id": "audit-1783552440362-z8a0",
+      "timestamp": "2026-07-08T23:14:00.362Z",
+      "symbol": "BTC/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.93 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":50021,\"asksVolume\":72367,\"tickVolume\":119705,\"avgVolume\":42752.05}",
+      "outputResult": "{\"whale_signal_strength\":0.93}"
+    },
+    {
+      "id": "audit-1783552439361-h1xj",
+      "timestamp": "2026-07-08T23:13:59.361Z",
+      "symbol": "EUR/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.84 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":53397,\"asksVolume\":37454,\"tickVolume\":118189,\"avgVolume\":42210.45}",
+      "outputResult": "{\"whale_signal_strength\":0.84}"
+    },
+    {
+      "id": "audit-1783552437360-mqom",
+      "timestamp": "2026-07-08T23:13:57.360Z",
+      "symbol": "GBP/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.95 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.1x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":24918,\"asksVolume\":78337,\"tickVolume\":32751,\"avgVolume\":46731.7}",
+      "outputResult": "{\"whale_signal_strength\":0.95}"
+    },
+    {
+      "id": "audit-1783552436360-6gm1",
+      "timestamp": "2026-07-08T23:13:56.360Z",
+      "symbol": "BTC/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.83 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":27170,\"asksVolume\":50835,\"tickVolume\":120875,\"avgVolume\":43169.95}",
+      "outputResult": "{\"whale_signal_strength\":0.83}"
+    },
+    {
+      "id": "audit-1783552434359-swnl",
+      "timestamp": "2026-07-08T23:13:54.359Z",
+      "symbol": "BTC/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.84 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":16258,\"asksVolume\":20710,\"tickVolume\":125653,\"avgVolume\":44876.3}",
+      "outputResult": "{\"whale_signal_strength\":0.84}"
+    },
+    {
+      "id": "audit-1783552432356-uvnx",
+      "timestamp": "2026-07-08T23:13:52.356Z",
+      "symbol": "EUR/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.93 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 4.1x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":18235,\"asksVolume\":74273,\"tickVolume\":24505,\"avgVolume\":38199.2}",
+      "outputResult": "{\"whale_signal_strength\":0.93}"
+    },
+    {
+      "id": "audit-1783552431355-g054",
+      "timestamp": "2026-07-08T23:13:51.355Z",
+      "symbol": "EUR/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.91 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":35326,\"asksVolume\":62066,\"tickVolume\":108604,\"avgVolume\":38787.3}",
+      "outputResult": "{\"whale_signal_strength\":0.91}"
+    },
+    {
+      "id": "audit-1783552427353-eoi3",
+      "timestamp": "2026-07-08T23:13:47.353Z",
+      "symbol": "BTC/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.86 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.2x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":21995,\"asksVolume\":71233,\"tickVolume\":39561,\"avgVolume\":45679.5}",
+      "outputResult": "{\"whale_signal_strength\":0.86}"
+    },
+    {
+      "id": "audit-1783552425352-8w8p",
+      "timestamp": "2026-07-08T23:13:45.352Z",
+      "symbol": "GBP/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.92 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.3x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":58063,\"asksVolume\":17590,\"tickVolume\":18643,\"avgVolume\":51289.1}",
+      "outputResult": "{\"whale_signal_strength\":0.92}"
+    },
+    {
+      "id": "audit-1783552423351-rykk",
+      "timestamp": "2026-07-08T23:13:43.351Z",
+      "symbol": "GBP/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.86 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":21257,\"asksVolume\":34240,\"tickVolume\":146087,\"avgVolume\":52174}",
+      "outputResult": "{\"whale_signal_strength\":0.86}"
+    },
+    {
+      "id": "audit-1783552420356-8ysf",
+      "timestamp": "2026-07-08T23:13:40.356Z",
+      "symbol": "BTC/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.81 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":63371,\"asksVolume\":18049,\"tickVolume\":33712,\"avgVolume\":39450.5}",
+      "outputResult": "{\"whale_signal_strength\":0.81}"
+    },
+    {
+      "id": "audit-1783552420351-yhgq",
+      "timestamp": "2026-07-08T23:13:40.351Z",
+      "symbol": "EUR/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.83 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":70358,\"asksVolume\":19379,\"tickVolume\":121187,\"avgVolume\":43281.1}",
+      "outputResult": "{\"whale_signal_strength\":0.83}"
+    },
+    {
+      "id": "audit-1783552419350-q6dg",
+      "timestamp": "2026-07-08T23:13:39.350Z",
+      "symbol": "BTC/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.9 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.6x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":75813,\"asksVolume\":20898,\"tickVolume\":12078,\"avgVolume\":39725.2}",
+      "outputResult": "{\"whale_signal_strength\":0.9}"
+    },
+    {
+      "id": "audit-1783552418349-uil8",
+      "timestamp": "2026-07-08T23:13:38.349Z",
+      "symbol": "BTC/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.92 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 4.3x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":16819,\"asksVolume\":72595,\"tickVolume\":34463,\"avgVolume\":41292.95}",
+      "outputResult": "{\"whale_signal_strength\":0.92}"
+    },
+    {
+      "id": "audit-1783552413349-uexy",
+      "timestamp": "2026-07-08T23:13:33.349Z",
+      "symbol": "BTC/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.81 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":37644,\"asksVolume\":27265,\"tickVolume\":106942,\"avgVolume\":38193.6}",
+      "outputResult": "{\"whale_signal_strength\":0.81}"
+    },
+    {
+      "id": "audit-1783552413347-ip73",
+      "timestamp": "2026-07-08T23:13:33.347Z",
+      "symbol": "GBP/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.93 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":27410,\"asksVolume\":36263,\"tickVolume\":138855,\"avgVolume\":49591.15}",
+      "outputResult": "{\"whale_signal_strength\":0.93}"
+    },
+    {
+      "id": "audit-1783552413344-v6eo",
+      "timestamp": "2026-07-08T23:13:33.344Z",
+      "symbol": "EUR/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.88 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":33458,\"asksVolume\":18596,\"tickVolume\":135590,\"avgVolume\":48425.35}",
+      "outputResult": "{\"whale_signal_strength\":0.88}"
+    },
+    {
+      "id": "audit-1783552411345-zqyu",
+      "timestamp": "2026-07-08T23:13:31.345Z",
+      "symbol": "EUR/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.72 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":18331,\"asksVolume\":64636,\"tickVolume\":35219,\"avgVolume\":48095.5}",
+      "outputResult": "{\"whale_signal_strength\":0.72}"
+    },
+    {
+      "id": "audit-1783552410352-ee4b",
+      "timestamp": "2026-07-08T23:13:30.352Z",
+      "symbol": "GBP/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.82 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":59979,\"asksVolume\":23656,\"tickVolume\":142547,\"avgVolume\":50909.65}",
+      "outputResult": "{\"whale_signal_strength\":0.82}"
+    },
+    {
+      "id": "audit-1783552410344-dshc",
+      "timestamp": "2026-07-08T23:13:30.344Z",
+      "symbol": "EUR/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.97 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":47394,\"asksVolume\":74505,\"tickVolume\":132089,\"avgVolume\":47174.7}",
+      "outputResult": "{\"whale_signal_strength\":0.97}"
+    },
+    {
+      "id": "audit-1783552409343-pp0o",
+      "timestamp": "2026-07-08T23:13:29.343Z",
+      "symbol": "EUR/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.84 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":17296,\"asksVolume\":61837,\"tickVolume\":124949,\"avgVolume\":44624.95}",
+      "outputResult": "{\"whale_signal_strength\":0.84}"
+    },
+    {
+      "id": "audit-1783552408342-xodj",
+      "timestamp": "2026-07-08T23:13:28.342Z",
+      "symbol": "EUR/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.8 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.6x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":19169,\"asksVolume\":68169,\"tickVolume\":29355,\"avgVolume\":44929.75}",
+      "outputResult": "{\"whale_signal_strength\":0.8}"
+    },
+    {
+      "id": "audit-1783552407341-qz3u",
+      "timestamp": "2026-07-08T23:13:27.341Z",
+      "symbol": "GBP/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.96 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":31043,\"asksVolume\":49639,\"tickVolume\":143988,\"avgVolume\":51424.35}",
+      "outputResult": "{\"whale_signal_strength\":0.96}"
+    },
+    {
+      "id": "audit-1783552400338-0oij",
+      "timestamp": "2026-07-08T23:13:20.338Z",
+      "symbol": "BTC/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.75 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 4.3x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":72234,\"asksVolume\":16862,\"tickVolume\":18829,\"avgVolume\":45701.2}",
+      "outputResult": "{\"whale_signal_strength\":0.75}"
+    },
+    {
+      "id": "audit-1783552398336-97a9",
+      "timestamp": "2026-07-08T23:13:18.336Z",
+      "symbol": "EUR/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.8 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":69467,\"asksVolume\":70380,\"tickVolume\":122907,\"avgVolume\":43895.55}",
+      "outputResult": "{\"whale_signal_strength\":0.8}"
+    },
+    {
+      "id": "audit-1783552397338-crxt",
+      "timestamp": "2026-07-08T23:13:17.338Z",
+      "symbol": "GBP/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.75 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":63985,\"asksVolume\":75545,\"tickVolume\":142018,\"avgVolume\":50721}",
+      "outputResult": "{\"whale_signal_strength\":0.75}"
+    },
+    {
+      "id": "audit-1783552397336-mde9",
+      "timestamp": "2026-07-08T23:13:17.336Z",
+      "symbol": "EUR/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.95 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":78607,\"asksVolume\":71918,\"tickVolume\":126551,\"avgVolume\":45196.85}",
+      "outputResult": "{\"whale_signal_strength\":0.95}"
+    },
+    {
+      "id": "audit-1783552396335-qh1g",
+      "timestamp": "2026-07-08T23:13:16.335Z",
+      "symbol": "BTC/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.98 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":29822,\"asksVolume\":47924,\"tickVolume\":132333,\"avgVolume\":47261.8}",
+      "outputResult": "{\"whale_signal_strength\":0.98}"
+    },
+    {
+      "id": "audit-1783552395334-c42a",
+      "timestamp": "2026-07-08T23:13:15.334Z",
+      "symbol": "BTC/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.78 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.1x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":22290,\"asksVolume\":68567,\"tickVolume\":19690,\"avgVolume\":48982.8}",
+      "outputResult": "{\"whale_signal_strength\":0.78}"
+    },
+    {
+      "id": "audit-1783552394334-miy4",
+      "timestamp": "2026-07-08T23:13:14.334Z",
+      "symbol": "GBP/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.89 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.0x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":20187,\"asksVolume\":61191,\"tickVolume\":29185,\"avgVolume\":47332.8}",
+      "outputResult": "{\"whale_signal_strength\":0.89}"
+    },
+    {
+      "id": "audit-1783552393334-ml8v",
+      "timestamp": "2026-07-08T23:13:13.334Z",
+      "symbol": "EUR/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.92 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":41675,\"asksVolume\":75201,\"tickVolume\":135306,\"avgVolume\":48323.85}",
+      "outputResult": "{\"whale_signal_strength\":0.92}"
+    },
+    {
+      "id": "audit-1783552388332-zrbf",
+      "timestamp": "2026-07-08T23:13:08.332Z",
+      "symbol": "GBP/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.87 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":55767,\"asksVolume\":37093,\"tickVolume\":127600,\"avgVolume\":45571.5}",
+      "outputResult": "{\"whale_signal_strength\":0.87}"
+    },
+    {
+      "id": "audit-1783552387335-el2c",
+      "timestamp": "2026-07-08T23:13:07.335Z",
+      "symbol": "BTC/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.96 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":17825,\"asksVolume\":65116,\"tickVolume\":149987,\"avgVolume\":53567.1}",
+      "outputResult": "{\"whale_signal_strength\":0.96}"
+    },
+    {
+      "id": "audit-1783552387331-dbxb",
+      "timestamp": "2026-07-08T23:13:07.331Z",
+      "symbol": "EUR/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.77 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":39717,\"asksVolume\":30142,\"tickVolume\":157615,\"avgVolume\":56291.15}",
+      "outputResult": "{\"whale_signal_strength\":0.77}"
+    },
+    {
+      "id": "audit-1783552386331-g0in",
+      "timestamp": "2026-07-08T23:13:06.331Z",
+      "symbol": "GBP/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "1 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 4.9x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":15003,\"asksVolume\":73938,\"tickVolume\":9343,\"avgVolume\":46672.65}",
+      "outputResult": "{\"whale_signal_strength\":1}"
+    },
+    {
+      "id": "audit-1783552385330-cbao",
+      "timestamp": "2026-07-08T23:13:05.330Z",
+      "symbol": "EUR/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.89 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 4.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":17098,\"asksVolume\":77370,\"tickVolume\":12820,\"avgVolume\":54028.4}",
+      "outputResult": "{\"whale_signal_strength\":0.89}"
+    },
+    {
+      "id": "audit-1783552380326-j6v7",
+      "timestamp": "2026-07-08T23:13:00.326Z",
+      "symbol": "GBP/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.88 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":49416,\"asksVolume\":15367,\"tickVolume\":138132,\"avgVolume\":49333.05}",
+      "outputResult": "{\"whale_signal_strength\":0.88}"
+    },
+    {
+      "id": "audit-1783552378324-506r",
+      "timestamp": "2026-07-08T23:12:58.324Z",
+      "symbol": "EUR/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.97 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":48208,\"asksVolume\":16512,\"tickVolume\":138189,\"avgVolume\":49353.3}",
+      "outputResult": "{\"whale_signal_strength\":0.97}"
+    },
+    {
+      "id": "audit-1783552377328-gc59",
+      "timestamp": "2026-07-08T23:12:57.328Z",
+      "symbol": "BTC/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.9 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":73456,\"asksVolume\":49488,\"tickVolume\":166018,\"avgVolume\":59292.2}",
+      "outputResult": "{\"whale_signal_strength\":0.9}"
+    },
+    {
+      "id": "audit-1783552377326-6evr",
+      "timestamp": "2026-07-08T23:12:57.326Z",
+      "symbol": "GBP/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.76 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 4.4x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":16191,\"asksVolume\":70735,\"tickVolume\":34308,\"avgVolume\":49714.05}",
+      "outputResult": "{\"whale_signal_strength\":0.76}"
+    },
+    {
+      "id": "audit-1783552377323-atii",
+      "timestamp": "2026-07-08T23:12:57.323Z",
+      "symbol": "EUR/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.84 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 4.9x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":75369,\"asksVolume\":15379,\"tickVolume\":30542,\"avgVolume\":46699.6}",
+      "outputResult": "{\"whale_signal_strength\":0.84}"
+    },
+    {
+      "id": "audit-1783552374320-twaa",
+      "timestamp": "2026-07-08T23:12:54.320Z",
+      "symbol": "EUR/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.85 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":17670,\"asksVolume\":76564,\"tickVolume\":130077,\"avgVolume\":46456.1}",
+      "outputResult": "{\"whale_signal_strength\":0.85}"
+    },
+    {
+      "id": "audit-1783552373319-178i",
+      "timestamp": "2026-07-08T23:12:53.319Z",
+      "symbol": "GBP/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.96 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":63080,\"asksVolume\":28626,\"tickVolume\":153087,\"avgVolume\":54673.95}",
+      "outputResult": "{\"whale_signal_strength\":0.96}"
+    },
+    {
+      "id": "audit-1783552371320-92d4",
+      "timestamp": "2026-07-08T23:12:51.320Z",
+      "symbol": "EUR/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.99 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":31371,\"asksVolume\":31978,\"tickVolume\":117014,\"avgVolume\":41790.9}",
+      "outputResult": "{\"whale_signal_strength\":0.99}"
+    },
+    {
+      "id": "audit-1783552370319-ss6z",
+      "timestamp": "2026-07-08T23:12:50.319Z",
+      "symbol": "EUR/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.76 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 4.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":17643,\"asksVolume\":79802,\"tickVolume\":27451,\"avgVolume\":40362.4}",
+      "outputResult": "{\"whale_signal_strength\":0.76}"
+    },
+    {
+      "id": "audit-1783552364314-gx27",
+      "timestamp": "2026-07-08T23:12:44.314Z",
+      "symbol": "BTC/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.87 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":23082,\"asksVolume\":65234,\"tickVolume\":145937,\"avgVolume\":52120.45}",
+      "outputResult": "{\"whale_signal_strength\":0.87}"
+    },
+    {
+      "id": "audit-1783552363314-tz18",
+      "timestamp": "2026-07-08T23:12:43.314Z",
+      "symbol": "EUR/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.99 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.0x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":55619,\"asksVolume\":18486,\"tickVolume\":26497,\"avgVolume\":42776.45}",
+      "outputResult": "{\"whale_signal_strength\":0.99}"
+    },
+    {
+      "id": "audit-1783552357309-mfq4",
+      "timestamp": "2026-07-08T23:12:37.309Z",
+      "symbol": "BTC/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.7 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.0x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":52306,\"asksVolume\":17405,\"tickVolume\":32581,\"avgVolume\":44279.25}",
+      "outputResult": "{\"whale_signal_strength\":0.7}"
+    },
+    {
+      "id": "audit-1783552356308-x71w",
+      "timestamp": "2026-07-08T23:12:36.308Z",
+      "symbol": "GBP/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.81 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.4x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":20005,\"asksVolume\":67958,\"tickVolume\":14491,\"avgVolume\":45602.1}",
+      "outputResult": "{\"whale_signal_strength\":0.81}"
+    },
+    {
+      "id": "audit-1783552355308-wcw8",
+      "timestamp": "2026-07-08T23:12:35.308Z",
+      "symbol": "EUR/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.99 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.4x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":19941,\"asksVolume\":68731,\"tickVolume\":10138,\"avgVolume\":45897}",
+      "outputResult": "{\"whale_signal_strength\":0.99}"
+    },
+    {
+      "id": "audit-1783552353306-ac0r",
+      "timestamp": "2026-07-08T23:12:33.306Z",
+      "symbol": "BTC/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.79 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.3x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":50503,\"asksVolume\":15511,\"tickVolume\":39338,\"avgVolume\":46921.95}",
+      "outputResult": "{\"whale_signal_strength\":0.79}"
+    },
+    {
+      "id": "audit-1783552352309-furk",
+      "timestamp": "2026-07-08T23:12:32.309Z",
+      "symbol": "BTC/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.83 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 4.6x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":68644,\"asksVolume\":15070,\"tickVolume\":9269,\"avgVolume\":45617.5}",
+      "outputResult": "{\"whale_signal_strength\":0.83}"
+    },
+    {
+      "id": "audit-1783552352306-zkrw",
+      "timestamp": "2026-07-08T23:12:32.306Z",
+      "symbol": "EUR/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.85 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":65049,\"asksVolume\":55112,\"tickVolume\":131578,\"avgVolume\":46992.15}",
+      "outputResult": "{\"whale_signal_strength\":0.85}"
+    },
+    {
+      "id": "audit-1783552350304-ytgo",
+      "timestamp": "2026-07-08T23:12:30.304Z",
+      "symbol": "BTC/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.78 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 4.1x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":19241,\"asksVolume\":78365,\"tickVolume\":30388,\"avgVolume\":40481.05}",
+      "outputResult": "{\"whale_signal_strength\":0.78}"
+    },
+    {
+      "id": "audit-1783552349303-c50w",
+      "timestamp": "2026-07-08T23:12:29.303Z",
+      "symbol": "EUR/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.87 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":19539,\"asksVolume\":37569,\"tickVolume\":124306,\"avgVolume\":44395.15}",
+      "outputResult": "{\"whale_signal_strength\":0.87}"
+    },
+    {
+      "id": "audit-1783552342298-nt1n",
+      "timestamp": "2026-07-08T23:12:22.298Z",
+      "symbol": "GBP/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.92 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":39664,\"asksVolume\":24581,\"tickVolume\":116573,\"avgVolume\":41633.5}",
+      "outputResult": "{\"whale_signal_strength\":0.92}"
+    },
+    {
+      "id": "audit-1783552339294-yvc5",
+      "timestamp": "2026-07-08T23:12:19.294Z",
+      "symbol": "GBP/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.98 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":64893,\"asksVolume\":60562,\"tickVolume\":117688,\"avgVolume\":42031.5}",
+      "outputResult": "{\"whale_signal_strength\":0.98}"
+    },
+    {
+      "id": "audit-1783552338295-wz20",
+      "timestamp": "2026-07-08T23:12:18.295Z",
+      "symbol": "GBP/USD",
+      "mode": "Whale Mode",
+      "triggerValue": "0.74 Signal",
+      "actionTaken": "Detected Whale activity in order book depth. Imbalance ratio: 3.5x. Adjusted DRL state.",
+      "inputParams": "{\"bidsVolume\":44969,\"asksVolume\":21185,\"tickVolume\":115681,\"avgVolume\":41314.75}",
+      "outputResult": "{\"whale_signal_strength\":0.74}"
+    }
+  ]
+}

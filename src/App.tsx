@@ -4,7 +4,7 @@
  */
 
 import { useState, useEffect } from 'react';
-import { Cpu, Shuffle, Target, ShieldAlert, Sliders, Zap, Activity, Info, ShieldCheck, Brain, Award, BarChart3 } from 'lucide-react';
+import { Cpu, Shuffle, Target, ShieldAlert, Sliders, Zap, Activity, Info, ShieldCheck, Brain, Award, BarChart3, ArrowUpDown } from 'lucide-react';
 import ArchitectureMap from './components/ArchitectureMap';
 import RewardPlayground from './components/RewardPlayground';
 import TelemetrySimulator from './components/TelemetrySimulator';
@@ -13,13 +13,17 @@ import RiskBrokerManager from './components/RiskBrokerManager';
 import AlienBrainLab from './components/AlienBrainLab';
 import BacktestArena from './components/BacktestArena';
 import AIPilotLab from './components/AIPilotLab';
+import SelfImprovementDashboard from './components/SelfImprovementDashboard';
+import ArbitragePanel from './components/ArbitragePanel';
+import SafetyBackstopPanel from './components/SafetyBackstopPanel';
 import { EvolutionCandidate } from './types/quant';
 
-type TabId = 'architecture' | 'telemetry' | 'evolution' | 'risk-broker' | 'alien-brain' | 'reward-playground' | 'backtest-arena' | 'ai-pilot-lab';
+type TabId = 'architecture' | 'telemetry' | 'evolution' | 'risk-broker' | 'alien-brain' | 'reward-playground' | 'backtest-arena' | 'ai-pilot-lab' | 'self-improvement-log' | 'arbitrage' | 'safety-backstop';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<TabId>('architecture');
   const [emergencyFrozen, setEmergencyFrozen] = useState<boolean>(false);
+  const [sandboxError, setSandboxError] = useState<{ title: string; message: string; metrics?: any } | null>(null);
   const [candidates, setCandidates] = useState<EvolutionCandidate[]>(() => {
     const saved = localStorage.getItem('SOVEREIGN_EVO_CANDIDATES');
     if (saved) {
@@ -119,13 +123,30 @@ export default function App() {
     const added = newCands.filter(nc => !candidates.some(c => c.id === nc.id));
     for (const cand of added) {
       try {
-        await fetch('/api/candidates/adopt', {
+        const response = await fetch('/api/candidates/adopt', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(cand)
         });
-      } catch (err) {
+        
+        if (!response.ok) {
+          const errData = await response.json();
+          setSandboxError({
+            title: `C++ Code Promotion Blocked`,
+            message: errData.rejectionReason || errData.error || "Candidate did not clear sandbox verification rules.",
+            metrics: errData.metrics
+          });
+          // Remove failed candidate from local client state
+          setCandidates(prev => prev.filter(c => c.id !== cand.id));
+        } else {
+          setSandboxError(null);
+        }
+      } catch (err: any) {
         console.error('Error adopting candidate on server:', err);
+        setSandboxError({
+          title: "Connection / Sandbox Error",
+          message: err.message || "Failed to reach the server sandbox pipeline."
+        });
       }
     }
   };
@@ -304,6 +325,48 @@ export default function App() {
             <span>07. مەیدانی باکتێست | Backtest Arena</span>
           </button>
 
+          {/* Tab 8: Self-Improvement Logs */}
+          <button
+            id="tab-btn-self-improvement-log"
+            onClick={() => setActiveTab('self-improvement-log')}
+            className={`px-4 py-2.5 rounded-lg text-xs font-semibold font-mono flex items-center space-x-2 border transition-all cursor-pointer whitespace-nowrap ${
+              activeTab === 'self-improvement-log'
+                ? 'bg-slate-900 border-purple-800 text-purple-200 shadow-sm shadow-purple-950/20'
+                : 'bg-transparent border-transparent text-purple-400 hover:text-purple-300'
+            }`}
+          >
+            <Brain className="w-4 h-4 shrink-0 text-purple-400 animate-pulse" />
+            <span className="font-bold">08. خۆباشکردنی سەربەخۆ | Self-Improvement Logs</span>
+          </button>
+
+          {/* Tab 9: Cross-Exchange Arbitrage */}
+          <button
+            id="tab-btn-arbitrage"
+            onClick={() => setActiveTab('arbitrage')}
+            className={`px-4 py-2.5 rounded-lg text-xs font-semibold font-mono flex items-center space-x-2 border transition-all cursor-pointer whitespace-nowrap ${
+              activeTab === 'arbitrage'
+                ? 'bg-slate-900 border-purple-800 text-purple-200 shadow-sm shadow-purple-950/20'
+                : 'bg-transparent border-transparent text-purple-400 hover:text-purple-300'
+            }`}
+          >
+            <ArrowUpDown className="w-4 h-4 shrink-0 text-purple-400 animate-pulse" />
+            <span className="font-bold">09. ئاربیتراژ و ناڕێکی بازاڕ | Cross-Exchange Arbitrage</span>
+          </button>
+
+          {/* Tab 10: Unbypassable Safety Backstop */}
+          <button
+            id="tab-btn-safety-backstop"
+            onClick={() => setActiveTab('safety-backstop')}
+            className={`px-4 py-2.5 rounded-lg text-xs font-semibold font-mono flex items-center space-x-2 border transition-all cursor-pointer whitespace-nowrap ${
+              activeTab === 'safety-backstop'
+                ? 'bg-slate-900 border-rose-800 text-rose-200 shadow-sm shadow-rose-950/20'
+                : 'bg-transparent border-transparent text-rose-400 hover:text-rose-300'
+            }`}
+          >
+            <ShieldAlert className="w-4 h-4 shrink-0 text-rose-400 animate-pulse" />
+            <span className="font-bold">10. لایەری پاراستنی نێکسەس | NEXUS Safety Backstop</span>
+          </button>
+
         </div>
       </nav>
 
@@ -348,6 +411,47 @@ export default function App() {
           </div>
         )}
 
+        {sandboxError && (
+          <div id="sandbox-rejection-banner" className="p-5 bg-rose-950/45 border border-rose-500/50 rounded-xl text-right space-y-3 shadow-md shadow-rose-950/20" dir="rtl">
+            <div className="flex justify-between items-center">
+              <button 
+                onClick={() => setSandboxError(null)} 
+                className="text-rose-400 hover:text-rose-300 font-bold text-xs bg-slate-900 px-2 py-1 rounded"
+              >
+                ✕ داخستن
+              </button>
+              <div className="flex items-center gap-2 text-rose-300">
+                <span className="font-bold text-sm">{sandboxError.title}</span>
+                <ShieldAlert className="w-5 h-5 text-rose-400" />
+              </div>
+            </div>
+            <p className="text-xs text-rose-200 leading-relaxed font-mono whitespace-pre-wrap">{sandboxError.message}</p>
+            {sandboxError.metrics && (
+              <div className="grid grid-cols-4 gap-3 text-center text-[10px] font-mono bg-slate-950 p-3 rounded border border-slate-900 mt-2">
+                <div className="p-1">
+                  <span className="text-slate-500 block">Sharpe Ratio</span>
+                  <span className="text-rose-400 font-bold">{sandboxError.metrics.SharpeRatio ?? 'N/A'}</span>
+                </div>
+                <div className="p-1">
+                  <span className="text-slate-500 block">Max Drawdown</span>
+                  <span className="text-rose-400 font-bold">{sandboxError.metrics.maxDrawdown ?? 'N/A'}%</span>
+                </div>
+                <div className="p-1">
+                  <span className="text-slate-500 block">Avg Reward</span>
+                  <span className="text-rose-400 font-bold">{sandboxError.metrics.avgReward ?? 'N/A'}</span>
+                </div>
+                <div className="p-1">
+                  <span className="text-slate-500 block">Trades Count</span>
+                  <span className="text-rose-400 font-bold">{sandboxError.metrics.tradesCount ?? 'N/A'}</span>
+                </div>
+              </div>
+            )}
+            <p className="text-[10px] text-slate-500 font-sans">
+              * یاسای برۆمۆشن گەیتی سانبۆکس: Sharpe Ratio &gt;= 1.2، لادان لە زیان &lt;= 5.0٪، و لانی کەم ١٠ تاقیکردنەوە. لۆگەکە بۆ هەمیشەیی لە دەیتابەیسی Postgres پاشەکەوت کرا.
+            </p>
+          </div>
+        )}
+
         {/* Tab content switcher */}
         <div id="tab-content-container" className="transition-opacity duration-300">
           {activeTab === 'architecture' && <ArchitectureMap />}
@@ -358,6 +462,9 @@ export default function App() {
           {activeTab === 'reward-playground' && <RewardPlayground />}
           {activeTab === 'backtest-arena' && <BacktestArena candidates={candidates} selectedCandidateId={selectedId} setSelectedCandidateId={handleSelectCandidateId} />}
           {activeTab === 'ai-pilot-lab' && <AIPilotLab candidates={candidates} setCandidates={handleUpdateCandidates} selectedId={selectedId} setSelectedId={handleSelectCandidateId} emergencyFrozen={emergencyFrozen} />}
+          {activeTab === 'self-improvement-log' && <SelfImprovementDashboard />}
+          {activeTab === 'arbitrage' && <ArbitragePanel />}
+          {activeTab === 'safety-backstop' && <SafetyBackstopPanel />}
         </div>
 
       </main>

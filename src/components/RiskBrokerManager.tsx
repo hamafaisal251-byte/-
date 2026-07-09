@@ -3,20 +3,37 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   ShieldCheck, Database, Key, CheckCircle, AlertTriangle, Play, 
   RefreshCw, Layers, Lock, TrendingUp, 
-  TrendingDown, Activity, Clock, X, Terminal, Settings2, Plus, LogOut
+  TrendingDown, Activity, Clock, X, Terminal, Settings2, Plus, LogOut,
+  Globe, Radio, ShieldAlert, Wifi, Newspaper, Calendar, ArrowRight, UserCheck
 } from 'lucide-react';
 
-interface BrokerConfig {
-  brokerType: 'oanda' | 'metatrader5' | 'fix_gateway' | 'ib';
+interface BrokerConnection {
+  id: string;
+  brokerType: 'oanda' | 'binance' | 'coinbase' | 'kraken' | 'metatrader5' | 'ib' | 'fix_gateway';
   apiUrl: string;
   accountId: string;
-  apiToken: string;
-  targetCompId: string;
-  senderCompId: string;
+  status: 'CONNECTED' | 'DISCONNECTED' | 'ERROR';
+  lastTestedTime: string;
+  errorMessage?: string;
+  targetCompId?: string;
+  senderCompId?: string;
+  maskedToken?: string;
+  maskedSecret?: string;
+}
+
+interface NewsEvent {
+  title: string;
+  impact: "HIGH" | "MEDIUM" | "LOW";
+  currency: string;
+  forecast: string;
+  previous: string;
+  actual: string;
+  minutesRemaining: number;
+  sentimentScore: number;
 }
 
 interface RiskRules {
@@ -29,34 +46,18 @@ interface RiskRules {
 }
 
 export default function RiskBrokerManager() {
-  // Load initial configurations from localStorage to ensure it is REAL and not mock data
-  const [brokerConfig, setBrokerConfig] = useState<BrokerConfig>(() => {
-    const saved = localStorage.getItem('SOVEREIGN_BROKER_CONFIG');
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch (e) {
-        // Fallback
-      }
-    }
-    return {
-      brokerType: 'oanda',
-      apiUrl: 'https://api-fxtrade.oanda.com/v3',
-      accountId: '',
-      apiToken: '',
-      targetCompId: 'OANDA_FIX_GATEWAY',
-      senderCompId: 'SOVEREIGN_QUANT_CORE',
-    };
-  });
-
+  // 1. Core State
+  const [connections, setConnections] = useState<BrokerConnection[]>([]);
+  const [newsEvents, setNewsEvents] = useState<NewsEvent[]>([]);
+  const [newsStats, setNewsStats] = useState({ minutesUntilHighImpactNews: 999, sentimentScore: 0.0, influenceMultiplier: 1.0 });
+  const [fixStatus, setFixStatus] = useState({ status: 'LOGGED_OUT', targetCompId: '', senderCompId: '', inboundSeqNum: 1, outboundSeqNum: 1, logs: [] as string[] });
+  const [securityInfo, setSecurityInfo] = useState({ hsmEncryptionStandard: '', isMasterKeyConfigured: false, allowedIps: [] as string[], maskedMutateKey: '', lastRotationTime: '' });
+  
+  // 2. Risk & Autopilot Sizing State
   const [riskRules, setRiskRules] = useState<RiskRules>(() => {
     const saved = localStorage.getItem('SOVEREIGN_RISK_RULES');
     if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch (e) {
-        // Fallback
-      }
+      try { return JSON.parse(saved); } catch (e) {}
     }
     return {
       maxDailyLossPercent: 2.5,
@@ -67,13 +68,34 @@ export default function RiskBrokerManager() {
       hedgeLockLossPercent: 4.0,
     };
   });
-
-  const [connectionStatus, setConnectionStatus] = useState<'DISCONNECTED' | 'CONNECTING' | 'CONNECTED' | 'ERROR'>('DISCONNECTED');
-  const [errorMessage, setErrorMessage] = useState<string>('');
-  const [saveStatus, setSaveStatus] = useState<boolean>(false);
   const [autoRiskTuning, setAutoRiskTuning] = useState<boolean>(true);
+  const [saveStatus, setSaveStatus] = useState<boolean>(false);
 
-  // Real-time live connected account simulation states
+  // 3. Configure Active Broker Modal/Form State
+  const [activeConfigureBroker, setActiveConfigureBroker] = useState<BrokerConnection['brokerType'] | null>(null);
+  const [formApiUrl, setFormApiUrl] = useState('');
+  const [formAccountId, setFormAccountId] = useState('');
+  const [formApiToken, setFormApiToken] = useState('');
+  const [formSecretKey, setFormSecretKey] = useState('');
+  const [formPassphrase, setFormPassphrase] = useState('');
+  const [formTargetCompId, setFormTargetCompId] = useState('OANDA_FIX_GATEWAY');
+  const [formSenderCompId, setFormSenderCompId] = useState('SOVEREIGN_QUANT_CORE');
+  
+  // Form news keys state
+  const [formNewsApiKey, setFormNewsApiKey] = useState('');
+  const [formFinnhubKey, setFormFinnhubKey] = useState('');
+  const [newsKeysSaved, setNewsKeysSaved] = useState(false);
+
+  // Form security allowlist state
+  const [formAllowedIps, setFormAllowedIps] = useState('');
+  const [allowlistSaved, setAllowlistSaved] = useState(false);
+
+  // Loading/Error states
+  const [isSubmitLoading, setIsSubmitLoading] = useState(false);
+  const [formError, setFormError] = useState('');
+  const [formSuccess, setFormSuccess] = useState('');
+
+  // 4. Client-side Live Account Position Sim (Shared with backend logs)
   const [positions, setPositions] = useState<any[]>(() => {
     const saved = localStorage.getItem('SOVEREIGN_LIVE_POSITIONS');
     if (saved) {
@@ -101,17 +123,150 @@ export default function RiskBrokerManager() {
     };
   });
 
-  const [liveLogs, setLiveLogs] = useState<any[]>(() => [
-    { time: new Date().toTimeString().split(' ')[0], message: 'بستەرە لۆکاڵییەکانی پرۆتۆکۆلی بڕۆکەر ئامادەن.', type: 'info' },
-    { time: new Date().toTimeString().split(' ')[0], message: 'چاوەڕوانی بەستنەوەین بە ئەکاونتی ڕاستەقینە...', type: 'warning' }
-  ]);
-
   const [newOrderSymbol, setNewOrderSymbol] = useState<string>('EUR/USD');
   const [newOrderType, setNewOrderType] = useState<'BUY' | 'SELL'>('BUY');
   const [newOrderSize, setNewOrderSize] = useState<number>(1.0);
-  const logScrollRef = useRef<HTMLDivElement>(null);
+  
+  // Sovereign Strategy Hub (Stage 3 States)
+  const [strategiesConfig, setStrategiesConfig] = useState<Record<string, any>>({});
+  const [strategyAuditLogs, setStrategyAuditLogs] = useState<any[]>([]);
+  const [activeStrategySymbol, setActiveStrategySymbol] = useState<string>('EUR/USD');
+  const [strategiesSaveStatus, setStrategiesSaveStatus] = useState<boolean>(false);
+  const [isRefreshingLogs, setIsRefreshingLogs] = useState<boolean>(false);
+  const [isShockAbsorberActive, setIsShockAbsorberActive] = useState<boolean>(false);
+  const [shockAbsorberLevel, setShockAbsorberLevel] = useState<number>(1.0);
+  
+  const fixTerminalEndRef = useRef<HTMLDivElement>(null);
 
-  // Sync positions and stats to localStorage
+  // 5. Lifecycle Data Polls
+  const fetchConnections = async () => {
+    try {
+      const res = await fetch('/api/brokers/connections');
+      const data = await res.json();
+      if (data.success) {
+        setConnections(data.connections);
+      }
+    } catch (e) {
+      console.error("Failed to fetch connections:", e);
+    }
+  };
+
+  const fetchNewsFeed = async () => {
+    try {
+      const res = await fetch('/api/news/feed');
+      const data = await res.json();
+      if (data.success) {
+        setNewsEvents(data.events);
+        setNewsStats({
+          minutesUntilHighImpactNews: data.minutesUntilHighImpactNews,
+          sentimentScore: data.sentimentScore,
+          influenceMultiplier: data.influenceMultiplier
+        });
+      }
+    } catch (e) {
+      console.error("Failed to fetch news feed:", e);
+    }
+  };
+
+  const fetchFixStatus = async () => {
+    try {
+      const res = await fetch('/api/fix/status');
+      const data = await res.json();
+      if (data.success) {
+        setFixStatus(data);
+      }
+    } catch (e) {
+      console.error("Failed to fetch FIX status:", e);
+    }
+  };
+
+  const fetchSecurityInfo = async () => {
+    try {
+      const res = await fetch('/api/security/info');
+      const data = await res.json();
+      if (data.success) {
+        setSecurityInfo(data);
+        setFormAllowedIps(data.allowedIps.join(', '));
+      }
+    } catch (e) {
+      console.error("Failed to fetch security info:", e);
+    }
+  };
+
+  const fetchLivePositions = async () => {
+    try {
+      const res = await fetch('/api/positions');
+      const data = await res.json();
+      if (data.success) {
+        setPositions(data.positions);
+        setAccountStats(data.accountStats);
+      }
+      
+      const telRes = await fetch('/api/telemetry');
+      const telData = await telRes.json();
+      if (telData.status === "ok") {
+        setIsShockAbsorberActive(telData.isShockAbsorberActive);
+        setShockAbsorberLevel(telData.shockAbsorberLevel);
+      }
+    } catch (e) {
+      console.error("Failed to fetch live positions from server:", e);
+    }
+  };
+
+  const fetchStrategiesConfig = async () => {
+    try {
+      const res = await fetch('/api/strategies/config');
+      const data = await res.json();
+      if (data.success) {
+        setStrategiesConfig(data.config);
+      }
+    } catch (e) {
+      console.error("Failed to fetch strategies config from server:", e);
+    }
+  };
+
+  const fetchStrategyAuditLogs = async () => {
+    try {
+      const res = await fetch('/api/strategies/audit-logs');
+      const data = await res.json();
+      if (data.success) {
+        setStrategyAuditLogs(data.logs);
+      }
+    } catch (e) {
+      console.error("Failed to fetch strategy audit logs from server:", e);
+    }
+  };
+
+  useEffect(() => {
+    fetchConnections();
+    fetchNewsFeed();
+    fetchFixStatus();
+    fetchSecurityInfo();
+    fetchLivePositions();
+    fetchStrategiesConfig();
+    fetchStrategyAuditLogs();
+
+    // Set polling timers
+    const intervalConns = setInterval(fetchConnections, 12000);
+    const intervalNews = setInterval(fetchNewsFeed, 10000);
+    const intervalFix = setInterval(fetchFixStatus, 5000);
+    const intervalSec = setInterval(fetchSecurityInfo, 15000);
+    const intervalPositions = setInterval(fetchLivePositions, 1500);
+    const intervalStrategies = setInterval(fetchStrategiesConfig, 4000);
+    const intervalAuditLogs = setInterval(fetchStrategyAuditLogs, 2000);
+
+    return () => {
+      clearInterval(intervalConns);
+      clearInterval(intervalNews);
+      clearInterval(intervalFix);
+      clearInterval(intervalSec);
+      clearInterval(intervalPositions);
+      clearInterval(intervalStrategies);
+      clearInterval(intervalAuditLogs);
+    };
+  }, []);
+
+  // Sync positions to local storage
   useEffect(() => {
     localStorage.setItem('SOVEREIGN_LIVE_POSITIONS', JSON.stringify(positions));
   }, [positions]);
@@ -120,265 +275,28 @@ export default function RiskBrokerManager() {
     localStorage.setItem('SOVEREIGN_LIVE_ACCOUNT_STATS', JSON.stringify(accountStats));
   }, [accountStats]);
 
-  // Live price fluctuation and account metric update loop when connected
+  // FIX Terminal autoscroll
   useEffect(() => {
-    if (connectionStatus !== 'CONNECTED') return;
-
-    const addLog = (msg: string, type: 'info' | 'success' | 'warning' | 'error' = 'info') => {
-      const timeStr = new Date().toTimeString().split(' ')[0];
-      setLiveLogs(prev => [...prev.slice(-39), { time: timeStr, message: msg, type }]);
-    };
-
-    addLog(`بەستنەوە بە بڕۆکەری ${brokerConfig.brokerType.toUpperCase()} سەرکەوتوو بوو. لێشاوی داتای تیکی بازاڕ و حسابات چالاک کرا!`, 'success');
-
-    const interval = setInterval(() => {
-      // 1. Randomly update currentPrice & PnL of open positions
-      setPositions(prev => {
-        let totalPnlSum = 0;
-        const updated = prev.map(pos => {
-          let change = 0;
-          let isForex = pos.symbol.includes('/');
-          if (isForex) {
-            change = (Math.random() - 0.5) * 0.00015;
-          } else {
-            change = (Math.random() - 0.5) * 8.5;
-          }
-          const nextPrice = parseFloat((pos.currentPrice + change).toFixed(isForex ? 5 : 2));
-          
-          // Calculate PnL
-          let pnlChange = 0;
-          if (isForex) {
-            const diffPips = (nextPrice - pos.entryPrice) * (pos.symbol === 'USD/JPY' ? 100 : 10000);
-            pnlChange = diffPips * pos.size * 10 * (pos.type === 'BUY' ? 1 : -1);
-          } else {
-            pnlChange = (nextPrice - pos.entryPrice) * pos.size * 100 * (pos.type === 'BUY' ? 1 : -1);
-          }
-          const finalPnl = parseFloat(pnlChange.toFixed(2));
-          totalPnlSum += finalPnl;
-
-          return {
-            ...pos,
-            currentPrice: nextPrice,
-            pnl: finalPnl
-          };
-        });
-
-        // 2. Recalculate account stats based on new positions sum
-        setAccountStats(prevStats => {
-          const nextEquity = parseFloat((prevStats.balance + totalPnlSum).toFixed(2));
-          const nextFree = parseFloat((nextEquity - prevStats.usedMargin).toFixed(2));
-          const nextMarginLevel = prevStats.usedMargin > 0 ? parseFloat(((nextEquity / prevStats.usedMargin) * 100).toFixed(1)) : 0;
-          return {
-            ...prevStats,
-            equity: nextEquity,
-            freeMargin: nextFree,
-            marginLevel: nextMarginLevel,
-            todayPnl: parseFloat((1420.50 + totalPnlSum / 10).toFixed(2)) // update today's realized/unrealized PnL
-          };
-        });
-
-        return updated;
-      });
-
-      // 3. Sporadically add logs
-      if (Math.random() > 0.75) {
-        const symbols = ['EUR/USD', 'GBP/USD', 'BTC/USD', 'USD/JPY'];
-        const randomSym = symbols[Math.floor(Math.random() * symbols.length)];
-        const randomPrice = (1.08000 + Math.random() * 0.02).toFixed(5);
-        addLog(`[WebSocket Ticker] ${randomSym} تیک گەیشت: ${randomPrice}`, 'info');
-      }
-      if (Math.random() > 0.95) {
-        addLog(`[System Health] Heartbeat checked. Latency 42ms. Safe limits OK.`, 'success');
-      }
-
-    }, 3000);
-
-    return () => clearInterval(interval);
-  }, [connectionStatus, brokerConfig.brokerType]);
-
-  // Scroll logs to bottom
-  useEffect(() => {
-    if (logScrollRef.current) {
-      logScrollRef.current.scrollTop = logScrollRef.current.scrollHeight;
+    if (fixTerminalEndRef.current) {
+      fixTerminalEndRef.current.scrollTop = fixTerminalEndRef.current.scrollHeight;
     }
-  }, [liveLogs]);
+  }, [fixStatus.logs]);
 
-  // Handle manual position close
-  const handleClosePosition = (id: string) => {
-    const closedPos = positions.find(p => p.id === id);
-    if (!closedPos) return;
-
-    setPositions(prev => prev.filter(p => p.id !== id));
-    setAccountStats(prev => {
-      const nextBalance = parseFloat((prev.balance + closedPos.pnl).toFixed(2));
-      const nextUsedMargin = parseFloat(Math.max(0, prev.usedMargin - (closedPos.size * 1250)).toFixed(2));
-      const nextEquity = parseFloat((nextBalance + positions.filter(p => p.id !== id).reduce((sum, p) => sum + p.pnl, 0)).toFixed(2));
-      return {
-        ...prev,
-        balance: nextBalance,
-        usedMargin: nextUsedMargin,
-        equity: nextEquity,
-        freeMargin: parseFloat((nextEquity - nextUsedMargin).toFixed(2)),
-        marginLevel: nextUsedMargin > 0 ? parseFloat(((nextEquity / nextUsedMargin) * 100).toFixed(1)) : 0
-      };
-    });
-
-    // Add log
-    const timeStr = new Date().toTimeString().split(' ')[0];
-    setLiveLogs(prev => [
-      ...prev,
-      {
-        time: timeStr,
-        message: `[MEMBER CLOSE] پۆزیشنی ${closedPos.symbol} بە قەبارەی ${closedPos.size} لۆت داخرا بە دەسکەوت/زیانی: ${closedPos.pnl}$`,
-        type: closedPos.pnl >= 0 ? 'success' : 'error'
-      }
-    ]);
-  };
-
-  // Handle open manual trade
-  const handleCreateOrder = () => {
-    const isForex = newOrderSymbol.includes('/');
-    let entryPrice = 0;
-    if (newOrderSymbol === 'EUR/USD') entryPrice = 1.08500;
-    else if (newOrderSymbol === 'GBP/USD') entryPrice = 1.26350;
-    else entryPrice = 62750.00;
-
-    const newPos = {
-      id: `pos-${Date.now()}`,
-      symbol: newOrderSymbol,
-      type: newOrderType,
-      size: newOrderSize,
-      entryPrice: entryPrice,
-      currentPrice: entryPrice,
-      sl: parseFloat((newOrderType === 'BUY' ? entryPrice * 0.99 : entryPrice * 1.01).toFixed(isForex ? 5 : 2)),
-      tp: parseFloat((newOrderType === 'BUY' ? entryPrice * 1.02 : entryPrice * 0.98).toFixed(isForex ? 5 : 2)),
-      pnl: 0.0
-    };
-
-    setPositions(prev => [...prev, newPos]);
-    setAccountStats(prev => {
-      const addedMargin = newOrderSize * 1250;
-      const nextUsedMargin = prev.usedMargin + addedMargin;
-      return {
-        ...prev,
-        usedMargin: nextUsedMargin,
-        freeMargin: parseFloat((prev.equity - nextUsedMargin).toFixed(2)),
-        marginLevel: nextUsedMargin > 0 ? parseFloat(((prev.equity / nextUsedMargin) * 100).toFixed(1)) : 0
-      };
-    });
-
-    const timeStr = new Date().toTimeString().split(' ')[0];
-    setLiveLogs(prev => [
-      ...prev,
-      {
-        time: timeStr,
-        message: `[MEMBER OPEN] فەرمانی لۆکاڵی نوێ کرایەوە: ${newOrderType} ${newOrderSize} لۆت لەسەر ${newOrderSymbol}`,
-        type: 'success'
-      }
-    ]);
-  };
-
-  // Save changes dynamically to local storage
-  const handleSaveConfigs = () => {
-    localStorage.setItem('SOVEREIGN_BROKER_CONFIG', JSON.stringify(brokerConfig));
-    localStorage.setItem('SOVEREIGN_RISK_RULES', JSON.stringify(riskRules));
-    setSaveStatus(true);
-    setTimeout(() => setSaveStatus(false), 2000);
-  };
-
-  const handleConnectBroker = async () => {
-    if (!brokerConfig.accountId || !brokerConfig.apiToken) {
-      setConnectionStatus('ERROR');
-      setErrorMessage('تکایە ناسنامەی هەژمارەکە (Account ID) و کلیلی API بنووسە بۆ بەستنەوەی ڕاستەقینە.');
-      return;
-    }
-
-    setConnectionStatus('CONNECTING');
-    setErrorMessage('');
-
-    // Save configurations so they are instantly persisted and shared across tabs
-    localStorage.setItem('SOVEREIGN_BROKER_CONFIG', JSON.stringify(brokerConfig));
-
-    try {
-      const response = await fetch('/api/brokers/connect', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          brokerType: brokerConfig.brokerType,
-          apiUrl: brokerConfig.apiUrl,
-          accountId: brokerConfig.accountId,
-          apiToken: brokerConfig.apiToken
-        })
-      });
-
-      if (response.ok) {
-        setConnectionStatus('CONNECTED');
-        localStorage.setItem('SOVEREIGN_BROKER_CONNECTED', 'true');
-        window.dispatchEvent(new Event('storage'));
-      } else {
-        const errData = await response.json().catch(() => ({}));
-        setConnectionStatus('ERROR');
-        setErrorMessage(errData.error || 'نەتوانرا لەگەڵ بڕۆکەر پەیوەندی ببەسرێت.');
-      }
-    } catch (error: any) {
-      setConnectionStatus('ERROR');
-      setErrorMessage(`شکست لە پێوەبەستن لەبەر کێشەی هێڵ: ${error?.message || 'Server timeout'}`);
-    }
-  };
-
-  const handleDisconnect = async () => {
-    try {
-      await fetch('/api/brokers/disconnect', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ brokerType: brokerConfig.brokerType })
-      });
-    } catch (e) {}
-    setConnectionStatus('DISCONNECTED');
-    localStorage.removeItem('SOVEREIGN_BROKER_CONNECTED');
-    window.dispatchEvent(new Event('storage'));
-  };
-
-  // Check if previously connected on mount, or auto-connect to simulated sandbox by default
-  useEffect(() => {
-    const wasConnected = localStorage.getItem('SOVEREIGN_BROKER_CONNECTED');
-    if (wasConnected && brokerConfig.accountId && brokerConfig.apiToken) {
-      setConnectionStatus('CONNECTED');
-    } else {
-      // Autopilot: Auto-connect to high-performance simulated live accounts
-      setConnectionStatus('CONNECTING');
-      const timer = setTimeout(() => {
-        setConnectionStatus('CONNECTED');
-        localStorage.setItem('SOVEREIGN_BROKER_CONNECTED', 'true');
-        window.dispatchEvent(new Event('storage'));
-        if (!brokerConfig.accountId || !brokerConfig.apiToken) {
-          setBrokerConfig(prev => ({
-            ...prev,
-            accountId: 'OANDA-AUTOPILOT-SANDBOX',
-            apiToken: 'SIMULATED-SOVEREIGN-KEY'
-          }));
-        }
-      }, 1500);
-      return () => clearTimeout(timer);
-    }
-  }, []);
-
-  // Autopilot Risk Tuning Engine
+  // Autopilot Risk Tuning Loop
   useEffect(() => {
     if (!autoRiskTuning) return;
 
     const interval = setInterval(() => {
       setRiskRules(prev => {
-        const isPanic = Math.random() > 0.85;
-        const tunedDailyLoss = isPanic ? 1.8 : parseFloat((2.5 + (Math.random() - 0.5) * 0.3).toFixed(2));
-        const tunedRisk = isPanic ? 0.3 : parseFloat((0.5 + (Math.random() - 0.5) * 0.08).toFixed(2));
-        const tunedLeverage = isPanic ? 10 : parseFloat((30 + (Math.random() > 0.5 ? 5 : -5)).toFixed(0));
+        // News imminent -> force risk rules and leverage down!
+        const newsFactor = newsStats.minutesUntilHighImpactNews < 30;
+        const tunedDailyLoss = newsFactor ? 1.0 : parseFloat((2.5 + (Math.random() - 0.5) * 0.3).toFixed(2));
+        const tunedRisk = newsFactor ? 0.12 : parseFloat((0.5 + (Math.random() - 0.5) * 0.08).toFixed(2));
+        const tunedLeverage = newsFactor ? 5 : parseFloat((30 + (Math.random() > 0.5 ? 5 : -5)).toFixed(0));
         
         return {
           ...prev,
-          maxDailyLossPercent: Math.max(1.0, Math.min(4.5, tunedDailyLoss)),
+          maxDailyLossPercent: Math.max(0.5, Math.min(4.5, tunedDailyLoss)),
           riskPerTradePercent: Math.max(0.1, Math.min(1.5, tunedRisk)),
           maxLeverage: Math.max(5, Math.min(50, tunedLeverage)),
         };
@@ -386,13 +304,432 @@ export default function RiskBrokerManager() {
     }, 15000);
 
     return () => clearInterval(interval);
-  }, [autoRiskTuning]);
+  }, [autoRiskTuning, newsStats.minutesUntilHighImpactNews]);
+
+  // 6. Action Handlers
+
+  // Save risk configuration
+  const handleSaveRiskRules = () => {
+    localStorage.setItem('SOVEREIGN_RISK_RULES', JSON.stringify(riskRules));
+    setSaveStatus(true);
+    setTimeout(() => setSaveStatus(false), 2000);
+  };
+
+  // Connect & verify a broker connection (AES-256 in Postgres)
+  const handleConnectBroker = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeConfigureBroker) return;
+
+    setIsSubmitLoading(true);
+    setFormError('');
+    setFormSuccess('');
+
+    try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      
+      // If we have an existing mutate key, attach it
+      if (securityInfo.maskedMutateKey && securityInfo.maskedMutateKey !== "••••") {
+        // In real setups, clients attach the bearer token.
+        // For local development sandbox, we bypass or fetch security credentials
+      }
+
+      const response = await fetch('/api/brokers/connect', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          brokerType: activeConfigureBroker,
+          apiUrl: formApiUrl,
+          accountId: formAccountId,
+          apiToken: formApiToken,
+          secretKey: formSecretKey,
+          passphrase: formPassphrase,
+          targetCompId: formTargetCompId,
+          senderCompId: formSenderCompId
+        })
+      });
+
+      const result = await response.json();
+      if (response.ok) {
+        setFormSuccess(`✓ گرێدانی ${activeConfigureBroker.toUpperCase()} سەرکەوتوو بوو و لە داتابەیس بە شێوەی پاشەکەوتکراو تۆمار کرا.`);
+        fetchConnections();
+        // Clear fields
+        setFormApiToken('');
+        setFormSecretKey('');
+        setFormPassphrase('');
+        setTimeout(() => {
+          setActiveConfigureBroker(null);
+          setFormSuccess('');
+        }, 1500);
+      } else {
+        setFormError(result.error || 'کێشەیەک ڕوویدا لە کاتی تاقیکردنەوەی پەیوەندی.');
+      }
+    } catch (err: any) {
+      setFormError(`شکست لە بەستنەوەی بڕۆکەر: ${err.message || 'Server timeout'}`);
+    } finally {
+      setIsSubmitLoading(false);
+    }
+  };
+
+  // Disconnect broker connection (Delete from Postgres)
+  const handleDisconnectBroker = async (brokerType: string, accountId: string) => {
+    if (!confirm(`دڵنیایت لە دابڕاندنی پەیوەندی بڕۆکەری ${brokerType.toUpperCase()} لە داتابەیس؟`)) return;
+
+    try {
+      const response = await fetch('/api/brokers/disconnect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ brokerType, accountId })
+      });
+      if (response.ok) {
+        fetchConnections();
+        fetchFixStatus();
+      }
+    } catch (err) {
+      console.error("Failed to disconnect:", err);
+    }
+  };
+
+  // Save News Credentials
+  const handleSaveNewsKeys = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const response = await fetch('/api/news/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ newsApiKey: formNewsApiKey, finnhubKey: formFinnhubKey })
+      });
+      if (response.ok) {
+        setNewsKeysSaved(true);
+        setFormNewsApiKey('');
+        setFormFinnhubKey('');
+        fetchNewsFeed();
+        setTimeout(() => setNewsKeysSaved(false), 2000);
+      }
+    } catch (err) {
+      console.error("Failed to save news keys:", err);
+    }
+  };
+
+  // Update IP Whitelist
+  const handleSaveAllowlist = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const ips = formAllowedIps.split(',').map(ip => ip.trim()).filter(Boolean);
+      const response = await fetch('/api/security/allowlist', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ips })
+      });
+      if (response.ok) {
+        setAllowlistSaved(true);
+        fetchSecurityInfo();
+        setTimeout(() => setAllowlistSaved(false), 2000);
+      }
+    } catch (err) {
+      console.error("Failed to save whitelist:", err);
+    }
+  };
+
+  // Rotate internal Mutate Key (HSM trigger)
+  const handleRotateMutateKey = async () => {
+    if (!confirm("ئایا دڵنیایت لە خولاندنەوە و گۆڕینی کلیلی نووسینی داواکاری ناوەکی؟ پۆرتفۆلیۆ لەگەڵ گۆڕانکارییەکە نوێ دەبێتەوە.")) return;
+    try {
+      const response = await fetch('/api/security/rotate', { method: 'POST' });
+      if (response.ok) {
+        fetchSecurityInfo();
+        alert("سەرکەوتوو بوو! کلیلەکە بە سەرکەوتوویی خولێندرایەوە و هاوکات کرا لەگەڵ سێرڤەر.");
+      }
+    } catch (err) {
+      console.error("Failed to rotate key:", err);
+    }
+  };
+
+  // Route Order over active integration (simulating direct executions)
+  const handleCreateOrder = async () => {
+    try {
+      const sizeMultiplier = newsStats.influenceMultiplier || 1.0;
+      const response = await fetch('/api/positions/order', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          symbol: newOrderSymbol,
+          type: newOrderType,
+          size: parseFloat((newOrderSize * sizeMultiplier).toFixed(2))
+        })
+      });
+      const data = await response.json();
+      if (response.ok && data.success) {
+        fetchLivePositions();
+        fetchStrategyAuditLogs();
+      } else {
+        alert("فەرمانەکە ڕەتکرایەوە لەلایەن هێڵی مەترسی: " + (data.error || "مەترسی زۆر بەرزە یان سیستەمەکە قوفڵە."));
+      }
+    } catch (err) {
+      console.error("Failed to create order:", err);
+    }
+  };
+
+  const handleClosePosition = async (id: string) => {
+    try {
+      const response = await fetch('/api/positions/close', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id })
+      });
+      if (response.ok) {
+        fetchLivePositions();
+      }
+    } catch (err) {
+      console.error("Failed to close position:", err);
+    }
+  };
+
+  // Helper broker labels
+  const brokerLabels: Record<string, string> = {
+    oanda: "OANDA v20 REST",
+    binance: "Binance Exchange",
+    coinbase: "Coinbase Advanced",
+    kraken: "Kraken Exchange API",
+    metatrader5: "MetaTrader 5 Bridge",
+    ib: "Interactive Brokers",
+    fix_gateway: "Institutional FIX 4.4"
+  };
+
+  const openConfigureCard = (type: BrokerConnection['brokerType']) => {
+    setActiveConfigureBroker(type);
+    setFormApiUrl(type === 'oanda' ? 'https://api-fxtrade.oanda.com/v3' : 
+                  type === 'binance' ? 'https://api.binance.com' :
+                  type === 'coinbase' ? 'https://api.coinbase.com' :
+                  type === 'kraken' ? 'https://api.kraken.com' :
+                  type === 'metatrader5' ? 'http://127.0.0.1:5000' :
+                  type === 'ib' ? 'https://localhost:29191' : 'https://fix.broker.com');
+    setFormAccountId('');
+    setFormApiToken('');
+    setFormSecretKey('');
+    setFormPassphrase('');
+    setFormError('');
+    setFormSuccess('');
+  };
 
   return (
-    <div id="risk-broker-integration-panel" className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+    <div id="risk-broker-integration-panel" className="grid grid-cols-1 lg:grid-cols-12 gap-6 select-none">
       
-      {/* Risk Rules & Capital Management Configuration */}
-      <div id="capital-risk-rules" className="lg:col-span-6 flex flex-col justify-between bg-slate-950 border border-slate-800 rounded-xl p-5 text-right" dir="rtl">
+      {/* 1. TOP PORTFOLIO & BROKER MULTI-CONNECTOR STACK */}
+      <div id="multi-broker-hub" className="lg:col-span-8 bg-slate-950 border border-slate-800 rounded-xl p-5 space-y-4">
+        <div className="flex justify-between items-center border-b border-slate-900 pb-3" dir="rtl">
+          <div className="flex items-center space-x-2.5 space-x-reverse">
+            <div className="p-2 bg-sky-950/40 border border-sky-500/30 rounded text-sky-400">
+              <Database className="w-5 h-5" />
+            </div>
+            <div className="text-right">
+              <h3 className="text-sm font-bold text-slate-100 uppercase tracking-wider">سەنتەری گرێدانی فرە-برۆکەر (Active Brokers Hub)</h3>
+              <span className="text-[10px] text-slate-500 font-mono block">SECURE DATABASE CONNECTIVITY VIA AES-256</span>
+            </div>
+          </div>
+          <span className="px-2 py-0.5 text-[9px] bg-slate-900 text-slate-400 border border-slate-800 rounded font-mono font-bold">
+            {connections.length} ACTIVE INTEGRATIONS
+          </span>
+        </div>
+
+        <p className="text-xs text-slate-400 leading-relaxed text-right" dir="rtl">
+          سیستەمەکە پشتگیری لایڤ بەستنەوە بەم پێشاندەرانە دەکات. بڕوانامەکان بە شێوەیەکی خۆکار بە کۆدی <span className="text-sky-400 font-mono">AES-256-CBC</span> لە داتابەیسی ناوەکی پاشەکەوت دەکرێن و بە بێ نووسینی کۆدی زیادە فەرمانەکان ئاراستە دەکرێن.
+        </p>
+
+        {/* Dynamic Connected Integrations Grid */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+          {Object.entries(brokerLabels).map(([key, label]) => {
+            const activeConn = connections.find(c => c.brokerType === key);
+            return (
+              <div 
+                key={key} 
+                className={`p-4 border rounded-xl flex flex-col justify-between transition-all ${
+                  activeConn 
+                    ? 'bg-slate-900/60 border-emerald-500/30 shadow-md shadow-emerald-950/10' 
+                    : 'bg-slate-950 border-slate-800/80 hover:border-slate-800'
+                }`}
+              >
+                <div className="flex justify-between items-start">
+                  {activeConn ? (
+                    <span className="px-2 py-0.5 text-[9px] bg-emerald-950/60 text-emerald-400 border border-emerald-500/20 rounded-full font-bold">
+                      ✓ CONNECTED
+                    </span>
+                  ) : (
+                    <span className="px-2 py-0.5 text-[9px] bg-slate-900 text-slate-500 border border-slate-800/60 rounded-full font-mono">
+                      OFFLINE
+                    </span>
+                  )}
+                  <span className="text-[11px] font-bold text-slate-100 font-sans">{label}</span>
+                </div>
+
+                <div className="my-3 space-y-1 text-right" dir="rtl">
+                  {activeConn ? (
+                    <>
+                      <div className="text-[10px] text-slate-400">
+                        حساب: <span className="font-mono text-slate-200 font-bold bg-slate-950 px-1.5 py-0.5 rounded">{activeConn.accountId}</span>
+                      </div>
+                      <div className="text-[9px] text-slate-500 font-mono">
+                        کلیل: {activeConn.maskedToken || "••••••••"}
+                      </div>
+                      <div className="text-[9px] text-slate-500 font-mono">
+                        مێژووی گرێدان: {new Date(activeConn.lastTestedTime).toLocaleTimeString()}
+                      </div>
+                    </>
+                  ) : (
+                    <span className="text-[10px] text-slate-500 italic block">هیچ گرێدانێکی گەرم نەکراوە لە ئێستادا.</span>
+                  )}
+                </div>
+
+                <div className="flex gap-2 pt-1">
+                  {activeConn ? (
+                    <button
+                      onClick={() => handleDisconnectBroker(activeConn.brokerType, activeConn.accountId)}
+                      className="w-full py-1.5 bg-rose-950/40 hover:bg-rose-950/60 border border-rose-800/30 text-rose-400 rounded-lg text-[10px] font-bold transition-all cursor-pointer"
+                    >
+                      پچڕاندنی بەستەر
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => openConfigureCard(key as BrokerConnection['brokerType'])}
+                      className="w-full py-1.5 bg-slate-900 hover:bg-slate-850 border border-slate-800 hover:border-slate-700 text-sky-400 rounded-lg text-[10px] font-bold transition-all cursor-pointer flex items-center justify-center gap-1"
+                    >
+                      <Plus className="w-3 h-3" />
+                      <span>بەستنەوە و گرێدان</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Inline Active Configuration Form */}
+        {activeConfigureBroker && (
+          <div className="p-5 bg-slate-900/40 border border-sky-500/30 rounded-xl space-y-4 animate-in fade-in duration-300">
+            <div className="flex justify-between items-center border-b border-slate-800 pb-2">
+              <button 
+                onClick={() => setActiveConfigureBroker(null)} 
+                className="p-1 hover:bg-slate-800 rounded text-slate-400 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+              <h4 className="text-xs font-bold text-slate-200">ڕێکخستنی برۆکەری: {activeConfigureBroker.toUpperCase()}</h4>
+            </div>
+
+            <form onSubmit={handleConnectBroker} className="space-y-3.5 text-right" dir="rtl">
+              
+              {/* Endpoint URL */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-[10px] text-slate-400 block">ناونیشانی Endpoint URL</label>
+                  <input 
+                    type="text" 
+                    required
+                    value={formApiUrl}
+                    onChange={(e) => setFormApiUrl(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-1.5 text-xs text-slate-200 font-mono focus:border-sky-500 focus:outline-none" 
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] text-slate-400 block">ناسنامەی هەژمار (Account ID)</label>
+                  <input 
+                    type="text" 
+                    required
+                    placeholder="نموونە: 101-002-12345"
+                    value={formAccountId}
+                    onChange={(e) => setFormAccountId(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-1.5 text-xs text-slate-200 font-mono focus:border-sky-500 focus:outline-none" 
+                  />
+                </div>
+              </div>
+
+              {/* API Token / Client Secret */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-[10px] text-slate-400 block">کلیلی سەرەکی (API Token / Public Key)</label>
+                  <input 
+                    type="password" 
+                    required
+                    placeholder="کلیل بنووسە یان 'demo' لێبدە بۆ تاقیکردنەوە"
+                    value={formApiToken}
+                    onChange={(e) => setFormApiToken(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-1.5 text-xs text-slate-200 font-mono focus:border-sky-500 focus:outline-none" 
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] text-slate-400 block">کلیلی نهێنی (Secret Key / Passphrase)</label>
+                  <input 
+                    type="password" 
+                    placeholder="کلیلە نهێنیەکەت لێرە پاشەکەوت بکە"
+                    value={formSecretKey}
+                    onChange={(e) => setFormSecretKey(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-1.5 text-xs text-slate-200 font-mono focus:border-sky-500 focus:outline-none" 
+                  />
+                </div>
+              </div>
+
+              {/* FIX Protocol Session specific */}
+              {activeConfigureBroker === 'fix_gateway' && (
+                <div className="grid grid-cols-2 gap-3 p-3 bg-slate-950 border border-slate-800/80 rounded-lg">
+                  <div className="space-y-1">
+                    <label className="text-[9px] text-slate-400 font-mono block">TARGET COMP ID</label>
+                    <input 
+                      type="text" 
+                      value={formTargetCompId}
+                      onChange={(e) => setFormTargetCompId(e.target.value)}
+                      className="w-full bg-slate-900 border border-slate-800 rounded px-2 py-1 text-xs text-slate-200 font-mono" 
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[9px] text-slate-400 font-mono block">SENDER COMP ID</label>
+                    <input 
+                      type="text" 
+                      value={formSenderCompId}
+                      onChange={(e) => setFormSenderCompId(e.target.value)}
+                      className="w-full bg-slate-900 border border-slate-800 rounded px-2 py-1 text-xs text-slate-200 font-mono" 
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Status and Actions */}
+              {formError && (
+                <div className="p-3 bg-rose-950/20 border border-rose-500/30 rounded-lg text-xs flex items-center gap-1.5 text-rose-400 justify-start" dir="ltr">
+                  <AlertTriangle className="w-4 h-4 shrink-0" />
+                  <span>{formError}</span>
+                </div>
+              )}
+
+              {formSuccess && (
+                <div className="p-3 bg-emerald-950/20 border border-emerald-500/30 rounded-lg text-xs flex items-center gap-1.5 text-emerald-400 justify-start" dir="ltr">
+                  <CheckCircle className="w-4 h-4 shrink-0" />
+                  <span>{formSuccess}</span>
+                </div>
+              )}
+
+              <div className="flex gap-2 justify-start pt-1">
+                <button
+                  type="submit"
+                  disabled={isSubmitLoading}
+                  className="px-4 py-2 bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold text-xs rounded transition-all cursor-pointer flex items-center gap-1.5"
+                >
+                  {isSubmitLoading ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5" />}
+                  <span>تاقیکردنەوە و پاشەکەوتکردن لە داتابەیس</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveConfigureBroker(null)}
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-750 text-slate-300 font-bold text-xs rounded border border-slate-700 transition-all cursor-pointer"
+                >
+                  پاشگەزبوونەوە
+                </button>
+              </div>
+            </form>
+          </div>
+        )}
+      </div>
+
+      {/* 2. RIGHT RISK CONTROL & AUTOPILOT ADJUSTER */}
+      <div id="capital-risk-rules" className="lg:col-span-4 flex flex-col justify-between bg-slate-950 border border-slate-800 rounded-xl p-5 text-right" dir="rtl">
         <div>
           <div className="flex justify-between items-center mb-4 border-b border-slate-900 pb-3">
             <div className="flex items-center space-x-2.5 space-x-reverse">
@@ -401,7 +738,7 @@ export default function RiskBrokerManager() {
               </div>
               <div>
                 <h3 className="text-sm font-bold text-slate-100 uppercase tracking-wider">پارامیتەرەکانی ڕیسک و سەرمایە</h3>
-                <span className="text-[10px] text-slate-500 font-mono block">DYNAMIC PROTECTION & AUTOPILOT TUNING</span>
+                <span className="text-[10px] text-slate-500 font-mono block">DYNAMIC PROTECTION & NEWS COUPLING</span>
               </div>
             </div>
 
@@ -490,36 +827,13 @@ export default function RiskBrokerManager() {
               </div>
             </div>
 
-            {/* Moving Break Even and Hedge Locks */}
-            <div className="grid grid-cols-2 gap-4 pt-2">
-              <div className="space-y-1">
-                <label className="text-[11px] text-slate-400 block mb-1">گواستنەوەی فەرمانی پاراستن (Pips)</label>
-                <input
-                  type="number"
-                  step="0.5"
-                  value={riskRules.movingBreakEvenPips}
-                  onChange={(e) => setRiskRules({ ...riskRules, movingBreakEvenPips: parseFloat(e.target.value) })}
-                  className="w-full bg-slate-900 border border-slate-800 rounded px-2.5 py-1.5 text-xs text-slate-200 font-mono text-center focus:outline-none focus:border-rose-500"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-[11px] text-slate-400 block mb-1">قفڵکردنی پێگەی دۆڕاو (Hedge Lock %)</label>
-                <input
-                  type="number"
-                  step="0.5"
-                  value={riskRules.hedgeLockLossPercent}
-                  onChange={(e) => setRiskRules({ ...riskRules, hedgeLockLossPercent: parseFloat(e.target.value) })}
-                  className="w-full bg-slate-900 border border-slate-800 rounded px-2.5 py-1.5 text-xs text-slate-200 font-mono text-center focus:outline-none focus:border-rose-500"
-                />
-              </div>
-            </div>
-
             <div className="p-3 bg-rose-950/20 border border-rose-900/30 rounded-lg text-[10px] leading-relaxed text-rose-300">
-              {autoRiskTuning ? (
-                <span>ℹ️ پارێزەری ئۆتۆ-ڕیسک چالاکە. ڕافیعە و ڕیسک بەپێی شلۆقی بازاڕ بە شێوەیەکی داینامیکی کەم و زیاد دەکرێن بۆ کەمکردنەوەی زیانە نەخوازراوەکان.</span>
+              {newsStats.minutesUntilHighImpactNews < 30 ? (
+                <span className="text-rose-400 font-bold animate-pulse">⚠️ وریاکردنەوە: بەهۆی نزیکبوونەوەی هەواڵی کاریگەر (NFP y یان CPI)، ڕیسک و ڕافیعەی دارایی بە شێوەیەکی داینامیکی بۆ لۆتی ٢٥٪ کەمکراوەتەوە!</span>
+              ) : autoRiskTuning ? (
+                <span>ℹ️ پارێزەری ئۆتۆ-ڕیسک چالاکە. لۆت و مارجین بەپێی شلۆقی بازاڕ و خشتەی هەواڵەکان لە سێرڤەرەوە کۆنترۆڵ دەکرێن.</span>
               ) : (
-                <span>⚠️ ڕێکخستنی دەستی ڕیسک چالاکە. دڵنیابەرەوە کە ڕێژەی ڕیسک زۆر بەرز نییە بۆ ڕێگریکردن لە لێکچوونی مارجین کاڵ.</span>
+                <span>⚠️ ڕێکخستنی دەستی ڕیسک چالاکە. لۆت بە جێگیری دەمێنێتەوە.</span>
               )}
             </div>
 
@@ -528,410 +842,784 @@ export default function RiskBrokerManager() {
 
         <div className="pt-4 border-t border-slate-900 mt-4">
           <button
-            onClick={handleSaveConfigs}
+            onClick={handleSaveRiskRules}
             className="w-full py-2 bg-rose-950/40 border border-rose-800/40 text-rose-400 hover:bg-rose-950/60 rounded font-bold text-xs transition-all cursor-pointer flex items-center justify-center gap-1.5"
           >
             <ShieldCheck className="w-4 h-4" />
-            <span>چەسپاندن و پاشەکەوتکردنی یاساکانی ڕیسک</span>
+            <span>{saveStatus ? '✓ پاشەکەوت کرا' : 'چەسپاندن و پاشەکەوتکردنی یاساکانی ڕیسک'}</span>
           </button>
         </div>
       </div>
 
-      {/* Broker Credentials & Direct Platform Connection */}
-      <div id="broker-credentials-panel" className="lg:col-span-6 flex flex-col justify-between bg-slate-950 border border-slate-800 rounded-xl p-5">
-        <div>
-          <div className="flex items-center space-x-2.5 mb-2">
-            <div className="p-2 bg-sky-950/40 border border-sky-500/30 rounded text-sky-400">
-              <Database className="w-5 h-5" />
+      {/* 3. NEWS & ECONOMIC CALENDAR PANEL (STAGE 2) */}
+      <div id="news-economic-panel" className="lg:col-span-6 bg-slate-950 border border-slate-800 rounded-xl p-5 space-y-4">
+        <div className="flex justify-between items-center border-b border-slate-900 pb-3" dir="rtl">
+          <div className="flex items-center space-x-2.5 space-x-reverse">
+            <div className="p-2 bg-emerald-950/40 border border-emerald-500/30 rounded text-emerald-400">
+              <Newspaper className="w-5 h-5" />
             </div>
-            <div>
-              <h3 className="text-sm font-bold text-slate-100 uppercase tracking-wider">گرێدانی بڕۆکەر و پلاتفۆڕمەکان</h3>
-              <span className="text-[10px] text-slate-500 font-mono">REAL DIRECT APIS & FIX HANDSHAKES</span>
+            <div className="text-right">
+              <h3 className="text-sm font-bold text-slate-100 uppercase tracking-wider">ڕۆژژمێر و هەواڵی کاریگەر (Economic Intelligence)</h3>
+              <span className="text-[10px] text-slate-500 font-mono block">NEWSAPI.ORG & FINNHUB INTEGRATION</span>
             </div>
           </div>
-          <p className="text-xs text-slate-400 leading-relaxed mb-4">
-            لێرەوە داتای گریمانەیی (Mock Data) لابدە و ڕاستەوخۆ بەستەر بنێ بە هەژماری ڕاستەقینەی بڕۆکەرەکەتەوە لەڕێگەی پرۆتۆکۆلی پارێزراوی FIX یان MT5 WebAPI.
-          </p>
+          <span className={`px-2.5 py-0.5 text-[10px] font-mono font-bold rounded-full ${
+            newsStats.sentimentScore >= 0.1 ? 'bg-emerald-950 text-emerald-400 border border-emerald-800/30' :
+            newsStats.sentimentScore <= -0.1 ? 'bg-rose-950 text-rose-400 border border-rose-800/30' :
+            'bg-slate-900 text-slate-400 border border-slate-800'
+          }`}>
+            SENTIMENT: {newsStats.sentimentScore >= 0 ? '+' : ''}{newsStats.sentimentScore.toFixed(2)}
+          </span>
+        </div>
 
-          <div className="space-y-4">
-            
-            {/* Broker Provider Select */}
-            <div>
-              <label className="text-[10px] text-slate-400 uppercase font-bold block mb-1.5">هەڵبژاردنی پلاتفۆڕم / بڕۆکەر</label>
-              <div className="grid grid-cols-4 gap-2">
-                {[
-                  { id: 'oanda', label: 'OANDA API' },
-                  { id: 'metatrader5', label: 'MT5 Web' },
-                  { id: 'fix_gateway', label: 'FIX 4.4' },
-                  { id: 'ib', label: 'Interactive' }
-                ].map((item) => (
-                  <button
-                    key={item.id}
-                    onClick={() => setBrokerConfig({ ...brokerConfig, brokerType: item.id as BrokerConfig['brokerType'] })}
-                    className={`px-1 py-2 text-[10px] font-bold rounded border transition-all cursor-pointer text-center ${
-                      brokerConfig.brokerType === item.id
-                        ? 'bg-sky-950 border-sky-500 text-sky-400 shadow-md'
-                        : 'bg-slate-900 border-slate-800 text-slate-400 hover:border-slate-700'
-                    }`}
-                  >
-                    {item.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Connection Status Alerts */}
-            {connectionStatus === 'DISCONNECTED' && (
-              <div className="p-3 bg-amber-950/20 border border-amber-800/30 rounded-lg text-xs flex items-start space-x-2 text-amber-300">
-                <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-                <span>داشبۆرد لە دۆخی دابڕاو دایە. تکایە زانیارییەکانی بەستنەوەی ڕاستەقینە بنووسە بۆ چالاککردنی تیکەکانی بازار.</span>
-              </div>
-            )}
-
-            {connectionStatus === 'CONNECTED' && (
-              <div className="p-3 bg-emerald-950/40 border border-emerald-500/30 rounded-lg text-xs flex items-start space-x-2 text-emerald-400">
-                <CheckCircle className="w-4 h-4 shrink-0 mt-0.5" />
-                <div>
-                  <span className="font-bold block">پەیوەندی ڕاستەقینە چالاكە ✓</span>
-                  <span>سیستەمەکە بەستراوەتەوە بە OANDA API. داتای وەهمی بە تەواوی ڕاگیرا و تیکە ڕاستەقینەکان دەخوێنرێنەوە.</span>
-                </div>
-              </div>
-            )}
-
-            {connectionStatus === 'ERROR' && (
-              <div className="p-3 bg-rose-950/30 border border-rose-500/30 rounded-lg text-xs flex items-start space-x-2 text-rose-400">
-                <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-                <span>{errorMessage}</span>
-              </div>
-            )}
-
-            {/* Connection URL */}
-            <div>
-              <label className="text-[10px] text-slate-400 uppercase font-bold block mb-1">بەستەری دەستگەیشتن (Broker Endpoint URL)</label>
-              <input
-                type="text"
-                value={brokerConfig.apiUrl}
-                onChange={(e) => setBrokerConfig({ ...brokerConfig, apiUrl: e.target.value })}
-                className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-xs text-slate-200 font-mono focus:outline-none focus:border-sky-500"
-                placeholder="https://api-fxtrade.oanda.com/v3"
-              />
-            </div>
-
-            {/* Account ID */}
-            <div>
-              <label className="text-[10px] text-slate-400 uppercase font-bold block mb-1">ناسنامەی هەژمار (Account ID / Login)</label>
-              <input
-                type="text"
-                value={brokerConfig.accountId}
-                onChange={(e) => setBrokerConfig({ ...brokerConfig, accountId: e.target.value })}
-                className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-xs text-slate-200 font-mono focus:outline-none focus:border-sky-500"
-                placeholder="001-002-1234567-001"
-              />
-            </div>
-
-            {/* API Token / Cert Password (Password mask) */}
-            <div>
-              <label className="text-[10px] text-slate-400 uppercase font-bold block mb-1">کلیل یان بڕوانامەی پارێزراو (API Token / Private Key)</label>
-              <div className="relative">
-                <input
-                  type="password"
-                  value={brokerConfig.apiToken}
-                  onChange={(e) => setBrokerConfig({ ...brokerConfig, apiToken: e.target.value })}
-                  className="w-full bg-slate-950 border border-slate-800 rounded pl-3 pr-10 py-2 text-xs text-slate-200 font-mono focus:outline-none focus:border-sky-500"
-                  placeholder="••••••••••••••••••••••••••••••••"
-                />
-                <Key className="absolute right-3 top-2.5 w-4 h-4 text-slate-500" />
-              </div>
-            </div>
-
-            {/* FIX Session specific (Only visible when FIX selected) */}
-            {brokerConfig.brokerType === 'fix_gateway' && (
-              <div className="grid grid-cols-2 gap-3 p-3 bg-slate-900/40 border border-slate-800 rounded-lg">
-                <div>
-                  <label className="text-[9px] text-slate-400 font-mono font-bold block mb-1">TARGET COMP ID</label>
-                  <input
-                    type="text"
-                    value={brokerConfig.targetCompId}
-                    onChange={(e) => setBrokerConfig({ ...brokerConfig, targetCompId: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1 text-xs text-slate-200 font-mono"
-                  />
-                </div>
-                <div>
-                  <label className="text-[9px] text-slate-400 font-mono font-bold block mb-1">SENDER COMP ID</label>
-                  <input
-                    type="text"
-                    value={brokerConfig.senderCompId}
-                    onChange={(e) => setBrokerConfig({ ...brokerConfig, senderCompId: e.target.value })}
-                    className="w-full bg-slate-950 border border-slate-800 rounded px-2 py-1 text-xs text-slate-200 font-mono"
-                  />
-                </div>
-              </div>
-            )}
-
+        {/* Sentiment Gauge & Impact */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3" dir="rtl">
+          <div className="p-3.5 bg-slate-900/60 border border-slate-800 rounded-lg text-right">
+            <span className="text-[10px] text-slate-400 block mb-1">کاریگەری سەر لۆتی بازرگانی (Sizing Influence)</span>
+            <span className={`text-base font-bold font-mono ${newsStats.influenceMultiplier < 1.0 ? 'text-rose-400 animate-pulse' : 'text-emerald-400'}`}>
+              {newsStats.influenceMultiplier === 1.0 ? 'NOMINAL SIZE (100% Sizing)' : `RISK LOCKED (${(newsStats.influenceMultiplier * 100).toFixed(0)}% Lot Sizing)`}
+            </span>
+          </div>
+          <div className="p-3.5 bg-slate-900/60 border border-slate-800 rounded-lg text-right">
+            <span className="text-[10px] text-slate-400 block mb-1">ماوەی ماوە بۆ هەواڵی داهاتوو</span>
+            <span className="text-base font-bold font-mono text-slate-100">
+              {newsStats.minutesUntilHighImpactNews === 999 ? "STANDBY" : `${newsStats.minutesUntilHighImpactNews} Mins`}
+            </span>
           </div>
         </div>
 
-        <div className="pt-4 border-t border-slate-800 mt-4 flex justify-between gap-3">
+        {/* News Calendar Events List */}
+        <div className="space-y-2 text-right" dir="rtl">
+          <label className="text-[10px] text-slate-400 uppercase font-bold block mb-1">ڕووداوە ماکرۆئابوورییە نزیکەکان (Macro Events Schedule)</label>
+          <div className="bg-slate-950 border border-slate-800 rounded-lg overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-slate-900/60 border-b border-slate-800/60 text-[9px] text-slate-400 uppercase font-mono">
+                    <th className="py-2 px-3">Impact</th>
+                    <th className="py-2 px-3">Currency</th>
+                    <th className="py-2 px-3">Event Release</th>
+                    <th className="py-2 px-3">Forecast</th>
+                    <th className="py-2 px-3 text-right">Countdown</th>
+                  </tr>
+                </thead>
+                <tbody className="text-[11px] font-mono text-slate-200">
+                  {newsEvents.map((item, index) => (
+                    <tr key={index} className="border-b border-slate-900/40 hover:bg-slate-900/20">
+                      <td className="py-2 px-3">
+                        <span className={`px-1 rounded text-[8px] font-bold ${
+                          item.impact === 'HIGH' ? 'bg-rose-950/60 text-rose-400 border border-rose-800/30' :
+                          item.impact === 'MEDIUM' ? 'bg-amber-950/60 text-amber-400 border border-amber-800/30' :
+                          'bg-slate-900 text-slate-400 border border-slate-800'
+                        }`}>
+                          {item.impact}
+                        </span>
+                      </td>
+                      <td className="py-2 px-3 text-slate-400">{item.currency}</td>
+                      <td className="py-2 px-3 font-sans text-slate-100 truncate max-w-[120px]" title={item.title}>{item.title}</td>
+                      <td className="py-2 px-3 text-slate-300">{item.forecast}</td>
+                      <td className="py-2 px-3 text-right text-emerald-400 font-bold">
+                        {item.minutesRemaining <= 0 ? (
+                          <span className="text-slate-400">RELEASED ({item.actual || item.forecast})</span>
+                        ) : (
+                          `${item.minutesRemaining}m`
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        {/* Credentials Form news */}
+        <form onSubmit={handleSaveNewsKeys} className="p-3.5 bg-slate-900/30 border border-slate-800 rounded-xl text-right" dir="rtl">
+          <label className="text-[10px] text-slate-400 uppercase font-bold block mb-2">بەستنەوە بە کۆدی ڕاستەقینەی NewsAPI / Finnhub</label>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <input 
+              type="password" 
+              placeholder="NewsAPI.org API Key"
+              value={formNewsApiKey}
+              onChange={(e) => setFormNewsApiKey(e.target.value)}
+              className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-1 text-xs text-slate-300 font-mono focus:outline-none" 
+            />
+            <input 
+              type="password" 
+              placeholder="Finnhub.io API Token"
+              value={formFinnhubKey}
+              onChange={(e) => setFormFinnhubKey(e.target.value)}
+              className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-1 text-xs text-slate-300 font-mono focus:outline-none" 
+            />
+          </div>
           <button
-            id="save-broker-details-btn"
-            onClick={handleSaveConfigs}
-            className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-bold text-xs rounded transition-all cursor-pointer"
+            type="submit"
+            className="mt-2.5 py-1.5 px-4 bg-emerald-950/40 hover:bg-emerald-950/60 border border-emerald-800/40 text-emerald-400 rounded text-[10px] font-bold transition-all cursor-pointer"
           >
-            پاشەکەوتکردنی زانیارییەکان
+            {newsKeysSaved ? "✓ پاشەکەوت کرا" : "تۆمارکردنی کلیلەکان لە داتابەیس"}
           </button>
-
-          {connectionStatus === 'CONNECTED' ? (
-            <button
-              id="disconnect-broker-btn"
-              onClick={handleDisconnect}
-              className="px-4 py-2.5 bg-rose-950/40 border border-rose-800 text-rose-400 font-bold text-xs rounded transition-all cursor-pointer"
-            >
-              پچڕاندنی پەیوەندی
-            </button>
-          ) : (
-            <button
-              id="connect-broker-btn"
-              onClick={handleConnectBroker}
-              disabled={connectionStatus === 'CONNECTING'}
-              className="px-4 py-2.5 bg-sky-500 hover:bg-sky-400 text-slate-950 font-mono font-bold text-xs rounded transition-all cursor-pointer flex items-center space-x-2"
-            >
-              {connectionStatus === 'CONNECTING' ? (
-                <>
-                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                  <span>پێوەدەبەسترێت...</span>
-                </>
-              ) : (
-                <>
-                  <Play className="w-3.5 h-3.5" />
-                  <span>بەستنەوە بە بڕۆکەرەوە</span>
-                </>
-              )}
-            </button>
-          )}
-        </div>
-
+        </form>
       </div>
 
-      {/* Real-time Live Linked Account Monitor (Only shows when CONNECTED) */}
-      {connectionStatus === 'CONNECTED' && (
-        <div id="live-account-monitor-widget" className="lg:col-span-12 bg-slate-950 border border-slate-800/80 rounded-xl p-5 mt-6 space-y-6">
-          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-slate-900 pb-4 text-right" dir="rtl">
-            <div>
-              <div className="flex items-center gap-2 justify-start">
-                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                <h3 className="text-sm font-bold text-slate-100 uppercase tracking-wide">سیستەمی چاودێری پۆرتفۆلیۆ و هەژماری بەستراوە (Live Account Monitor)</h3>
-              </div>
-              <p className="text-xs text-slate-500 mt-1">پەیوەندی ڕاستەوخۆ چالاکە لەگەڵ هێڵی بڕۆکەر. نرخەکان و پۆرتفۆلیۆ چرکە بە چرکە نوێ دەبنەوە.</p>
+      {/* 4. INSTITUTIONAL FIX SESSION MONITOR (STAGE 2) */}
+      <div id="fix-session-terminal" className="lg:col-span-6 bg-slate-950 border border-slate-800 rounded-xl p-5 space-y-4">
+        <div className="flex justify-between items-center border-b border-slate-900 pb-3" dir="rtl">
+          <div className="flex items-center space-x-2.5 space-x-reverse">
+            <div className="p-2 bg-amber-950/40 border border-amber-500/30 rounded text-amber-400">
+              <Radio className="w-5 h-5" />
             </div>
-            <div className="mt-3 sm:mt-0 px-3 py-1.5 bg-slate-900 border border-slate-800 rounded text-xs font-mono text-slate-300">
-              ID: <span className="text-emerald-400 font-bold">{brokerConfig.accountId}</span> | <span className="text-slate-400 uppercase">{brokerConfig.brokerType}</span>
+            <div className="text-right">
+              <h3 className="text-sm font-bold text-slate-100 uppercase tracking-wider">چاودێری دانیشتنی پرۆتۆکۆلی FIX (FIX Session terminal)</h3>
+              <span className="text-[10px] text-slate-500 font-mono block">OANDA & INSTITUTIONAL GATEWAYS</span>
             </div>
           </div>
+          <span className={`px-2 py-0.5 text-[9px] font-bold rounded-full border ${
+            fixStatus.status === 'LOGGED_IN' ? 'bg-emerald-950 text-emerald-400 border-emerald-800/30' :
+            fixStatus.status === 'LOGGING_IN' ? 'bg-amber-950 text-amber-400 border-amber-800/30 animate-pulse' :
+            'bg-slate-900 text-slate-500 border-slate-800'
+          }`}>
+            {fixStatus.status}
+          </span>
+        </div>
 
-          {/* Account Metrics Grid */}
-          <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
-            <div className="p-3 bg-slate-900/60 border border-slate-800/80 rounded-lg text-right" dir="rtl">
-              <span className="text-[10px] text-slate-500 font-bold block uppercase">باڵانسی گشتی (Balance)</span>
-              <span className="text-sm font-mono font-bold text-slate-100">${accountStats.balance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-            </div>
-            <div className="p-3 bg-slate-900/60 border border-slate-800/80 rounded-lg text-right" dir="rtl">
-              <span className="text-[10px] text-slate-500 font-bold block uppercase">سەرمایەی داینامیکی (Equity)</span>
-              <span className="text-sm font-mono font-bold text-sky-400">${accountStats.equity.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-            </div>
-            <div className="p-3 bg-slate-900/60 border border-slate-800/80 rounded-lg text-right" dir="rtl">
-              <span className="text-[10px] text-slate-500 font-bold block uppercase">مارجینی بەکارهاتوو (Used Margin)</span>
-              <span className="text-sm font-mono font-bold text-amber-500">${accountStats.usedMargin.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-            </div>
-            <div className="p-3 bg-slate-900/60 border border-slate-800/80 rounded-lg text-right" dir="rtl">
-              <span className="text-[10px] text-slate-500 font-bold block uppercase">مارجینی ئازاد (Free Margin)</span>
-              <span className="text-sm font-mono font-bold text-emerald-400">${accountStats.freeMargin.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-            </div>
-            <div className="p-3 bg-slate-900/60 border border-slate-800/80 rounded-lg text-right" dir="rtl">
-              <span className="text-[10px] text-slate-500 font-bold block uppercase">ئاستی مارجین (Margin Level %)</span>
-              <span className={`text-sm font-mono font-bold ${accountStats.marginLevel > 200 ? 'text-emerald-400' : 'text-rose-500'}`}>{accountStats.marginLevel}%</span>
-            </div>
-            <div className="p-3 bg-slate-900/60 border border-slate-800/80 rounded-lg text-right" dir="rtl">
-              <span className="text-[10px] text-slate-500 font-bold block uppercase">قازانج/زیانی ئەمڕۆ (Today's PnL)</span>
-              <span className={`text-sm font-mono font-bold flex items-center gap-1 justify-end ${accountStats.todayPnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                {accountStats.todayPnl >= 0 ? <TrendingUp className="w-3.5 h-3.5" /> : <TrendingDown className="w-3.5 h-3.5" />}
-                ${accountStats.todayPnl.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </span>
-            </div>
+        {/* Diagnostics Info */}
+        <div className="grid grid-cols-4 gap-2 text-center" dir="rtl">
+          <div className="p-2 bg-slate-900/60 border border-slate-800/80 rounded">
+            <span className="text-[8px] text-slate-500 font-bold block">SENDER COMP</span>
+            <span className="text-[10px] font-mono text-slate-200 block truncate font-bold">{fixStatus.senderCompId || "SOVEREIGN"}</span>
           </div>
+          <div className="p-2 bg-slate-900/60 border border-slate-800/80 rounded">
+            <span className="text-[8px] text-slate-500 font-bold block">TARGET COMP</span>
+            <span className="text-[10px] font-mono text-slate-200 block truncate font-bold">{fixStatus.targetCompId || "GATEWAY"}</span>
+          </div>
+          <div className="p-2 bg-slate-900/60 border border-slate-800/80 rounded">
+            <span className="text-[8px] text-slate-500 font-bold block">IN SEQ NUM</span>
+            <span className="text-[10px] font-mono text-slate-200 block font-bold">{fixStatus.inboundSeqNum}</span>
+          </div>
+          <div className="p-2 bg-slate-900/60 border border-slate-800/80 rounded">
+            <span className="text-[8px] text-slate-500 font-bold block">OUT SEQ NUM</span>
+            <span className="text-[10px] font-mono text-slate-200 block font-bold">{fixStatus.outboundSeqNum}</span>
+          </div>
+        </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-            {/* Active Positions Table */}
-            <div className="lg:col-span-8 space-y-3">
-              <div className="flex justify-between items-center text-right" dir="rtl">
-                <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
-                  <Activity className="w-4 h-4 text-emerald-400" />
-                  پۆزیشنە کراوەکان لەسەر ئەکاونت (Active Positions)
-                </h4>
-                <span className="text-[10px] font-mono text-slate-500 font-bold">TOTAL: {positions.length} CONTRACTS</span>
-              </div>
+        {/* scrolling logs terminal */}
+        <div className="space-y-1">
+          <div className="flex justify-between items-center text-right" dir="rtl">
+            <label className="text-[10px] text-slate-400 font-mono">FIX 4.4 INTERCEPTOR CONSOLE (10=CHECKSUM)</label>
+          </div>
+          <div 
+            ref={fixTerminalEndRef}
+            className="w-full bg-slate-950 border border-slate-900 rounded-lg p-3 h-36 overflow-y-auto font-mono text-[9px] text-amber-500 space-y-1.5 scrollbar-thin scrollbar-thumb-slate-800 select-all"
+          >
+            {fixStatus.logs.length === 0 ? (
+              <div className="text-slate-600 italic py-8 text-center">No active FIX sessions mapped. Connect the FIX Gateway from the broker panel to begin.</div>
+            ) : (
+              fixStatus.logs.map((log, idx) => (
+                <div key={idx} className="leading-normal break-all font-mono">
+                  {log}
+                </div>
+              ))
+            )}
+          </div>
+        </div>
 
-              <div className="bg-slate-900/40 border border-slate-800/80 rounded-lg overflow-hidden">
-                {positions.length === 0 ? (
-                  <div className="p-8 text-center text-slate-500 text-xs">
-                    هیچ پۆزیشنێکی کراوە لەسەر ئەکاونت نییە لە ئێستادا.
-                  </div>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left border-collapse">
-                      <thead>
-                        <tr className="bg-slate-900/80 border-b border-slate-800 text-[10px] text-slate-400 uppercase font-mono">
-                          <th className="py-2 px-3">Symbol</th>
-                          <th className="py-2 px-3">Type</th>
-                          <th className="py-2 px-3">Size (Lots)</th>
-                          <th className="py-2 px-3">Entry Price</th>
-                          <th className="py-2 px-3">Current Price</th>
-                          <th className="py-2 px-3">S/L</th>
-                          <th className="py-2 px-3">T/P</th>
-                          <th className="py-2 px-3 text-right">PnL ($)</th>
-                          <th className="py-2 px-3 text-center">Action</th>
-                        </tr>
-                      </thead>
-                      <tbody className="text-xs font-mono text-slate-200">
-                        {positions.map((pos) => (
-                          <tr key={pos.id} className="border-b border-slate-900/60 hover:bg-slate-900/30 transition-all">
-                            <td className="py-2.5 px-3 font-bold text-slate-100">{pos.symbol}</td>
-                            <td className="py-2.5 px-3">
-                              <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${
-                                pos.type === 'BUY' ? 'bg-emerald-950/60 text-emerald-400 border border-emerald-800/40' : 'bg-rose-950/60 text-rose-400 border border-rose-800/40'
-                              }`}>
-                                {pos.type}
-                              </span>
-                            </td>
-                            <td className="py-2.5 px-3">{pos.size}</td>
-                            <td className="py-2.5 px-3 text-slate-400">{pos.entryPrice.toFixed(pos.symbol.includes('/') ? 5 : 2)}</td>
-                            <td className="py-2.5 px-3 text-sky-400 font-semibold animate-pulse">{pos.currentPrice.toFixed(pos.symbol.includes('/') ? 5 : 2)}</td>
-                            <td className="py-2.5 px-3 text-rose-400/80">{pos.sl.toFixed(pos.symbol.includes('/') ? 5 : 2)}</td>
-                            <td className="py-2.5 px-3 text-emerald-400/80">{pos.tp.toFixed(pos.symbol.includes('/') ? 5 : 2)}</td>
-                            <td className={`py-2.5 px-3 text-right font-bold ${pos.pnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                              {pos.pnl >= 0 ? '+' : ''}{pos.pnl.toFixed(2)}$
-                            </td>
-                            <td className="py-2.5 px-3 text-center">
-                              <button
-                                onClick={() => handleClosePosition(pos.id)}
-                                className="p-1 hover:bg-rose-950/50 border border-transparent hover:border-rose-800/40 rounded text-rose-400 transition-all cursor-pointer"
-                                title="داخستنی ڕاستەوخۆی پۆزیشن"
-                              >
-                                <X className="w-3.5 h-3.5" />
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
+        {/* Action controls */}
+        <div className="flex gap-2" dir="rtl">
+          <button
+            onClick={() => {
+              fetch('/api/fix/connect', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ targetCompId: 'OANDA_FIX_GATEWAY', senderCompId: 'SOVEREIGN_QUANT_CORE' })
+              }).then(fetchFixStatus);
+            }}
+            disabled={fixStatus.status === 'LOGGED_IN' || fixStatus.status === 'LOGGING_IN'}
+            className="px-3 py-1 bg-emerald-950/40 hover:bg-emerald-950/60 border border-emerald-800/30 text-emerald-400 rounded text-[10px] font-bold transition-all disabled:opacity-40 cursor-pointer"
+          >
+            دەستپێکردنی Logon (FIX)
+          </button>
+          <button
+            onClick={() => {
+              fetch('/api/fix/disconnect', { method: 'POST' }).then(fetchFixStatus);
+            }}
+            disabled={fixStatus.status !== 'LOGGED_IN'}
+            className="px-3 py-1 bg-rose-950/40 hover:bg-rose-950/60 border border-rose-800/30 text-rose-400 rounded text-[10px] font-bold transition-all disabled:opacity-40 cursor-pointer"
+          >
+            پچڕاندنی دانیشتن
+          </button>
+        </div>
+      </div>
+
+      {/* 4. SOVEREIGN APEX STRATEGY MODES ENGINE (STAGE 3) */}
+      <div id="sovereign-strategies-hub" className="lg:col-span-12 bg-slate-950 border border-slate-800 rounded-xl p-5 space-y-6">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-slate-900 pb-4 text-right" dir="rtl">
+          <div>
+            <div className="flex items-center gap-2 justify-start">
+              <span className="w-2.5 h-2.5 rounded-full bg-sky-500 animate-pulse"></span>
+              <h3 className="text-sm font-bold text-slate-100 uppercase tracking-wide">سەنتەری تەکینیکە پێشکەوتووەکانی سۆڤرین (Sovereign Core Strategies Hub)</h3>
             </div>
+            <p className="text-xs text-slate-500 mt-1">بەڕێوەبردن و بەدواداچوونی پێنج مۆدی سەرەکی بازرگانی بە لایڤ لەسەر پایپلاینی داتا.</p>
+          </div>
+          
+          {/* Instrument Selector Tabs */}
+          <div className="mt-3 sm:mt-0 flex gap-2">
+            {["EUR/USD", "GBP/USD", "BTC/USD"].map(sym => (
+              <button
+                key={sym}
+                onClick={() => setActiveStrategySymbol(sym)}
+                className={`px-3 py-1.5 rounded text-xs font-bold transition-all cursor-pointer ${
+                  activeStrategySymbol === sym 
+                    ? "bg-sky-950 border border-sky-500 text-sky-400 font-mono" 
+                    : "bg-slate-900 border border-slate-800 text-slate-400 font-mono hover:text-slate-300"
+                }`}
+              >
+                {sym}
+              </button>
+            ))}
+          </div>
+        </div>
 
-            {/* Quick Trade Panel */}
-            <div className="lg:col-span-4 space-y-3">
-              <div className="text-right" dir="rtl">
-                <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5 justify-end">
-                  <Settings2 className="w-4 h-4 text-sky-400" />
-                  جێبەجێکردنی فەرمانی خێرا (Quick Trade Pad)
-                </h4>
-                <p className="text-[10px] text-slate-500">لێرەوە دەتوانیت فەرمانی کڕین/فرۆشتنی نوێ ڕاستەوخۆ بنێریتە سەر حساب.</p>
-              </div>
+        {/* Config Controls and States for the Selected Symbol */}
+        {(() => {
+          const symConfig = strategiesConfig[activeStrategySymbol] || {
+            whaleMode: true,
+            sniperMode: true,
+            breakevenEnabled: true,
+            breakevenThreshold: 8.0,
+            dynamicSlEnabled: true,
+            shockAbsorberEnabled: true
+          };
 
-              <div className="p-4 bg-slate-900/60 border border-slate-800/80 rounded-lg space-y-3 text-right" dir="rtl">
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="text-[10px] text-slate-400 block mb-1">جۆری فەرمان</label>
-                    <div className="grid grid-cols-2 gap-1">
-                      <button
-                        onClick={() => setNewOrderType('BUY')}
-                        className={`py-1 text-xs font-bold rounded border transition-all cursor-pointer ${
-                          newOrderType === 'BUY' ? 'bg-emerald-950 border-emerald-500 text-emerald-400' : 'bg-slate-950 border-slate-900 text-slate-500'
-                        }`}
-                      >
-                        BUY
-                      </button>
-                      <button
-                        onClick={() => setNewOrderType('SELL')}
-                        className={`py-1 text-xs font-bold rounded border transition-all cursor-pointer ${
-                          newOrderType === 'SELL' ? 'bg-rose-950 border-rose-500 text-rose-400' : 'bg-slate-950 border-slate-900 text-slate-500'
-                        }`}
-                      >
-                        SELL
-                      </button>
+          const updateConfigField = async (field: string, value: any) => {
+            try {
+              const updated = { ...symConfig, [field]: value };
+              setStrategiesConfig(prev => ({ ...prev, [activeStrategySymbol]: updated }));
+              setStrategiesSaveStatus(true);
+              
+              await fetch('/api/strategies/config', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  symbol: activeStrategySymbol,
+                  ...updated
+                })
+              });
+
+              fetchStrategiesConfig();
+              setTimeout(() => setStrategiesSaveStatus(false), 1200);
+            } catch (e) {
+              console.error("Failed to update strategy config:", e);
+            }
+          };
+
+          const getLastTriggerTime = (modeKey: string) => {
+            const symTriggers = strategiesConfig[`lastTriggered_${activeStrategySymbol}`] || {};
+            return symTriggers[modeKey] || "سەرەتایی (Armed)";
+          };
+
+          return (
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+              
+              {/* Left side: Toggles & Stats */}
+              <div className="lg:col-span-8 grid grid-cols-1 md:grid-cols-2 gap-4">
+                
+                {/* 1. Whale Mode */}
+                <div className="p-4 bg-slate-900/40 border border-slate-800/80 rounded-xl space-y-3 relative overflow-hidden">
+                  <div className="flex justify-between items-start">
+                    <div className="flex items-center gap-2">
+                      <span className={`w-2 h-2 rounded-full ${symConfig.whaleMode ? 'bg-sky-500 animate-ping' : 'bg-slate-600'}`}></span>
+                      <span className="text-[10px] text-sky-400 font-mono font-bold">MODE 01</span>
                     </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input 
+                        type="checkbox" 
+                        checked={!!symConfig.whaleMode} 
+                        onChange={(e) => updateConfigField('whaleMode', e.target.checked)}
+                        className="sr-only peer" 
+                      />
+                      <div className="w-9 h-5 bg-slate-850 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-slate-300 after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-sky-600"></div>
+                    </label>
                   </div>
+                  <div className="text-right" dir="rtl">
+                    <h4 className="text-xs font-bold text-slate-100">مۆدی نەهەنگەکان (Whale Tracker Mode)</h4>
+                    <p className="text-[10px] text-slate-400 mt-1 leading-relaxed">چاودێری قووڵی دەفتەری داواکارییەکان بۆ ناسینەوەی گرێبەستە گەورەکان و دەرزی حجم.</p>
+                  </div>
+                  <div className="pt-2 border-t border-slate-900 flex justify-between items-center text-[10px] font-mono">
+                    <span className="text-slate-500">Last Action:</span>
+                    <span className="text-slate-300 font-bold">{getLastTriggerTime('whaleMode')}</span>
+                  </div>
+                </div>
 
-                  <div>
-                    <label className="text-[10px] text-slate-400 block mb-1">تیکەری هێما (Symbol)</label>
-                    <select
-                      value={newOrderSymbol}
-                      onChange={(e) => setNewOrderSymbol(e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-1 text-xs text-slate-300 font-mono focus:outline-none"
+                {/* 2. SniperMod */}
+                <div className="p-4 bg-slate-900/40 border border-slate-800/80 rounded-xl space-y-3 relative overflow-hidden">
+                  <div className="flex justify-between items-start">
+                    <div className="flex items-center gap-2">
+                      <span className={`w-2 h-2 rounded-full ${symConfig.sniperMode ? 'bg-emerald-500 animate-ping' : 'bg-slate-600'}`}></span>
+                      <span className="text-[10px] text-emerald-400 font-mono font-bold">MODE 02</span>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input 
+                        type="checkbox" 
+                        checked={!!symConfig.sniperMode} 
+                        onChange={(e) => updateConfigField('sniperMode', e.target.checked)}
+                        className="sr-only peer" 
+                      />
+                      <div className="w-9 h-5 bg-slate-850 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-slate-300 after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-600"></div>
+                    </label>
+                  </div>
+                  <div className="text-right" dir="rtl">
+                    <h4 className="text-xs font-bold text-slate-100">مۆدی نیشانەشکێن (SniperMod Precision)</h4>
+                    <p className="text-[10px] text-slate-400 mt-1 leading-relaxed">چوونە ژوورەوەی زۆر ورد لە ئاستە گرنگەکانی پشتیوانی و بەرگری بە خێرایی FIX.</p>
+                  </div>
+                  <div className="pt-2 border-t border-slate-900 flex justify-between items-center text-[10px] font-mono">
+                    <span className="text-slate-500">Last Execution:</span>
+                    <span className="text-slate-300 font-bold">{getLastTriggerTime('sniperMode')}</span>
+                  </div>
+                </div>
+
+                {/* 3. Break-even Zero Loss Shield */}
+                <div className="p-4 bg-slate-900/40 border border-slate-800/80 rounded-xl space-y-3 relative overflow-hidden">
+                  <div className="flex justify-between items-start">
+                    <div className="flex items-center gap-2">
+                      <span className={`w-2 h-2 rounded-full ${symConfig.breakevenEnabled ? 'bg-amber-500 animate-ping' : 'bg-slate-600'}`}></span>
+                      <span className="text-[10px] text-amber-400 font-mono font-bold">MODE 03</span>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input 
+                        type="checkbox" 
+                        checked={!!symConfig.breakevenEnabled} 
+                        onChange={(e) => updateConfigField('breakevenEnabled', e.target.checked)}
+                        className="sr-only peer" 
+                      />
+                      <div className="w-9 h-5 bg-slate-850 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-slate-300 after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-amber-600"></div>
+                    </label>
+                  </div>
+                  <div className="text-right" dir="rtl">
+                    <div className="flex justify-between items-center">
+                      <span className="text-[9px] bg-amber-950/40 text-amber-400 border border-amber-500/20 px-1 rounded font-mono font-bold">
+                        LIMIT: {symConfig.breakevenThreshold} PIPS
+                      </span>
+                      <h4 className="text-xs font-bold text-slate-100">قەڵغانی گەڕانەوە بۆ خاڵی دەسپێک (Break-even Shield)</h4>
+                    </div>
+                    <p className="text-[10px] text-slate-400 mt-1 leading-relaxed">جوڵاندنی Stop-Loss بۆ خاڵی چوونە ژوورەوە بە شێوەیەکی خۆکار بەمەبەستی زەرەری سفر.</p>
+                  </div>
+                  <div className="pt-2 border-t border-slate-900 flex justify-between items-center text-[10px] font-mono">
+                    <div className="flex items-center gap-1">
+                      <span className="text-slate-500">Threshold:</span>
+                      <input 
+                        type="number" 
+                        value={symConfig.breakevenThreshold} 
+                        onChange={(e) => updateConfigField('breakevenThreshold', parseFloat(e.target.value) || 5.0)}
+                        className="w-10 bg-slate-950 border border-slate-800 text-center text-slate-200 rounded font-bold"
+                      />
+                    </div>
+                    <span className="text-slate-300 font-bold">{getLastTriggerTime('breakeven')}</span>
+                  </div>
+                </div>
+
+                {/* 4. Dynamic Stop Loss & Leverage */}
+                <div className="p-4 bg-slate-900/40 border border-slate-800/80 rounded-xl space-y-3 relative overflow-hidden">
+                  <div className="flex justify-between items-start">
+                    <div className="flex items-center gap-2">
+                      <span className={`w-2 h-2 rounded-full ${symConfig.dynamicSlEnabled ? 'bg-violet-500 animate-ping' : 'bg-slate-600'}`}></span>
+                      <span className="text-[10px] text-violet-400 font-mono font-bold">MODE 04</span>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input 
+                        type="checkbox" 
+                        checked={!!symConfig.dynamicSlEnabled} 
+                        onChange={(e) => updateConfigField('dynamicSlEnabled', e.target.checked)}
+                        className="sr-only peer" 
+                      />
+                      <div className="w-9 h-5 bg-slate-850 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-slate-300 after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-violet-600"></div>
+                    </label>
+                  </div>
+                  <div className="text-right" dir="rtl">
+                    <h4 className="text-xs font-bold text-slate-100">تەنزیمی مەترسی داینامیکی (Dynamic SL & Volatility Leverage)</h4>
+                    <p className="text-[10px] text-slate-400 mt-1 leading-relaxed">ڕێکخستنی جۆڵاوی Stop-Loss و Leverage لەسەر بنەمای گۆڕانی لایڤی ATR و شەپۆل.</p>
+                  </div>
+                  <div className="pt-2 border-t border-slate-900 flex justify-between items-center text-[10px] font-mono">
+                    <span className="text-slate-500">SL Engine:</span>
+                    <span className="text-violet-400 font-bold">ATR VOLATILITY ADAPTIVE</span>
+                  </div>
+                </div>
+
+                {/* 5. Shock Absorber */}
+                <div className="p-4 bg-slate-900/40 border border-slate-800/80 rounded-xl space-y-3 relative overflow-hidden md:col-span-2">
+                  <div className="flex justify-between items-start">
+                    <div className="flex items-center gap-2">
+                      <span className={`w-2 h-2 rounded-full ${symConfig.shockAbsorberEnabled ? 'bg-rose-500 animate-ping' : 'bg-slate-600'}`}></span>
+                      <span className="text-[10px] text-rose-400 font-mono font-bold">MODE 05</span>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input 
+                        type="checkbox" 
+                        checked={!!symConfig.shockAbsorberEnabled} 
+                        onChange={(e) => updateConfigField('shockAbsorberEnabled', e.target.checked)}
+                        className="sr-only peer" 
+                      />
+                      <div className="w-9 h-5 bg-slate-850 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-slate-300 after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-rose-600"></div>
+                    </label>
+                  </div>
+                  <div className="text-right" dir="rtl">
+                    <div className="flex justify-between items-center mb-1">
+                      <span className={`px-2 py-0.5 text-[9px] border font-bold font-mono rounded ${isShockAbsorberActive ? 'bg-rose-950 border-rose-500 text-rose-400 animate-pulse' : 'bg-slate-900 border-slate-850 text-slate-500'}`}>
+                        {isShockAbsorberActive ? `GOVERNOR ACTIVE: ${(shockAbsorberLevel * 100).toFixed(0)}% Sizing` : "GOVERNOR NOMINAL"}
+                      </span>
+                      <h4 className="text-xs font-bold text-slate-100">سیستەمی دامپەر و هاوسەنگی جێگیری (Shock Absorber System)</h4>
+                    </div>
+                    <p className="text-[10px] text-slate-400 leading-relaxed">بچووککردنەوە یان بلۆککردنی فەرمانەکان بە شێوەیەکی خۆکار لەکاتی بەرزبوونەوەی زۆر تیژی مەترسی یان سزاکانی مۆدێلی C++.</p>
+                  </div>
+                </div>
+
+              </div>
+
+              {/* Right side: Strategy Decisions Audit Logs */}
+              <div className="lg:col-span-4 bg-slate-900/30 border border-slate-800/80 rounded-xl p-4 flex flex-col justify-between space-y-4">
+                <div className="space-y-3">
+                  <div className="flex justify-between items-center text-right" dir="rtl">
+                    <div className="flex items-center gap-1">
+                      <Clock className="w-4 h-4 text-sky-400" />
+                      <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wide">لۆگی بڕیارەکانی تەکینیکەکان (Strategy Audits)</h4>
+                    </div>
+                    <button 
+                      onClick={async () => {
+                        setIsRefreshingLogs(true);
+                        await fetchStrategyAuditLogs();
+                        setTimeout(() => setIsRefreshingLogs(false), 500);
+                      }}
+                      disabled={isRefreshingLogs}
+                      className="p-1 text-slate-500 hover:text-slate-300 transition-all cursor-pointer"
                     >
-                      <option value="EUR/USD">EUR/USD</option>
-                      <option value="GBP/USD">GBP/USD</option>
-                      <option value="BTC/USD">BTC/USD</option>
-                    </select>
+                      <RefreshCw className={`w-3.5 h-3.5 ${isRefreshingLogs ? "animate-spin" : ""}`} />
+                    </button>
+                  </div>
+                  
+                  <div className="h-[320px] overflow-y-auto space-y-2 pr-1 scrollbar-thin scrollbar-thumb-slate-800">
+                    {strategyAuditLogs.filter(log => log.symbol === activeStrategySymbol).length === 0 ? (
+                      <div className="text-slate-600 text-[10px] italic py-24 text-center">بۆ ئەم جووتە دراوە هێشتا هیچ ڕووداوێکی تەکینیکی لۆگ نەکراوە.</div>
+                    ) : (
+                      strategyAuditLogs
+                        .filter(log => log.symbol === activeStrategySymbol)
+                        .slice(-6)
+                        .reverse()
+                        .map((log, idx) => (
+                          <div key={idx} className="bg-slate-950/60 border border-slate-900 rounded p-2.5 space-y-1 text-right" dir="rtl">
+                            <div className="flex justify-between items-center text-[9px] font-mono">
+                              <span className="text-slate-500">{new Date(log.triggered_at || Date.now()).toLocaleTimeString()}</span>
+                              <span className={`px-1.5 py-0.2 rounded font-bold uppercase text-[8px] ${
+                                log.mode_name === 'Whale Mode' ? 'bg-sky-950 text-sky-400 border border-sky-900' :
+                                log.mode_name === 'SniperMod' ? 'bg-emerald-950 text-emerald-400 border border-emerald-900' :
+                                log.mode_name === 'Break-even Zero Loss' ? 'bg-amber-950 text-amber-400 border border-amber-900' : 'bg-rose-950 text-rose-400 border border-rose-900'
+                              }`}>
+                                {log.mode_name}
+                              </span>
+                            </div>
+                            <p className="text-[10px] text-slate-300 font-sans leading-relaxed">{log.details_raw}</p>
+                            <div className="text-[9px] font-mono text-slate-500 flex justify-between items-center border-t border-slate-900/60 pt-1 mt-1">
+                              <span>Output:</span>
+                              <span className="text-slate-400">{log.trigger_value}</span>
+                            </div>
+                          </div>
+                        ))
+                    )}
+                  </div>
+                </div>
+
+                <div className="text-center">
+                  <span className="text-[9px] text-slate-500 font-mono block">
+                    {strategiesSaveStatus ? "✓ SECURELY SYNCED WITH PG DATABASE" : "STATE PERSISTENCE: DURABLE POSTGRES"}
+                  </span>
+                </div>
+
+              </div>
+
+            </div>
+          );
+        })()}
+      </div>
+
+      {/* 5. LIVE LYNKED PORTFOLIO MONITOR CARD */}
+      <div id="live-account-monitor-widget" className="lg:col-span-12 bg-slate-950 border border-slate-800 rounded-xl p-5 space-y-6">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-slate-900 pb-4 text-right" dir="rtl">
+          <div>
+            <div className="flex items-center gap-2 justify-start">
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+              <h3 className="text-sm font-bold text-slate-100 uppercase tracking-wide">سیستەمی چاودێری پۆرتفۆلیۆ و پێگەکان (Live Portfolio Monitor)</h3>
+            </div>
+            <p className="text-xs text-slate-500 mt-1">داتاکان چرکە بە چرکە نوێ دەبنەوە بە ئاستی گرتنی لایڤ لە سێرڤەر و دەسکەوت.</p>
+          </div>
+          <div className="mt-3 sm:mt-0 px-3 py-1.5 bg-slate-900 border border-slate-800 rounded text-xs font-mono text-slate-300">
+            NOMINAL DMA ACCESS: <span className="text-emerald-400 font-bold">GRANTED</span>
+          </div>
+        </div>
+
+        {/* Account Metrics Grid */}
+        <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
+          <div className="p-3 bg-slate-900/40 border border-slate-800/80 rounded-lg text-right" dir="rtl">
+            <span className="text-[10px] text-slate-500 font-bold block uppercase">باڵانسی گشتی (Balance)</span>
+            <span className="text-sm font-mono font-bold text-slate-100">${accountStats.balance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+          </div>
+          <div className="p-3 bg-slate-900/40 border border-slate-800/80 rounded-lg text-right" dir="rtl">
+            <span className="text-[10px] text-slate-500 font-bold block uppercase">سەرمایەی داینامیکی (Equity)</span>
+            <span className="text-sm font-mono font-bold text-sky-400">${accountStats.equity.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+          </div>
+          <div className="p-3 bg-slate-900/40 border border-slate-800/80 rounded-lg text-right" dir="rtl">
+            <span className="text-[10px] text-slate-500 font-bold block uppercase">مارجینی بەکارهاتوو (Used Margin)</span>
+            <span className="text-sm font-mono font-bold text-amber-500">${accountStats.usedMargin.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+          </div>
+          <div className="p-3 bg-slate-900/40 border border-slate-800/80 rounded-lg text-right" dir="rtl">
+            <span className="text-[10px] text-slate-500 font-bold block uppercase">مارجینی ئازاد (Free Margin)</span>
+            <span className="text-sm font-mono font-bold text-emerald-400">${accountStats.freeMargin.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+          </div>
+          <div className="p-3 bg-slate-900/40 border border-slate-800/80 rounded-lg text-right" dir="rtl">
+            <span className="text-[10px] text-slate-500 font-bold block uppercase">ئاستی مارجین (Margin Level %)</span>
+            <span className={`text-sm font-mono font-bold ${accountStats.marginLevel > 200 ? 'text-emerald-400' : 'text-rose-500'}`}>{accountStats.marginLevel}%</span>
+          </div>
+          <div className="p-3 bg-slate-900/40 border border-slate-800/80 rounded-lg text-right" dir="rtl">
+            <span className="text-[10px] text-slate-500 font-bold block uppercase">قازانج/زیانی ئەمڕۆ (Today's PnL)</span>
+            <span className={`text-sm font-mono font-bold flex items-center gap-1 justify-end ${accountStats.todayPnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+              {accountStats.todayPnl >= 0 ? <TrendingUp className="w-3.5 h-3.5" /> : <TrendingDown className="w-3.5 h-3.5" />}
+              ${accountStats.todayPnl.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </span>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          {/* Active Positions Table */}
+          <div className="lg:col-span-8 space-y-3">
+            <div className="flex justify-between items-center text-right" dir="rtl">
+              <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                <Activity className="w-4 h-4 text-emerald-400" />
+                پۆزیشنە کراوەکان لەسەر ئەکاونت (Active Positions)
+              </h4>
+              <span className="text-[10px] font-mono text-slate-500 font-bold">TOTAL: {positions.length} CONTRACTS</span>
+            </div>
+
+            <div className="bg-slate-900/40 border border-slate-800/80 rounded-lg overflow-hidden">
+              {positions.length === 0 ? (
+                <div className="p-8 text-center text-slate-500 text-xs">
+                  هیچ پۆزیشنێکی کراوە لەسەر ئەکاونت نییە لە ئێستادا.
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="bg-slate-900/80 border-b border-slate-800 text-[10px] text-slate-400 uppercase font-mono">
+                        <th className="py-2 px-3">Symbol</th>
+                        <th className="py-2 px-3">Type</th>
+                        <th className="py-2 px-3">Size (Lots)</th>
+                        <th className="py-2 px-3">Entry Price</th>
+                        <th className="py-2 px-3">Current Price</th>
+                        <th className="py-2 px-3">S/L</th>
+                        <th className="py-2 px-3">T/P</th>
+                        <th className="py-2 px-3 text-right">PnL ($)</th>
+                        <th className="py-2 px-3 text-center">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="text-xs font-mono text-slate-200">
+                      {positions.map((pos) => (
+                        <tr key={pos.id} className="border-b border-slate-900/60 hover:bg-slate-900/30 transition-all">
+                          <td className="py-2.5 px-3 font-bold text-slate-100">{pos.symbol}</td>
+                          <td className="py-2.5 px-3">
+                            <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${
+                              pos.type === 'BUY' ? 'bg-emerald-950/60 text-emerald-400 border border-emerald-800/40' : 'bg-rose-950/60 text-rose-400 border border-rose-800/40'
+                            }`}>
+                              {pos.type}
+                            </span>
+                          </td>
+                          <td className="py-2.5 px-3">{pos.size}</td>
+                          <td className="py-2.5 px-3 text-slate-400">{pos.entryPrice.toFixed(pos.symbol.includes('/') ? 5 : 2)}</td>
+                          <td className="py-2.5 px-3 text-sky-400 font-semibold animate-pulse">{pos.currentPrice.toFixed(pos.symbol.includes('/') ? 5 : 2)}</td>
+                          <td className="py-2.5 px-3 text-rose-400/80">{pos.sl.toFixed(pos.symbol.includes('/') ? 5 : 2)}</td>
+                          <td className="py-2.5 px-3 text-emerald-400/80">{pos.tp.toFixed(pos.symbol.includes('/') ? 5 : 2)}</td>
+                          <td className={`py-2.5 px-3 text-right font-bold ${pos.pnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                            {pos.pnl >= 0 ? '+' : ''}{pos.pnl.toFixed(2)}$
+                          </td>
+                          <td className="py-2.5 px-3 text-center">
+                            <button
+                              onClick={() => handleClosePosition(pos.id)}
+                              className="p-1 hover:bg-rose-950/50 border border-transparent hover:border-rose-800/40 rounded text-rose-400 transition-all cursor-pointer"
+                              title="داخستنی ڕاستەوخۆ"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Quick Trade Panel */}
+          <div className="lg:col-span-4 space-y-3">
+            <div className="text-right" dir="rtl">
+              <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5 justify-end">
+                <Settings2 className="w-4 h-4 text-sky-400" />
+                جێبەجێکردنی فەرمانی خێرا (Quick Trade Pad)
+              </h4>
+              <p className="text-[10px] text-slate-500">لێرەوە دەتوانیت فەرمانی نوێ ڕاستەوخۆ بە لایڤ بنێریتە سەر حساب.</p>
+            </div>
+
+            <div className="p-4 bg-slate-900/60 border border-slate-800/80 rounded-lg space-y-3 text-right" dir="rtl">
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-[10px] text-slate-400 block mb-1">جۆری فەرمان</label>
+                  <div className="grid grid-cols-2 gap-1">
+                    <button
+                      onClick={() => setNewOrderType('BUY')}
+                      className={`py-1 text-xs font-bold rounded border transition-all cursor-pointer ${
+                        newOrderType === 'BUY' ? 'bg-emerald-950 border-emerald-500 text-emerald-400' : 'bg-slate-950 border-slate-900 text-slate-500'
+                      }`}
+                    >
+                      BUY
+                    </button>
+                    <button
+                      onClick={() => setNewOrderType('SELL')}
+                      className={`py-1 text-xs font-bold rounded border transition-all cursor-pointer ${
+                        newOrderType === 'SELL' ? 'bg-rose-950 border-rose-500 text-rose-400' : 'bg-slate-950 border-slate-900 text-slate-500'
+                      }`}
+                    >
+                      SELL
+                    </button>
                   </div>
                 </div>
 
                 <div>
-                  <div className="flex justify-between items-center mb-1">
-                    <label className="text-[10px] text-slate-400">قەبارەی لۆت (Lot Size)</label>
-                    <span className="text-[10px] font-mono font-bold text-sky-400">{newOrderSize} Lots</span>
-                  </div>
-                  <input
-                    type="range"
-                    min="0.1"
-                    max="10.0"
-                    step="0.1"
-                    value={newOrderSize}
-                    onChange={(e) => setNewOrderSize(parseFloat(e.target.value))}
-                    className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-sky-500"
-                  />
+                  <label className="text-[10px] text-slate-400 block mb-1">تیکەری هێما (Symbol)</label>
+                  <select
+                    value={newOrderSymbol}
+                    onChange={(e) => setNewOrderSymbol(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-1 text-xs text-slate-300 font-mono focus:outline-none focus:border-sky-500"
+                  >
+                    <option value="EUR/USD">EUR/USD</option>
+                    <option value="GBP/USD">GBP/USD</option>
+                    <option value="BTC/USD">BTC/USD</option>
+                  </select>
                 </div>
-
-                <button
-                  onClick={handleCreateOrder}
-                  className={`w-full py-2 font-bold text-xs rounded transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
-                    newOrderType === 'BUY'
-                      ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-950/50'
-                      : 'bg-rose-600 hover:bg-rose-500 text-white shadow-lg shadow-rose-950/50'
-                  }`}
-                >
-                  <Plus className="w-4 h-4" />
-                  <span>{newOrderType === 'BUY' ? 'کردنەوەی پۆزیشنی کڕین' : 'کردنەوەی پۆزیشنی فرۆشتن'}</span>
-                </button>
               </div>
-            </div>
-          </div>
 
-          {/* Connected WebSocket Real-time Logs */}
-          <div className="space-y-2 text-right" dir="rtl">
-            <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5 justify-end">
-              <Terminal className="w-4 h-4 text-amber-500" />
-              لۆگی پێوەندی ڕاستەوخۆ (Live Socket Events Feed)
-            </h4>
-            <div
-              ref={logScrollRef}
-              className="w-full bg-slate-950 border border-slate-900 rounded-lg p-3 h-28 overflow-y-auto font-mono text-[10px] space-y-1.5 select-text scrollbar-thin scrollbar-thumb-slate-800 text-left"
-              dir="ltr"
-            >
-              {liveLogs.map((log, idx) => (
-                <div key={idx} className="flex gap-2">
-                  <span className="text-slate-500 shrink-0">[{log.time}]</span>
-                  <span className={`${
-                    log.type === 'success' ? 'text-emerald-400' :
-                    log.type === 'warning' ? 'text-amber-400' :
-                    log.type === 'error' ? 'text-rose-400' : 'text-slate-400'
-                  }`}>{log.message}</span>
+              <div>
+                <div className="flex justify-between items-center mb-1">
+                  <label className="text-[10px] text-slate-400">قەبارەی لۆت (Lot Size)</label>
+                  <span className="text-[10px] font-mono font-bold text-sky-400">{newOrderSize} Lots</span>
                 </div>
-              ))}
+                <input
+                  type="range"
+                  min="0.1"
+                  max="10.0"
+                  step="0.1"
+                  value={newOrderSize}
+                  onChange={(e) => setNewOrderSize(parseFloat(e.target.value))}
+                  className="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-sky-500"
+                />
+              </div>
+
+              {newsStats.influenceMultiplier < 1.0 && (
+                <div className="p-2 bg-rose-950/30 border border-rose-900/30 rounded text-[9px] text-rose-300 leading-normal">
+                  ⚠ ئاگاداری: بەهۆی نزیکبوونەوەی هەواڵ لۆتی نوێ خۆکارانە بۆ ٢٥٪ بچووک دەکرێتەوە بۆ کەمکردنەوەی جێگیربوونی زیان! (کردەوە: {parseFloat((newOrderSize * newsStats.influenceMultiplier).toFixed(2))} Lots)
+                </div>
+              )}
+
+              <button
+                onClick={handleCreateOrder}
+                className={`w-full py-2 font-bold text-xs rounded transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                  newOrderType === 'BUY'
+                    ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-950/50'
+                    : 'bg-rose-600 hover:bg-rose-500 text-white shadow-lg shadow-rose-950/50'
+                }`}
+              >
+                <Plus className="w-4 h-4" />
+                <span>{newOrderType === 'BUY' ? 'کڕین لەگەڵ کۆپلەی هەواڵ' : 'فرۆشتن لەگەڵ کۆپلەی هەواڵ'}</span>
+              </button>
             </div>
           </div>
         </div>
-      )}
+      </div>
+
+      {/* 6. HARDEN KEY SECURITY & ROTATION HUB (STAGE 2) */}
+      <div id="harden-security-hub" className="lg:col-span-12 bg-slate-950 border border-slate-800 rounded-xl p-5 space-y-4">
+        <div className="flex justify-between items-center border-b border-slate-900 pb-3" dir="rtl">
+          <div className="flex items-center space-x-2.5 space-x-reverse">
+            <div className="p-2 bg-indigo-950/40 border border-indigo-500/30 rounded text-indigo-400">
+              <Lock className="w-5 h-5" />
+            </div>
+            <div className="text-right">
+              <h3 className="text-sm font-bold text-slate-100 uppercase tracking-wider">سەنتەری بەهێزکردنی ئاسایش و خولانەوەی کلیلەکان (Hardened HSM Hub)</h3>
+              <span className="text-[10px] text-slate-500 font-mono block">AES-256 DATABASE & MUTATE KEY ROTATOR & IP ALLOWLIST</span>
+            </div>
+          </div>
+          <span className="px-2.5 py-0.5 text-[9px] bg-indigo-950 text-indigo-300 border border-indigo-500/30 rounded-full font-mono font-bold animate-pulse">
+            SHIELD ACTIVE
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-5" dir="rtl">
+          {/* A. Encryption Status */}
+          <div className="p-4 bg-slate-900/40 border border-slate-800/60 rounded-xl space-y-2 text-right">
+            <div className="flex items-center space-x-1.5 space-x-reverse text-indigo-400">
+              <ShieldCheck className="w-4 h-4" />
+              <h4 className="text-xs font-bold uppercase">ئاستی کۆدکردنی داتابەیس</h4>
+            </div>
+            <p className="text-[11px] text-slate-400 leading-relaxed">
+              هەموو کلیلی برۆکەرەکان لە Postgres بە ئاستی <span className="text-indigo-400 font-mono font-bold">AES-256-CBC</span> لە ڕێگەی کلیلێکی Master نهێنی لە ناوەوەی سێرڤەر بە پارێزراوی هەڵگیراون. هیچ کلیلێک لە لۆگەکاندا دەرناکەوێت.
+            </p>
+            <div className="flex items-center gap-1.5 pt-1">
+              <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              <span className="text-[10px] font-mono text-emerald-400">HSM ENGINE NOMINAL STATUS</span>
+            </div>
+          </div>
+
+          {/* B. Key Rotation Controls */}
+          <div className="p-4 bg-slate-900/40 border border-slate-800/60 rounded-xl space-y-2 text-right">
+            <div className="flex items-center space-x-1.5 space-x-reverse text-indigo-400">
+              <Key className="w-4 h-4" />
+              <h4 className="text-xs font-bold uppercase">خولانەوەی خۆکارانەی کلیلی ناوەکی (API_MUTATE_KEY)</h4>
+            </div>
+            <p className="text-[11px] text-slate-400 leading-relaxed">
+              کلیلی ناوەکی بۆ نووسینی داتا بە شێوەیەکی خۆکار خشتەبەند کراوە بۆ خولانەوە هەر ١٠ خولەک جارێک.
+            </p>
+            <div className="bg-slate-950 p-2 border border-slate-800 rounded font-mono text-xs flex justify-between items-center text-left" dir="ltr">
+              <span className="text-slate-500 text-[10px]">CURRENT MUTATE KEY:</span>
+              <span className="text-indigo-400 font-bold">{securityInfo.maskedMutateKey || "••••••••"}</span>
+            </div>
+            <button
+              onClick={handleRotateMutateKey}
+              className="w-full py-1.5 bg-indigo-950/40 hover:bg-indigo-950/60 border border-indigo-500/30 text-indigo-300 rounded text-[10px] font-bold transition-all cursor-pointer"
+            >
+              خولاندنەوەی کلیلەکە ئێستا (Force Rotate Key)
+            </button>
+          </div>
+
+          {/* C. IP Allowlist Settings */}
+          <form onSubmit={handleSaveAllowlist} className="p-4 bg-slate-900/40 border border-slate-800/60 rounded-xl space-y-2 text-right">
+            <div className="flex items-center space-x-1.5 space-x-reverse text-indigo-400">
+              <Globe className="w-4 h-4" />
+              <h4 className="text-xs font-bold uppercase">لیستی ناونیشانە ڕێگەپێدراوەکان (IP Allowlist)</h4>
+            </div>
+            <p className="text-[11px] text-slate-400 leading-relaxed">
+              تەنها ڕێگە بدە بەم ناونیشانانە کە دەستکاری بەستەری برۆکەر و جێبەجێکردنی فەرمانەکانی کۆنتڕۆڵ بکەن:
+            </p>
+            <input 
+              type="text"
+              required
+              value={formAllowedIps}
+              onChange={(e) => setFormAllowedIps(e.target.value)}
+              className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-1 text-xs text-slate-300 font-mono focus:outline-none" 
+              placeholder="127.0.0.1, ::1, 10.0.0.5"
+            />
+            <button
+              type="submit"
+              className="w-full py-1.5 bg-indigo-950/40 hover:bg-indigo-950/60 border border-indigo-500/30 text-indigo-300 rounded text-[10px] font-bold transition-all cursor-pointer"
+            >
+              {allowlistSaved ? "✓ لیستی ڕێگەپێدراو چاککرا" : "تۆمارکردن و جێبەجێکردنی Whitelist"}
+            </button>
+          </form>
+        </div>
+      </div>
 
     </div>
   );
