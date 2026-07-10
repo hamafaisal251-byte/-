@@ -49,6 +49,19 @@ export interface EvolutionCandidate {
   };
   researchSources?: { title: string; uri: string }[];
   groundedText?: string;
+  lifecycleStage?: 'SANDBOX' | 'DEMO_LIVE_EVALUATING' | 'DEMO_LIVE_PASSED' | 'AWAITING_HUMAN_CONFIRMATION' | 'PROMOTED_REAL_LIVE' | 'REJECTED';
+  liveDemoMetrics?: {
+    avgReward: number;
+    maxDrawdown: number;
+    SharpeRatio: number;
+    tradesCount: number;
+    evaluationTicks: number;
+  };
+  mindRecommendation?: {
+    recommended: boolean;
+    reasoning: string;
+    timestamp: string;
+  };
 }
 
 export interface ArchitectureComponent {

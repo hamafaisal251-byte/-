@@ -24,6 +24,11 @@ export default function EvolutionLab({ candidates, setCandidates, selectedId, se
   const [pipelineSuccess, setPipelineSuccess] = useState<boolean | null>(null);
   const [terminalOutput, setTerminalOutput] = useState<string[]>([]);
   
+  // Human confirmation & promotion states
+  const [promotionStep, setPromotionStep] = useState<1 | 2 | null>(null);
+  const [promotionMessage, setPromotionMessage] = useState<string>('');
+  const [isPromoting, setIsPromoting] = useState<boolean>(false);
+
   // AI Imagination fields
   const [imaginedPrompt, setImaginedPrompt] = useState<string>('');
   const [selectedStrategy, setSelectedStrategy] = useState<'sniper' | 'safe' | 'dangerous' | 'leak'>('sniper');
@@ -70,6 +75,59 @@ export default function EvolutionLab({ candidates, setCandidates, selectedId, se
     const interval = setInterval(fetchBackendStatus, 4000);
     return () => clearInterval(interval);
   }, []);
+
+  // Poll candidates list from backend to show live background self-improvement status changes
+  useEffect(() => {
+    const fetchCandidates = async () => {
+      try {
+        const res = await fetch('/api/candidates');
+        if (res.ok) {
+          const data = await res.json();
+          setCandidates(data.candidates);
+        }
+      } catch (err) {
+        console.error("Failed to fetch candidates:", err);
+      }
+    };
+    fetchCandidates();
+    const interval = setInterval(fetchCandidates, 4000);
+    return () => clearInterval(interval);
+  }, [setCandidates]);
+
+  const handlePromoteCandidate = async (candidateId: string, step: number) => {
+    setIsPromoting(true);
+    setPromotionMessage('');
+    try {
+      const res = await fetch('/api/candidates/promote', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: candidateId, confirmStep: step })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        if (data.nextStepRequired) {
+          setPromotionStep(2);
+          setPromotionMessage(data.message || 'یەکەم هەنگاوی پشتڕاستکردنەوە تەواو بوو. تکایە پشتڕاستکردنەوەی کۆتایی لێبدە بۆ خستنەکاری سەرمایە لە بازاڕی ڕاستەقینەدا.');
+        } else {
+          setPromotionStep(null);
+          setPromotionMessage('🚀 کاندیدەکە بە سەرکەوتوویی بۆ بازرگانی ڕاستەقینە (REAL_LIVE) جێگیرکرا و سەرمایەی بۆ تەرخانکرا!');
+          // Refresh candidate list immediately
+          const cRes = await fetch('/api/candidates');
+          if (cRes.ok) {
+            const cData = await cRes.json();
+            setCandidates(cData.candidates);
+          }
+        }
+      } else {
+        setPromotionMessage(`خەتایەک ڕوویدا: ${data.error || 'نەتوانرا پەرەپێدان ئەنجامبدرێت.'}`);
+      }
+    } catch (err) {
+      console.error("Promotion failed:", err);
+      setPromotionMessage('خەتای تۆر: پەیوەندی شکست هێنا.');
+    } finally {
+      setIsPromoting(false);
+    }
+  };
 
   useEffect(() => {
     if (termRef.current) {
@@ -603,13 +661,30 @@ export default function EvolutionLab({ candidates, setCandidates, selectedId, se
               >
                 <div className="flex justify-between items-start mb-1.5">
                   <span className="text-[10px] font-mono font-bold text-slate-500 uppercase">{cand.creator}</span>
-                  <span className={`text-[9px] font-mono font-bold px-1.5 py-0.5 rounded ${
-                    !cand.failureReason
-                      ? 'bg-emerald-950/40 text-emerald-400 border border-emerald-800/30' 
-                      : 'bg-rose-950/40 text-rose-400 border border-rose-800/30'
-                  }`}>
-                    {!cand.failureReason ? 'STABLE OPTIMIZED' : 'SAFETY RISK'}
-                  </span>
+                  <div className="flex gap-1.5 flex-wrap">
+                    {cand.lifecycleStage && (
+                      <span className={`text-[8px] font-mono font-bold px-1 rounded ${
+                        cand.lifecycleStage === 'PROMOTED_REAL_LIVE'
+                          ? 'bg-emerald-950 text-emerald-400 border border-emerald-800'
+                          : cand.lifecycleStage === 'AWAITING_HUMAN_CONFIRMATION'
+                          ? 'bg-amber-950 text-amber-400 border border-amber-800 animate-pulse'
+                          : cand.lifecycleStage === 'DEMO_LIVE_EVALUATING'
+                          ? 'bg-purple-950 text-purple-400 border border-purple-800 animate-pulse'
+                          : cand.lifecycleStage === 'REJECTED'
+                          ? 'bg-rose-950 text-rose-400 border border-rose-900'
+                          : 'bg-slate-900 text-slate-400 border border-slate-800'
+                      }`}>
+                        {cand.lifecycleStage.replace('_', ' ')}
+                      </span>
+                    )}
+                    <span className={`text-[8px] font-mono font-bold px-1.5 py-0.5 rounded ${
+                      !cand.failureReason
+                        ? 'bg-emerald-950/40 text-emerald-400 border border-emerald-800/30' 
+                        : 'bg-rose-950/40 text-rose-400 border border-rose-800/30'
+                    }`}>
+                      {!cand.failureReason ? 'STABLE' : 'RISK'}
+                    </span>
+                  </div>
                 </div>
                 <h4 className="text-xs font-bold text-slate-200 line-clamp-2">{cand.name}</h4>
               </button>
@@ -660,6 +735,147 @@ export default function EvolutionLab({ candidates, setCandidates, selectedId, se
               {activeCandidate.groundedText && (
                 <div className="text-[10px] text-slate-400 bg-slate-950 p-2 rounded border border-slate-900 mt-2 max-h-24 overflow-y-auto leading-relaxed text-right font-sans select-text">
                   {activeCandidate.groundedText}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* DEMO_LIVE Evaluation & Human Capital Promotion Panel */}
+          {activeCandidate && (
+            <div className="p-4 bg-slate-900 border border-slate-800 rounded-lg space-y-4 text-right animate-fade-in" dir="rtl">
+              <div className="flex justify-between items-center border-b border-slate-850 pb-2">
+                <span className="text-[10px] text-slate-400 font-bold uppercase">قۆناغی ژیانی کاندید (Candidate Lifecycle Status)</span>
+                <span className={`text-[10px] px-2 py-0.5 rounded font-bold font-mono ${
+                  activeCandidate.lifecycleStage === 'PROMOTED_REAL_LIVE'
+                    ? 'bg-emerald-950 text-emerald-400 border border-emerald-900'
+                    : activeCandidate.lifecycleStage === 'AWAITING_HUMAN_CONFIRMATION'
+                    ? 'bg-amber-950 text-amber-400 border border-amber-900 animate-pulse'
+                    : activeCandidate.lifecycleStage === 'DEMO_LIVE_EVALUATING'
+                    ? 'bg-purple-950 text-purple-400 border border-purple-900'
+                    : 'bg-slate-950 text-slate-400 border border-slate-900'
+                }`}>
+                  {activeCandidate.lifecycleStage || 'SANDBOX'}
+                </span>
+              </div>
+
+              {/* DEMO LIVE real-time metrics */}
+              {(activeCandidate.liveDemoMetrics || activeCandidate.lifecycleStage === 'DEMO_LIVE_EVALUATING') && (
+                <div className="space-y-2">
+                  <div className="flex justify-between items-center">
+                    <h4 className="text-[11px] font-bold text-slate-300">ئامارەکانی بازرگانی تاقیکاری لایڤ (DEMO_LIVE Market Performance)</h4>
+                    {activeCandidate.lifecycleStage === 'DEMO_LIVE_EVALUATING' && (
+                      <span className="text-[9px] text-purple-400 animate-pulse flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-purple-400 animate-ping"></span>
+                        خەریکی کۆکردنەوەی داتای لایڤە
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-center font-mono text-[10px]">
+                    <div className="bg-slate-950 p-2 rounded border border-slate-850">
+                      <span className="text-slate-500 block text-[8px]">Sharpe Ratio</span>
+                      <span className={`font-bold text-xs ${
+                        (activeCandidate.liveDemoMetrics?.SharpeRatio || 0) >= 1.25 ? 'text-emerald-400' : 'text-slate-300'
+                      }`}>
+                        {activeCandidate.liveDemoMetrics?.SharpeRatio?.toFixed(2) || '0.00'}
+                      </span>
+                    </div>
+                    <div className="bg-slate-950 p-2 rounded border border-slate-850">
+                      <span className="text-slate-500 block text-[8px]">Max Drawdown</span>
+                      <span className={`font-bold text-xs ${
+                        (activeCandidate.liveDemoMetrics?.maxDrawdown || 0) < 3.5 ? 'text-emerald-400' : 'text-rose-400'
+                      }`}>
+                        {activeCandidate.liveDemoMetrics?.maxDrawdown?.toFixed(2) || '0.00'}%
+                      </span>
+                    </div>
+                    <div className="bg-slate-950 p-2 rounded border border-slate-850">
+                      <span className="text-slate-500 block text-[8px]">Simulated Trades</span>
+                      <span className="font-bold text-xs text-slate-300">
+                        {activeCandidate.liveDemoMetrics?.tradesCount || 0}
+                      </span>
+                    </div>
+                    <div className="bg-slate-950 p-2 rounded border border-slate-850">
+                      <span className="text-slate-500 block text-[8px]">Tick Count</span>
+                      <span className="font-bold text-xs text-purple-400">
+                        {activeCandidate.liveDemoMetrics?.evaluationTicks || 0} / 20
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Sovereign Mind recommendation */}
+              {activeCandidate.mindRecommendation && (
+                <div className="bg-purple-950/20 border border-purple-500/20 p-3 rounded-lg space-y-2 text-right">
+                  <div className="flex items-center gap-1.5 text-purple-400 font-bold text-[10px]">
+                    <Brain className="w-3.5 h-3.5" />
+                    <span>🧠 ڕاسپاردەی فەرمی Sovereign Mind (Confidence Assessment)</span>
+                  </div>
+                  <p className="text-[10px] text-slate-300 leading-relaxed pr-5">
+                    {activeCandidate.mindRecommendation.reasoning}
+                  </p>
+                  <div className="text-[8px] text-slate-500 pr-5 font-mono">
+                    بڕیاردرا لە: {new Date(activeCandidate.mindRecommendation.timestamp).toLocaleString()} | ڕاسپاردە: {activeCandidate.mindRecommendation.recommended ? 'Recommended (CONFIDENT)' : 'Review Required'}
+                  </div>
+                </div>
+              )}
+
+              {/* Two-step confirmation controls */}
+              {activeCandidate.lifecycleStage === 'AWAITING_HUMAN_CONFIRMATION' && (
+                <div className="space-y-3 pt-2">
+                  <div className="bg-amber-950/20 border border-amber-500/20 p-3 rounded-lg text-[10px] text-slate-300 leading-normal">
+                    <p className="text-amber-400 font-bold flex items-center gap-1 mb-1">
+                      <ShieldAlert className="w-4 h-4" /> سیستەمی دوو-قۆناغی پشتڕاستکردنەوەی مرۆڤ (Two-Step Safety Gate)
+                    </p>
+                    پێشنیاری بڕیاردەر لە لایەن Sovereign Mind تەنها فلتەرە. بۆ خستنەکاری سەرمایەی ڕاستەقینە و چالاککردنی لەسەر ئەکاونتی REAL_LIVE، پێویستە جێبەجێکار بە شێوەیەکی دەستی ڕێگەپێدان بدات.
+                  </div>
+
+                  {promotionMessage && (
+                    <div className="bg-slate-950 p-2 rounded border border-slate-800 text-[10px] font-mono text-center text-amber-400">
+                      {promotionMessage}
+                    </div>
+                  )}
+
+                  <div className="flex gap-2">
+                    {promotionStep !== 2 ? (
+                      <button
+                        onClick={() => handlePromoteCandidate(activeCandidate.id, 1)}
+                        disabled={isPromoting}
+                        className="flex-1 py-2 px-3 bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow"
+                      >
+                        {isPromoting ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Brain className="w-3.5 h-3.5" />}
+                        <span>دەستپێکردنی پشتڕاستکردنەوە (Step 1 of 2)</span>
+                      </button>
+                    ) : (
+                      <div className="w-full space-y-2">
+                        <button
+                          onClick={() => handlePromoteCandidate(activeCandidate.id, 2)}
+                          disabled={isPromoting}
+                          className="w-full py-2.5 px-3 bg-rose-600 hover:bg-rose-500 text-white font-black text-xs rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-lg animate-pulse"
+                        >
+                          {isPromoting ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Zap className="w-3.5 h-3.5" />}
+                          <span>پشتڕاستکردنەوە و گواستنەوە بۆ REAL_LIVE (Release Capital)</span>
+                        </button>
+                        <button
+                          onClick={() => {
+                            setPromotionStep(null);
+                            setPromotionMessage('');
+                          }}
+                          className="w-full py-1 text-slate-400 hover:text-slate-200 text-[10px] transition-all"
+                        >
+                          پاشگەزبوونەوە / لۆککردنەوەی سەرمایە
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Already promoted indicator */}
+              {activeCandidate.lifecycleStage === 'PROMOTED_REAL_LIVE' && (
+                <div className="bg-emerald-950/30 border border-emerald-500/20 p-3 rounded-lg text-[10px] text-emerald-400 flex items-center gap-2 justify-center">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400 animate-pulse" />
+                  <span className="font-bold">ئەم مۆدێلە لە ئێستادا لەسەر ئەکاونتی ڕاستەقینە (REAL_LIVE) چالاکە و سەرمایەی لەسەرە!</span>
                 </div>
               )}
             </div>

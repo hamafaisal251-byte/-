@@ -23,6 +23,7 @@ interface BrokerConnection {
   senderCompId?: string;
   maskedToken?: string;
   maskedSecret?: string;
+  environment?: 'DEMO_LIVE' | 'REAL_LIVE';
 }
 
 interface NewsEvent {
@@ -52,6 +53,8 @@ export default function RiskBrokerManager() {
   const [newsStats, setNewsStats] = useState({ minutesUntilHighImpactNews: 999, sentimentScore: 0.0, influenceMultiplier: 1.0 });
   const [fixStatus, setFixStatus] = useState({ status: 'LOGGED_OUT', targetCompId: '', senderCompId: '', inboundSeqNum: 1, outboundSeqNum: 1, logs: [] as string[] });
   const [securityInfo, setSecurityInfo] = useState({ hsmEncryptionStandard: '', isMasterKeyConfigured: false, allowedIps: [] as string[], maskedMutateKey: '', lastRotationTime: '' });
+  const [selectedEnvironment, setSelectedEnvironment] = useState<'DEMO_LIVE' | 'REAL_LIVE'>('DEMO_LIVE');
+  const [formEnvironment, setFormEnvironment] = useState<'DEMO_LIVE' | 'REAL_LIVE'>('DEMO_LIVE');
   
   // 2. Risk & Autopilot Sizing State
   const [riskRules, setRiskRules] = useState<RiskRules>(() => {
@@ -85,6 +88,17 @@ export default function RiskBrokerManager() {
   const [formNewsApiKey, setFormNewsApiKey] = useState('');
   const [formFinnhubKey, setFormFinnhubKey] = useState('');
   const [newsKeysSaved, setNewsKeysSaved] = useState(false);
+
+  // Expanded News Platforms state
+  const [newsPlatforms, setNewsPlatforms] = useState<any[]>([]);
+  const [activeNewsConfig, setActiveNewsConfig] = useState<string | null>(null);
+  const [formNewsPlatformKey, setFormNewsPlatformKey] = useState<string>('');
+  const [newsPlatformTesting, setNewsPlatformTesting] = useState<boolean>(false);
+  const [newsPlatformTestError, setNewsPlatformTestError] = useState<string>('');
+  const [newsPlatformTestSuccess, setNewsPlatformTestSuccess] = useState<string>('');
+  const [newsFeed, setNewsFeed] = useState<any[]>([]);
+  const [sentimentState, setSentimentState] = useState<any>(null);
+  const [hasCalendarFeed, setHasCalendarFeed] = useState<boolean>(false);
 
   // Form security allowlist state
   const [formAllowedIps, setFormAllowedIps] = useState('');
@@ -151,17 +165,32 @@ export default function RiskBrokerManager() {
     }
   };
 
+  const fetchNewsPlatforms = async () => {
+    try {
+      const res = await fetch('/api/news/platforms');
+      const data = await res.json();
+      if (data.success) {
+        setNewsPlatforms(data.platforms);
+      }
+    } catch (e) {
+      console.error("Failed to fetch news platforms:", e);
+    }
+  };
+
   const fetchNewsFeed = async () => {
     try {
       const res = await fetch('/api/news/feed');
       const data = await res.json();
       if (data.success) {
-        setNewsEvents(data.events);
+        setNewsEvents(data.events || []);
         setNewsStats({
           minutesUntilHighImpactNews: data.minutesUntilHighImpactNews,
           sentimentScore: data.sentimentScore,
           influenceMultiplier: data.influenceMultiplier
         });
+        setHasCalendarFeed(data.hasCalendarFeed);
+        setSentimentState(data.sentimentState || null);
+        setNewsFeed(data.liveFeed || []);
       }
     } catch (e) {
       console.error("Failed to fetch news feed:", e);
@@ -193,9 +222,15 @@ export default function RiskBrokerManager() {
     }
   };
 
+  const selectedEnvRef = useRef(selectedEnvironment);
+  useEffect(() => {
+    selectedEnvRef.current = selectedEnvironment;
+    fetchLivePositions();
+  }, [selectedEnvironment]);
+
   const fetchLivePositions = async () => {
     try {
-      const res = await fetch('/api/positions');
+      const res = await fetch(`/api/positions?environment=${selectedEnvRef.current}`);
       const data = await res.json();
       if (data.success) {
         setPositions(data.positions);
@@ -239,6 +274,7 @@ export default function RiskBrokerManager() {
 
   useEffect(() => {
     fetchConnections();
+    fetchNewsPlatforms();
     fetchNewsFeed();
     fetchFixStatus();
     fetchSecurityInfo();
@@ -248,6 +284,7 @@ export default function RiskBrokerManager() {
 
     // Set polling timers
     const intervalConns = setInterval(fetchConnections, 12000);
+    const intervalNewsPlatforms = setInterval(fetchNewsPlatforms, 15000);
     const intervalNews = setInterval(fetchNewsFeed, 10000);
     const intervalFix = setInterval(fetchFixStatus, 5000);
     const intervalSec = setInterval(fetchSecurityInfo, 15000);
@@ -257,6 +294,7 @@ export default function RiskBrokerManager() {
 
     return () => {
       clearInterval(intervalConns);
+      clearInterval(intervalNewsPlatforms);
       clearInterval(intervalNews);
       clearInterval(intervalFix);
       clearInterval(intervalSec);
@@ -344,7 +382,8 @@ export default function RiskBrokerManager() {
           secretKey: formSecretKey,
           passphrase: formPassphrase,
           targetCompId: formTargetCompId,
-          senderCompId: formSenderCompId
+          senderCompId: formSenderCompId,
+          environment: formEnvironment
         })
       });
 
@@ -389,24 +428,69 @@ export default function RiskBrokerManager() {
     }
   };
 
-  // Save News Credentials
-  const handleSaveNewsKeys = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSaveNewsPlatformKey = async (platformId: string, apiKey: string) => {
     try {
+      const body: Record<string, string> = {};
+      if (platformId === "news_api") body.newsApiKey = apiKey;
+      else if (platformId === "finnhub") body.finnhubKey = apiKey;
+      else if (platformId === "trading_economics") body.tradingEconomicsKey = apiKey;
+      else if (platformId === "alpha_vantage") body.alphaVantageKey = apiKey;
+      else if (platformId === "market_aux") body.marketAuxKey = apiKey;
+      else if (platformId === "fred") body.fredKey = apiKey;
+
       const response = await fetch('/api/news/config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ newsApiKey: formNewsApiKey, finnhubKey: formFinnhubKey })
+        body: JSON.stringify(body)
       });
       if (response.ok) {
-        setNewsKeysSaved(true);
-        setFormNewsApiKey('');
-        setFormFinnhubKey('');
+        setFormNewsPlatformKey('');
+        setActiveNewsConfig(null);
+        fetchNewsPlatforms();
         fetchNewsFeed();
-        setTimeout(() => setNewsKeysSaved(false), 2000);
       }
     } catch (err) {
-      console.error("Failed to save news keys:", err);
+      console.error("Failed to save news key:", err);
+    }
+  };
+
+  const handleTestNewsPlatform = async (platformId: string, apiKey: string) => {
+    setNewsPlatformTesting(true);
+    setNewsPlatformTestError('');
+    setNewsPlatformTestSuccess('');
+    try {
+      const response = await fetch('/api/news/test-connection', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ platform: platformId, apiKey })
+      });
+      const data = await response.json();
+      if (response.ok && data.success) {
+        setNewsPlatformTestSuccess('✓ بەستنەوەی تاقیکاری سەرکەوتوو بوو! (Test Connection Successful!)');
+      } else {
+        setNewsPlatformTestError(data.error || 'گرێدانەکە سەرنەکەوت. (Connection failed.)');
+      }
+    } catch (err) {
+      setNewsPlatformTestError('گرێدانەکە سەرنەکەوت بەهۆی کێشەی هێڵەوە.');
+    } finally {
+      setNewsPlatformTesting(false);
+    }
+  };
+
+  const handleDisconnectNewsPlatform = async (platformId: string) => {
+    if (!confirm(`دڵنیایت لە سڕینەوەی کلیل و گرێدانی ${platformId.toUpperCase()}؟`)) return;
+    try {
+      const response = await fetch('/api/news/disconnect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ platform: platformId })
+      });
+      if (response.ok) {
+        fetchNewsPlatforms();
+        fetchNewsFeed();
+      }
+    } catch (err) {
+      console.error("Failed to disconnect news platform:", err);
     }
   };
 
@@ -454,7 +538,8 @@ export default function RiskBrokerManager() {
         body: JSON.stringify({
           symbol: newOrderSymbol,
           type: newOrderType,
-          size: parseFloat((newOrderSize * sizeMultiplier).toFixed(2))
+          size: parseFloat((newOrderSize * sizeMultiplier).toFixed(2)),
+          environment: selectedEnvironment
         })
       });
       const data = await response.json();
@@ -474,7 +559,7 @@ export default function RiskBrokerManager() {
       const response = await fetch('/api/positions/close', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id })
+        body: JSON.stringify({ id, environment: selectedEnvironment })
       });
       if (response.ok) {
         fetchLivePositions();
@@ -567,6 +652,11 @@ export default function RiskBrokerManager() {
                       <div className="text-[10px] text-slate-400">
                         حساب: <span className="font-mono text-slate-200 font-bold bg-slate-950 px-1.5 py-0.5 rounded">{activeConn.accountId}</span>
                       </div>
+                      {activeConn.environment && (
+                        <div className="text-[10px] text-slate-400">
+                          ژینگە: <span className={`font-mono font-bold px-1.5 py-0.5 rounded text-[9px] ${activeConn.environment === 'REAL_LIVE' ? 'bg-rose-950 text-rose-400 border border-rose-900/30' : 'bg-emerald-950 text-emerald-400 border border-emerald-900/30'}`}>{activeConn.environment}</span>
+                        </div>
+                      )}
                       <div className="text-[9px] text-slate-500 font-mono">
                         کلیل: {activeConn.maskedToken || "••••••••"}
                       </div>
@@ -617,6 +707,35 @@ export default function RiskBrokerManager() {
 
             <form onSubmit={handleConnectBroker} className="space-y-3.5 text-right" dir="rtl">
               
+              {/* Target Environment */}
+              <div className="space-y-1">
+                <label className="text-[10px] text-slate-400 block font-bold">ژینگەی بەستنەوە (Target Environment)</label>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setFormEnvironment('DEMO_LIVE')}
+                    className={`flex-1 py-1 px-3 border rounded text-xs font-mono font-bold text-center transition-all cursor-pointer ${
+                      formEnvironment === 'DEMO_LIVE'
+                        ? 'bg-emerald-950/80 text-emerald-400 border-emerald-500/50'
+                        : 'bg-slate-950 text-slate-400 border-slate-900 hover:text-slate-200'
+                    }`}
+                  >
+                    DEMO_LIVE (Paper Trading)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFormEnvironment('REAL_LIVE')}
+                    className={`flex-1 py-1 px-3 border rounded text-xs font-mono font-bold text-center transition-all cursor-pointer ${
+                      formEnvironment === 'REAL_LIVE'
+                        ? 'bg-rose-950/80 text-rose-400 border-rose-500/50'
+                        : 'bg-slate-950 text-slate-400 border-slate-900 hover:text-slate-200'
+                    }`}
+                  >
+                    REAL_LIVE (Actual Capital)
+                  </button>
+                </div>
+              </div>
+
               {/* Endpoint URL */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1">
@@ -859,8 +978,8 @@ export default function RiskBrokerManager() {
               <Newspaper className="w-5 h-5" />
             </div>
             <div className="text-right">
-              <h3 className="text-sm font-bold text-slate-100 uppercase tracking-wider">ڕۆژژمێر و هەواڵی کاریگەر (Economic Intelligence)</h3>
-              <span className="text-[10px] text-slate-500 font-mono block">NEWSAPI.ORG & FINNHUB INTEGRATION</span>
+              <h3 className="text-sm font-bold text-slate-100 uppercase tracking-wider">پلاتفۆرمەکانی هەواڵ و داتا (News & Data Intelligence)</h3>
+              <span className="text-[10px] text-slate-500 font-mono block">UNIFIED SENTIMENT & ECONOMIC FEED</span>
             </div>
           </div>
           <span className={`px-2.5 py-0.5 text-[10px] font-mono font-bold rounded-full ${
@@ -868,97 +987,264 @@ export default function RiskBrokerManager() {
             newsStats.sentimentScore <= -0.1 ? 'bg-rose-950 text-rose-400 border border-rose-800/30' :
             'bg-slate-900 text-slate-400 border border-slate-800'
           }`}>
-            SENTIMENT: {newsStats.sentimentScore >= 0 ? '+' : ''}{newsStats.sentimentScore.toFixed(2)}
+            AGGREGATED SENTIMENT: {newsStats.sentimentScore >= 0 ? '+' : ''}{newsStats.sentimentScore.toFixed(2)}
           </span>
         </div>
 
         {/* Sentiment Gauge & Impact */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3" dir="rtl">
-          <div className="p-3.5 bg-slate-900/60 border border-slate-800 rounded-lg text-right">
+          <div className="p-3 bg-slate-900/60 border border-slate-800 rounded-lg text-right">
             <span className="text-[10px] text-slate-400 block mb-1">کاریگەری سەر لۆتی بازرگانی (Sizing Influence)</span>
-            <span className={`text-base font-bold font-mono ${newsStats.influenceMultiplier < 1.0 ? 'text-rose-400 animate-pulse' : 'text-emerald-400'}`}>
+            <span className={`text-[13px] font-bold font-mono ${newsStats.influenceMultiplier < 1.0 ? 'text-rose-400 animate-pulse' : 'text-emerald-400'}`}>
               {newsStats.influenceMultiplier === 1.0 ? 'NOMINAL SIZE (100% Sizing)' : `RISK LOCKED (${(newsStats.influenceMultiplier * 100).toFixed(0)}% Lot Sizing)`}
             </span>
           </div>
-          <div className="p-3.5 bg-slate-900/60 border border-slate-800 rounded-lg text-right">
+          <div className="p-3 bg-slate-900/60 border border-slate-800 rounded-lg text-right">
             <span className="text-[10px] text-slate-400 block mb-1">ماوەی ماوە بۆ هەواڵی داهاتوو</span>
-            <span className="text-base font-bold font-mono text-slate-100">
+            <span className="text-[13px] font-bold font-mono text-slate-100">
               {newsStats.minutesUntilHighImpactNews === 999 ? "STANDBY" : `${newsStats.minutesUntilHighImpactNews} Mins`}
             </span>
           </div>
         </div>
 
+        {/* Sentiment breakdown per-source */}
+        {sentimentState && sentimentState.breakdown && sentimentState.breakdown.length > 0 && (
+          <div className="p-3 bg-slate-900/40 border border-slate-800/80 rounded-lg space-y-2 text-right" dir="rtl">
+            <div className="flex justify-between items-center border-b border-slate-800 pb-1">
+              <span className="text-[9px] text-slate-500 font-mono">BREAKDOWN BY SOURCE</span>
+              <span className="text-[10px] text-slate-300 font-bold">شیکاری سێنتیمێنت بەپێی سەرچاوەکان</span>
+            </div>
+            
+            {/* Source disagreement warning */}
+            {sentimentState.disagreement && (
+              <div className="py-1 px-2.5 bg-rose-950/40 border border-rose-800/40 text-rose-400 text-[10px] rounded font-bold animate-pulse text-center">
+                ⚠️ ئاگاداری: جیاوازی زۆر لە نێوان سێنتیمێنتی سەرچاوەکاندا هەیە! (Significant Sentiment Disagreement!)
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-1 text-left">
+              {sentimentState.breakdown.map((item: any) => (
+                <div key={item.source} className="p-1.5 bg-slate-950 border border-slate-900 rounded font-mono text-[10px] flex flex-col justify-between">
+                  <span className="text-slate-400 uppercase font-bold text-[8px]">{item.source.replace('_', ' ')}</span>
+                  <div className="flex justify-between items-center mt-1">
+                    <span className="text-slate-500 text-[8px]">Articles: {item.count}</span>
+                    <span className={item.score >= 0.1 ? 'text-emerald-400 font-bold' : item.score <= -0.1 ? 'text-rose-400 font-bold' : 'text-slate-300'}>
+                      {item.score >= 0 ? '+' : ''}{item.score.toFixed(2)}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* News Calendar Events List */}
         <div className="space-y-2 text-right" dir="rtl">
-          <label className="text-[10px] text-slate-400 uppercase font-bold block mb-1">ڕووداوە ماکرۆئابوورییە نزیکەکان (Macro Events Schedule)</label>
-          <div className="bg-slate-950 border border-slate-800 rounded-lg overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="bg-slate-900/60 border-b border-slate-800/60 text-[9px] text-slate-400 uppercase font-mono">
-                    <th className="py-2 px-3">Impact</th>
-                    <th className="py-2 px-3">Currency</th>
-                    <th className="py-2 px-3">Event Release</th>
-                    <th className="py-2 px-3">Forecast</th>
-                    <th className="py-2 px-3 text-right">Countdown</th>
-                  </tr>
-                </thead>
-                <tbody className="text-[11px] font-mono text-slate-200">
-                  {newsEvents.map((item, index) => (
-                    <tr key={index} className="border-b border-slate-900/40 hover:bg-slate-900/20">
-                      <td className="py-2 px-3">
-                        <span className={`px-1 rounded text-[8px] font-bold ${
-                          item.impact === 'HIGH' ? 'bg-rose-950/60 text-rose-400 border border-rose-800/30' :
-                          item.impact === 'MEDIUM' ? 'bg-amber-950/60 text-amber-400 border border-amber-800/30' :
-                          'bg-slate-900 text-slate-400 border border-slate-800'
-                        }`}>
-                          {item.impact}
-                        </span>
-                      </td>
-                      <td className="py-2 px-3 text-slate-400">{item.currency}</td>
-                      <td className="py-2 px-3 font-sans text-slate-100 truncate max-w-[120px]" title={item.title}>{item.title}</td>
-                      <td className="py-2 px-3 text-slate-300">{item.forecast}</td>
-                      <td className="py-2 px-3 text-right text-emerald-400 font-bold">
-                        {item.minutesRemaining <= 0 ? (
-                          <span className="text-slate-400">RELEASED ({item.actual || item.forecast})</span>
-                        ) : (
-                          `${item.minutesRemaining}m`
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+          <label className="text-[10px] text-slate-400 uppercase font-bold block mb-1">ڕووداوە ماکرۆئابوورییەکان (Economic Calendar Feed)</label>
+          
+          {!hasCalendarFeed ? (
+            <div className="p-4 bg-slate-900/60 border border-amber-900/30 rounded-xl text-center text-slate-400 text-xs">
+              <span className="text-amber-500 font-mono block font-bold mb-1">NO CALENDAR FEED</span>
+              <span>تکایە Trading Economics یان FRED بەستەر بکە بۆ بینینی ڕووداوە ئابوورییە ڕاستەقینەکان.</span>
             </div>
+          ) : (
+            <div className="bg-slate-950 border border-slate-800 rounded-lg overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-slate-900/60 border-b border-slate-800/60 text-[9px] text-slate-400 uppercase font-mono">
+                      <th className="py-2 px-3">Impact</th>
+                      <th className="py-2 px-3">Currency</th>
+                      <th className="py-2 px-3">Event Release</th>
+                      <th className="py-2 px-3">Forecast</th>
+                      <th className="py-2 px-3 text-right">Countdown</th>
+                    </tr>
+                  </thead>
+                  <tbody className="text-[11px] font-mono text-slate-200">
+                    {newsEvents.map((item, index) => (
+                      <tr key={index} className="border-b border-slate-900/40 hover:bg-slate-900/20">
+                        <td className="py-2 px-3">
+                          <span className={`px-1 rounded text-[8px] font-bold ${
+                            item.impact === 'HIGH' ? 'bg-rose-950/60 text-rose-400 border border-rose-800/30' :
+                            item.impact === 'MEDIUM' ? 'bg-amber-950/60 text-amber-400 border border-amber-800/30' :
+                            'bg-slate-900 text-slate-400 border border-slate-800'
+                          }`}>
+                            {item.impact}
+                          </span>
+                        </td>
+                        <td className="py-2 px-3 text-slate-400">{item.currency}</td>
+                        <td className="py-2 px-3 font-sans text-slate-100 truncate max-w-[120px]" title={item.title}>{item.title}</td>
+                        <td className="py-2 px-3 text-slate-300">{item.forecast}</td>
+                        <td className="py-2 px-3 text-right text-emerald-400 font-bold">
+                          {item.minutesRemaining <= 0 ? (
+                            <span className="text-slate-400">RELEASED ({item.actual || item.forecast})</span>
+                          ) : (
+                            `${item.minutesRemaining}m`
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Live News Items Feed */}
+        {newsFeed.length > 0 && (
+          <div className="space-y-2 text-right" dir="rtl">
+            <label className="text-[10px] text-slate-400 uppercase font-bold block">دوایین هەواڵە وەرگیراوەکان (Live Sentiment Feed)</label>
+            <div className="bg-slate-950 border border-slate-800 rounded-lg p-3 space-y-2 max-h-[160px] overflow-y-auto font-mono text-[10px] text-slate-300 scrollbar-thin">
+              {newsFeed.slice(0, 5).map((news, idx) => (
+                <div key={idx} className="pb-2 border-b border-slate-900/60 last:border-0 last:pb-0 flex flex-col space-y-0.5 text-right">
+                  <div className="flex justify-between items-center text-[9px]">
+                    <span className={`px-1 rounded text-[8px] font-bold ${
+                      news.sentiment >= 0.1 ? 'bg-emerald-950 text-emerald-400' :
+                      news.sentiment <= -0.1 ? 'bg-rose-950 text-rose-400' :
+                      'bg-slate-900 text-slate-400'
+                    }`}>
+                      Sentiment: {news.sentiment >= 0 ? '+' : ''}{news.sentiment.toFixed(2)}
+                    </span>
+                    <span className="text-slate-500 font-sans">{news.source} • {new Date(news.time).toLocaleTimeString()}</span>
+                  </div>
+                  {news.url ? (
+                    <a href={news.url} target="_blank" rel="noopener noreferrer" className="text-slate-100 hover:text-sky-400 font-sans truncate block text-left" dir="ltr">
+                      {news.title}
+                    </a>
+                  ) : (
+                    <span className="text-slate-100 font-sans truncate block text-left" dir="ltr">{news.title}</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Connection Hub list of News Platforms */}
+        <div className="space-y-2 text-right" dir="rtl">
+          <label className="text-[10px] text-slate-400 uppercase font-bold block mb-1">ڕێکخستن و دۆخی سەرچاوەکان (Connection Registry)</label>
+          <div className="bg-slate-950 border border-slate-800 rounded-lg overflow-hidden divide-y divide-slate-900">
+            {newsPlatforms.map((platform) => (
+              <div key={platform.id} className="p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-slate-950">
+                
+                {/* Platform info */}
+                <div className="text-right flex-1 order-last sm:order-first">
+                  <div className="flex items-center gap-1.5 justify-end sm:justify-start">
+                    {platform.status === "CONNECTED" ? (
+                      <span className="px-1.5 py-0.5 text-[8px] bg-emerald-950/60 text-emerald-400 border border-emerald-800/30 rounded font-bold font-mono">
+                        CONNECTED
+                      </span>
+                    ) : platform.status === "ERROR" ? (
+                      <span className="px-1.5 py-0.5 text-[8px] bg-rose-950/60 text-rose-400 border border-rose-800/30 rounded font-bold font-mono animate-pulse" title={platform.errorMessage}>
+                        CONNECTION ERROR
+                      </span>
+                    ) : platform.status === "LICENSED_ONLY" ? (
+                      <span className="px-1.5 py-0.5 text-[8px] bg-sky-950 text-sky-400 border border-sky-900/30 rounded font-bold font-mono">
+                        ENTERPRISE LICENSED ONLY
+                      </span>
+                    ) : (
+                      <span className="px-1.5 py-0.5 text-[8px] bg-slate-900 text-slate-500 border border-slate-800 rounded font-bold font-mono">
+                        NOT CONFIGURED
+                      </span>
+                    )}
+                    <span className="text-xs font-bold text-slate-200">{platform.name}</span>
+                  </div>
+                  <p className="text-[10px] text-slate-400 mt-1 leading-normal font-sans">{platform.description}</p>
+                  {platform.lastFetchTime && (
+                    <span className="text-[8px] text-slate-500 font-mono mt-0.5 block">Last Fetch: {new Date(platform.lastFetchTime).toLocaleTimeString()}</span>
+                  )}
+                </div>
+
+                {/* Actions */}
+                <div className="flex items-center gap-2 justify-end">
+                  {platform.status === "LICENSED_ONLY" ? (
+                    <span className="text-[9px] text-amber-500/80 font-bold bg-amber-950/20 border border-amber-900/20 px-2 py-1 rounded">
+                      Enterprise Licensing
+                    </span>
+                  ) : platform.status === "CONNECTED" ? (
+                    <button
+                      onClick={() => handleDisconnectNewsPlatform(platform.id)}
+                      className="py-1 px-2.5 bg-rose-950/40 hover:bg-rose-950/60 border border-rose-800/30 text-rose-400 rounded text-[9px] font-bold cursor-pointer transition-all"
+                    >
+                      پچڕاندنی بەستەر (Disconnect)
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => {
+                        setActiveNewsConfig(platform.id);
+                        setFormNewsPlatformKey('');
+                        setNewsPlatformTestError('');
+                        setNewsPlatformTestSuccess('');
+                      }}
+                      className="py-1 px-2.5 bg-slate-900 hover:bg-slate-850 border border-slate-800 text-sky-400 rounded text-[9px] font-bold cursor-pointer transition-all"
+                    >
+                      ڕێکخستن (Configure)
+                    </button>
+                  )}
+                </div>
+
+              </div>
+            ))}
           </div>
         </div>
 
-        {/* Credentials Form news */}
-        <form onSubmit={handleSaveNewsKeys} className="p-3.5 bg-slate-900/30 border border-slate-800 rounded-xl text-right" dir="rtl">
-          <label className="text-[10px] text-slate-400 uppercase font-bold block mb-2">بەستنەوە بە کۆدی ڕاستەقینەی NewsAPI / Finnhub</label>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            <input 
-              type="password" 
-              placeholder="NewsAPI.org API Key"
-              value={formNewsApiKey}
-              onChange={(e) => setFormNewsApiKey(e.target.value)}
-              className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-1 text-xs text-slate-300 font-mono focus:outline-none" 
-            />
-            <input 
-              type="password" 
-              placeholder="Finnhub.io API Token"
-              value={formFinnhubKey}
-              onChange={(e) => setFormFinnhubKey(e.target.value)}
-              className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-1 text-xs text-slate-300 font-mono focus:outline-none" 
-            />
+        {/* Accordion active news configuration drawer */}
+        {activeNewsConfig && (
+          <div className="p-4 bg-slate-900/40 border border-sky-500/30 rounded-xl space-y-3 animate-in fade-in duration-200" dir="rtl">
+            <div className="flex justify-between items-center border-b border-slate-800 pb-1.5">
+              <button 
+                onClick={() => setActiveNewsConfig(null)} 
+                className="p-1 hover:bg-slate-800 rounded text-slate-400 cursor-pointer"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+              <h4 className="text-xs font-bold text-slate-200">ڕێکخستنی کلیل بۆ: {activeNewsConfig.toUpperCase().replace('_', ' ')}</h4>
+            </div>
+
+            <div className="space-y-2">
+              <input 
+                type="password" 
+                placeholder={`پێوەر یان کلیلی API بۆ ${activeNewsConfig}`}
+                value={formNewsPlatformKey}
+                onChange={(e) => setFormNewsPlatformKey(e.target.value)}
+                className="w-full bg-slate-950 border border-slate-850 rounded px-2.5 py-1.5 text-xs text-slate-200 font-mono focus:outline-none focus:border-sky-500 text-left" 
+                dir="ltr"
+              />
+
+              {newsPlatformTestError && (
+                <div className="p-2 bg-rose-950/30 border border-rose-900/30 text-rose-400 text-[10px] rounded leading-normal font-sans text-right">
+                  {newsPlatformTestError}
+                </div>
+              )}
+
+              {newsPlatformTestSuccess && (
+                <div className="p-2 bg-emerald-950/30 border border-emerald-900/30 text-emerald-400 text-[10px] rounded leading-normal font-sans text-right">
+                  {newsPlatformTestSuccess}
+                </div>
+              )}
+
+              <div className="flex gap-2 justify-end pt-1">
+                <button
+                  type="button"
+                  onClick={() => handleTestNewsPlatform(activeNewsConfig, formNewsPlatformKey)}
+                  disabled={newsPlatformTesting || !formNewsPlatformKey}
+                  className="py-1 px-3 bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 disabled:opacity-40 rounded text-[10px] font-bold cursor-pointer transition-all"
+                >
+                  {newsPlatformTesting ? "تاقیکردنەوە..." : "تاقیکردنەوەی گرێدان (Test)"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleSaveNewsPlatformKey(activeNewsConfig, formNewsPlatformKey)}
+                  disabled={!formNewsPlatformKey}
+                  className="py-1 px-4 bg-sky-950/40 hover:bg-sky-950/60 border border-sky-800/40 text-sky-400 disabled:opacity-40 rounded text-[10px] font-bold cursor-pointer transition-all"
+                >
+                  پاشەکەوت و بەستنەوە (Save)
+                </button>
+              </div>
+            </div>
           </div>
-          <button
-            type="submit"
-            className="mt-2.5 py-1.5 px-4 bg-emerald-950/40 hover:bg-emerald-950/60 border border-emerald-800/40 text-emerald-400 rounded text-[10px] font-bold transition-all cursor-pointer"
-          >
-            {newsKeysSaved ? "✓ پاشەکەوت کرا" : "تۆمارکردنی کلیلەکان لە داتابەیس"}
-          </button>
-        </form>
+        )}
       </div>
 
       {/* 4. INSTITUTIONAL FIX SESSION MONITOR (STAGE 2) */}
@@ -1344,13 +1630,39 @@ export default function RiskBrokerManager() {
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-slate-900 pb-4 text-right" dir="rtl">
           <div>
             <div className="flex items-center gap-2 justify-start">
-              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+              <span className={`w-2.5 h-2.5 rounded-full ${selectedEnvironment === 'REAL_LIVE' ? 'bg-rose-500' : 'bg-emerald-500'} animate-pulse`}></span>
               <h3 className="text-sm font-bold text-slate-100 uppercase tracking-wide">سیستەمی چاودێری پۆرتفۆلیۆ و پێگەکان (Live Portfolio Monitor)</h3>
             </div>
             <p className="text-xs text-slate-500 mt-1">داتاکان چرکە بە چرکە نوێ دەبنەوە بە ئاستی گرتنی لایڤ لە سێرڤەر و دەسکەوت.</p>
           </div>
-          <div className="mt-3 sm:mt-0 px-3 py-1.5 bg-slate-900 border border-slate-800 rounded text-xs font-mono text-slate-300">
-            NOMINAL DMA ACCESS: <span className="text-emerald-400 font-bold">GRANTED</span>
+          
+          <div className="flex items-center gap-3 mt-3 sm:mt-0">
+            <div className="flex items-center gap-1 p-1 bg-slate-900 border border-slate-800 rounded-lg">
+              <button
+                onClick={() => setSelectedEnvironment('DEMO_LIVE')}
+                className={`px-3 py-1 rounded-md text-[11px] font-mono font-bold transition-all cursor-pointer ${
+                  selectedEnvironment === 'DEMO_LIVE'
+                    ? 'bg-emerald-950 text-emerald-400 border border-emerald-800/40'
+                    : 'text-slate-400 hover:text-slate-200 border border-transparent'
+                }`}
+              >
+                DEMO_LIVE
+              </button>
+              <button
+                onClick={() => setSelectedEnvironment('REAL_LIVE')}
+                className={`px-3 py-1 rounded-md text-[11px] font-mono font-bold transition-all cursor-pointer ${
+                  selectedEnvironment === 'REAL_LIVE'
+                    ? 'bg-rose-950 text-rose-400 border border-rose-900/40 animate-pulse'
+                    : 'text-slate-400 hover:text-slate-200 border border-transparent'
+                }`}
+              >
+                REAL_LIVE
+              </button>
+            </div>
+
+            <div className="px-3 py-1.5 bg-slate-900 border border-slate-800 rounded text-xs font-mono text-slate-300">
+              NOMINAL DMA ACCESS: <span className={selectedEnvironment === 'REAL_LIVE' ? "text-rose-400 font-bold" : "text-emerald-400 font-bold"}>{selectedEnvironment === 'REAL_LIVE' ? "REAL-CAPITAL" : "DEMO-LIVE"}</span>
+            </div>
           </div>
         </div>
 

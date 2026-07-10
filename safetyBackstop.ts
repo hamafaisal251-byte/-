@@ -14,6 +14,16 @@ export interface SafetyState {
   peakEquity: number;
   watchdogLastHeartbeat: string;
   watchdogStatus: "ALIVE" | "ERROR" | "NOMINAL";
+  lastDrawdownPct: number;
+  lastRollbackEvent: {
+    timestamp: string;
+    fromVersion: string;
+    toVersion: string;
+    metricsAtTrigger: {
+      SharpeRatio: number;
+      maxDrawdown: number;
+    };
+  } | null;
   triggerHistory: {
     id: string;
     timestamp: string;
@@ -48,6 +58,8 @@ const DEFAULT_STATE: SafetyState = {
   peakEquity: 104830.40, // Match start equity of the system
   watchdogLastHeartbeat: new Date().toISOString(),
   watchdogStatus: "NOMINAL",
+  lastDrawdownPct: 0.0,
+  lastRollbackEvent: null,
   triggerHistory: [
     {
       id: "hist-init",

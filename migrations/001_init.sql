@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS broker_connections (
     status VARCHAR NOT NULL DEFAULT 'DISCONNECTED',
     last_tested_time TIMESTAMPTZ,
     error_message TEXT,
+    environment VARCHAR NOT NULL DEFAULT 'DEMO_LIVE',
     CONSTRAINT uq_broker_account UNIQUE (broker_type, account_id)
 );
 CREATE INDEX IF NOT EXISTS idx_broker_connections_status ON broker_connections(status);
