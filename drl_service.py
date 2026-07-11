@@ -531,6 +531,7 @@ class ObservationSchema(BaseModel):
     spread: Optional[float] = 0.00015
     dynamic_leverage: Optional[float] = 50.0
     shock_absorber: Optional[float] = 0.0
+    dark_pool_volume_weekly: Optional[float] = 0.0
 
 class BatchTrainingSchema(BaseModel):
     states: List[List[float]]

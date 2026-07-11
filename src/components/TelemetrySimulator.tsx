@@ -4,8 +4,9 @@
  */
 
 import { useState, useEffect, useRef } from 'react';
-import { Activity, ShieldAlert, Zap, Flame, RotateCcw, Play, CheckCircle2, Cpu, Globe, Database } from 'lucide-react';
+import { Activity, ShieldAlert, Zap, Flame, RotateCcw, Play, CheckCircle2, Cpu, Globe, Database, Clock, RefreshCw } from 'lucide-react';
 import { SystemMetrics, TelemetryLog } from '../types/quant';
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 
 interface SavedBrokerConfig {
   brokerType: 'oanda' | 'metatrader5' | 'fix_gateway' | 'ib';
@@ -72,6 +73,72 @@ export default function TelemetrySimulator({ activeCandidateName }: TelemetrySim
 
   const logContainerRef = useRef<HTMLDivElement>(null);
   const simTimer = useRef<NodeJS.Timeout | null>(null);
+
+  // Time Sync Stats State
+  const [timeSyncData, setTimeSyncData] = useState<{
+    current: {
+      offsetMs: number | null;
+      rootDispersionMs: number | null;
+      stratum: number | null;
+      syncStatus: string;
+      rawOutput: string;
+    };
+    history: Array<{
+      id: number;
+      timestamp: string;
+      offsetMs: number | null;
+      rootDispersionMs: number | null;
+      stratum: number | null;
+      syncStatus: string;
+    }>;
+  }>({
+    current: {
+      offsetMs: null,
+      rootDispersionMs: null,
+      stratum: null,
+      syncStatus: "chrony not available — clock offset unknown",
+      rawOutput: ""
+    },
+    history: []
+  });
+
+  const [isSyncingTime, setIsSyncingTime] = useState<boolean>(false);
+
+  // Poll Time-Sync Status
+  const fetchTimeSync = async () => {
+    try {
+      setIsSyncingTime(true);
+      const res = await fetch('/api/time-sync/status');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) {
+          // Map backend history fields to camelCase if needed
+          const mappedHistory = (data.history || []).map((h: any) => ({
+            id: h.id,
+            timestamp: h.timestamp,
+            offsetMs: h.offsetMs !== undefined ? h.offsetMs : (h.offset_ms ? parseFloat(h.offset_ms) : null),
+            rootDispersionMs: h.rootDispersionMs !== undefined ? h.rootDispersionMs : (h.root_dispersion_ms ? parseFloat(h.root_dispersion_ms) : null),
+            stratum: h.stratum,
+            syncStatus: h.syncStatus || h.sync_status
+          }));
+          setTimeSyncData({
+            current: data.current,
+            history: mappedHistory
+          });
+        }
+      }
+    } catch (err) {
+      console.error('Error fetching time sync status:', err);
+    } finally {
+      setIsSyncingTime(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchTimeSync();
+    const interval = setInterval(fetchTimeSync, 5000);
+    return () => clearInterval(interval);
+  }, []);
 
   // Sync active candidate name with metrics and logs dynamically
   useEffect(() => {
@@ -398,6 +465,102 @@ export default function TelemetrySimulator({ activeCandidateName }: TelemetrySim
             <p className="text-[10px] text-slate-500 leading-normal">
               *Core 3 runs C++ spin loop. Notice CPU 99% constant load representing lock-free SPSC checking with zero kernel preemption. Core 2 runs Go async controller backplane.
             </p>
+          </div>
+
+          {/* Time Synchronization Status (Chrony NTP) */}
+          <div id="chrony-time-sync-panel" className="mt-4 p-4 bg-slate-900/50 border border-slate-800/80 rounded-lg space-y-4">
+            <div className="flex items-center justify-between">
+              <h4 className="text-[10px] font-mono font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                <Clock className="w-4 h-4 text-sky-400" />
+                <span>NTP TIME SYNCHRONIZATION (Chrony)</span>
+              </h4>
+              <button
+                onClick={fetchTimeSync}
+                disabled={isSyncingTime}
+                className="text-slate-500 hover:text-slate-300 transition-all cursor-pointer disabled:opacity-40"
+                title="Force Clock Refresh"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isSyncingTime ? 'animate-spin text-sky-400' : ''}`} />
+              </button>
+            </div>
+
+            {timeSyncData.current.offsetMs === null ? (
+              <div className="p-3 bg-amber-950/20 border border-amber-500/30 rounded-lg space-y-2 text-right" dir="rtl">
+                <div className="flex items-center gap-2 text-amber-400 font-bold text-xs justify-start">
+                  <ShieldAlert className="w-4 h-4 text-amber-400" />
+                  <span>دۆخی چاودێری: دایمۆنی Chrony لەسەر ئەم سێرڤەرە چالاک نییە</span>
+                </div>
+                <p className="text-[10px] text-slate-400 leading-normal text-left" dir="ltr">
+                  NTP clock offset is unknown. Standard JS client <code className="text-slate-200">Date.now()</code> will be used as a fallback timing reference for latency measurement. Run <code className="text-slate-200">setup-chrony.sh</code> on your Linux machine to enable stratum-1 clock syncing.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {/* Stats row */}
+                <div className="grid grid-cols-3 gap-2">
+                  <div className="bg-slate-950 p-2 rounded border border-slate-800/60 text-center">
+                    <span className="text-[8px] font-mono text-slate-500 block uppercase">Clock Offset</span>
+                    <span className={`text-sm font-mono font-bold block my-1 ${
+                      Math.abs(timeSyncData.current.offsetMs) > 10 ? 'text-red-400 animate-pulse' : 'text-emerald-400'
+                    }`}>
+                      {timeSyncData.current.offsetMs.toFixed(3)} ms
+                    </span>
+                    <span className="text-[8px] font-mono text-slate-400 block truncate">
+                      {Math.abs(timeSyncData.current.offsetMs) > 10 ? '🔴 EXCESS DRIFT (>10ms)' : '🟢 DRIFT NOMINAL'}
+                    </span>
+                  </div>
+
+                  <div className="bg-slate-950 p-2 rounded border border-slate-800/60 text-center">
+                    <span className="text-[8px] font-mono text-slate-500 block uppercase">Root Dispersion</span>
+                    <span className="text-sm font-mono font-bold text-slate-200 block my-1">
+                      {timeSyncData.current.rootDispersionMs ? `${timeSyncData.current.rootDispersionMs.toFixed(2)} ms` : 'N/A'}
+                    </span>
+                    <span className="text-[8px] font-mono text-slate-400 block">Max clock dispersion</span>
+                  </div>
+
+                  <div className="bg-slate-950 p-2 rounded border border-slate-800/60 text-center">
+                    <span className="text-[8px] font-mono text-slate-500 block uppercase">Stratum / Sync</span>
+                    <span className="text-sm font-mono font-bold text-slate-200 block my-1">
+                      Stratum {timeSyncData.current.stratum || '?'}
+                    </span>
+                    <span className="text-[8px] font-mono text-slate-400 block truncate" title={timeSyncData.current.syncStatus}>
+                      {timeSyncData.current.syncStatus}
+                    </span>
+                  </div>
+                </div>
+
+                {/* History Sparkline using recharts */}
+                {timeSyncData.history && timeSyncData.history.length > 0 && (
+                  <div className="space-y-1.5">
+                    <div className="flex justify-between items-center text-[9px] text-slate-400 font-mono">
+                      <span>CHRONY OFFSET DRIFT HISTORY (LIMIT 50)</span>
+                      <span className="text-slate-500">Value in milliseconds</span>
+                    </div>
+                    <div className="h-20 bg-slate-950 rounded border border-slate-800/60 p-1">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={[...timeSyncData.history].reverse()}>
+                          <XAxis dataKey="timestamp" hide />
+                          <YAxis domain={['auto', 'auto']} hide />
+                          <Tooltip
+                            contentStyle={{ background: '#090d16', borderColor: '#1e293b', fontSize: '9px', fontFamily: 'monospace' }}
+                            labelStyle={{ color: '#94a3b8' }}
+                            itemStyle={{ color: '#38bdf8' }}
+                          />
+                          <Line 
+                            type="monotone" 
+                            dataKey="offsetMs" 
+                            stroke="#0ea5e9" 
+                            strokeWidth={1.5} 
+                            dot={false}
+                            activeDot={{ r: 4 }}
+                          />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
 

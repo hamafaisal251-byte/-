@@ -806,16 +806,26 @@ export default function EvolutionLab({ candidates, setCandidates, selectedId, se
 
               {/* Sovereign Mind recommendation */}
               {activeCandidate.mindRecommendation && (
-                <div className="bg-purple-950/20 border border-purple-500/20 p-3 rounded-lg space-y-2 text-right">
-                  <div className="flex items-center gap-1.5 text-purple-400 font-bold text-[10px]">
+                <div className={`p-3 rounded-lg space-y-2 text-right border ${
+                  activeCandidate.mindRecommendation.recommended 
+                    ? 'bg-purple-950/20 border-purple-500/20 text-slate-300' 
+                    : 'bg-rose-950/20 border-rose-500/30 text-rose-100'
+                }`}>
+                  <div className={`flex items-center gap-1.5 font-bold text-[10px] ${
+                    activeCandidate.mindRecommendation.recommended ? 'text-purple-400' : 'text-rose-400'
+                  }`}>
                     <Brain className="w-3.5 h-3.5" />
                     <span>🧠 ڕاسپاردەی فەرمی Sovereign Mind (Confidence Assessment)</span>
                   </div>
-                  <p className="text-[10px] text-slate-300 leading-relaxed pr-5">
+                  <p className="text-[10px] leading-relaxed pr-5">
                     {activeCandidate.mindRecommendation.reasoning}
                   </p>
                   <div className="text-[8px] text-slate-500 pr-5 font-mono">
-                    بڕیاردرا لە: {new Date(activeCandidate.mindRecommendation.timestamp).toLocaleString()} | ڕاسپاردە: {activeCandidate.mindRecommendation.recommended ? 'Recommended (CONFIDENT)' : 'Review Required'}
+                    بڕیاردرا لە: {new Date(activeCandidate.mindRecommendation.timestamp).toLocaleString()} | ڕاسپاردە: {
+                      activeCandidate.mindRecommendation.recommended 
+                        ? 'Recommended (CONFIDENT)' 
+                        : 'Review Required / NOT RECOMMENDED'
+                    }
                   </div>
                 </div>
               )}
@@ -829,6 +839,21 @@ export default function EvolutionLab({ candidates, setCandidates, selectedId, se
                     </p>
                     پێشنیاری بڕیاردەر لە لایەن Sovereign Mind تەنها فلتەرە. بۆ خستنەکاری سەرمایەی ڕاستەقینە و چالاککردنی لەسەر ئەکاونتی REAL_LIVE، پێویستە جێبەجێکار بە شێوەیەکی دەستی ڕێگەپێدان بدات.
                   </div>
+
+                  {activeCandidate.mindRecommendation && !activeCandidate.mindRecommendation.recommended && (
+                    <div className="p-3.5 bg-rose-950/45 border-2 border-rose-500 rounded-xl text-right space-y-2 animate-pulse" dir="rtl">
+                      <div className="flex items-center gap-2 justify-end text-rose-400 font-extrabold text-[11px]">
+                        <ShieldAlert className="w-4 h-4 text-rose-400" />
+                        <span>⚠️ ئاگاداری زۆر گرنگ: ئەم کاندیدە ڕاسپاردە نەکراوە! (NOT RECOMMENDED)</span>
+                      </div>
+                      <p className="text-[10px] text-rose-100 font-sans font-medium pr-5">
+                        {activeCandidate.mindRecommendation.reasoning}
+                      </p>
+                      <div className="text-[9.5px] text-rose-300/90 font-bold pr-5 border-t border-rose-900/40 pt-1.5">
+                        [CRITICAL WARNING] Sovereign Mind has flagged this candidate as UNSAFE or parsing has failed. Default safety protocols recommend REJECTION. Manual override will bypass this assessment and expose capital.
+                      </div>
+                    </div>
+                  )}
 
                   {promotionMessage && (
                     <div className="bg-slate-950 p-2 rounded border border-slate-800 text-[10px] font-mono text-center text-amber-400">
