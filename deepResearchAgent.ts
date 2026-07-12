@@ -1,4 +1,5 @@
 import { GoogleGenAI } from "@google/genai";
+import { llmProvider } from "./llmProvider";
 
 export interface ResearchRound {
   round: number;
@@ -19,7 +20,7 @@ export interface DeepResearchSession {
 }
 
 /**
- * Runs iterative, multi-round deep research using Gemini + googleSearch tool.
+ * Runs iterative, multi-round deep research using Sovereign LLM Provider abstraction.
  * Logs each round and final synthesis to Postgres `deep_research_sessions` table.
  */
 export async function runDeepResearch(
@@ -57,15 +58,6 @@ export async function runDeepResearch(
     console.error(`[DEEP-RESEARCH] Dark pool context query failed: ${err.message}`);
   }
 
-  // Ensure Gemini Client is active - Tier 3 constraint (pauses, doesn't degrade)
-  let ai: GoogleGenAI;
-  try {
-    ai = getGeminiClient();
-  } catch (err: any) {
-    console.error(`[DEEP-RESEARCH-ERROR] Tier 3 GoogleGenAI client unavailable: ${err.message}`);
-    throw new Error(`[DEEP-RESEARCH-PAUSE] Deep research agent requires Gemini API Key. Execution paused. Error: ${err.message}`);
-  }
-
   for (let round = 1; round <= roundsToRun; round++) {
     console.log(`[DEEP-RESEARCH] Round ${round}/${roundsToRun} - Query: "${currentQuery}"`);
     
@@ -73,28 +65,19 @@ export async function runDeepResearch(
     let roundSources: { title: string; uri: string }[] = [];
 
     try {
-      // Call Gemini with Google Search enabled
-      const searchResult = await ai.models.generateContent({
-        model: "gemini-3.5-flash",
-        contents: `You are an elite high-frequency trading quant research professor.
+      // Call modern provider abstraction
+      const searchResult = await llmProvider.callWithTools({
+        systemInstruction: `You are an elite high-frequency trading quant research professor.
 Analyze the following query to help mitigate a Deep Reinforcement Learning trading weakness.
-Current Query: ${currentQuery}
+Focus on mathematical reward structures, utilize the injected FINRA weekly dark-pool signals if they are relevant to your persona's analysis, and explain the findings in a structured, professional format.`,
+        prompt: `Current Query: ${currentQuery}
 Topic Context: ${topic}
 Persona Perspective: ${persona.name} (${persona.description})
-${darkPoolContext}
-
-Focus on mathematical reward structures, utilize the injected FINRA weekly dark-pool signals if they are relevant to your persona's analysis, and explain the findings in a structured, professional format.`,
-        config: {
-          tools: [{ googleSearch: {} }]
-        }
+${darkPoolContext}`,
+        sessionId: sessionId
       });
 
-      const groundingChunks = searchResult.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
-      roundSources = groundingChunks.map((chunk: any) => ({
-        title: chunk.web?.title || "Web Reference",
-        uri: chunk.web?.uri || "#"
-      })).filter((s: any) => s.uri !== "#" && s.uri);
-
+      roundSources = searchResult.sources || [];
       roundSummary = searchResult.text || "No insights returned from this search round.";
 
       // Track all unique sources
@@ -110,7 +93,7 @@ Focus on mathematical reward structures, utilize the injected FINRA weekly dark-
       roundSources = [{ title: "Internal Academic Cache", uri: "https://nexus.proda/internal-cache" }];
     }
 
-    // If there are more rounds to go, ask Gemini to analyze gaps and suggest the next refined query
+    // If there are more rounds to go, ask Gemini/Self-hosted to analyze gaps and suggest the next refined query
     let nextGap = "Research complete. Proceeding to final synthesis.";
     let nextQuery = currentQuery;
 
@@ -118,30 +101,25 @@ Focus on mathematical reward structures, utilize the injected FINRA weekly dark-
       try {
         const gapAnalysisPrompt = `You are a Lead Quant Researcher evaluating search progress.
 We are researching the trading weakness: "${topic}"
-From the perspective of: "${persona.name}"
-
 We have completed Round ${round} with the query: "${currentQuery}"
 Round ${round} Summary of results:
 ${roundSummary}
 
-Based on this, what are the missing details, gaps, or questions that remain unanswered (e.g. specific mathematical bounds, execution-latency impacts, slippage penalties, or volatility shock scaling factors)?
-Formulate a highly targeted follow-up search query to run next to close these gaps.
+Based on this, what are the missing details, gaps, or questions that remain unanswered? Formulate a highly targeted follow-up search query to run next to close these gaps.`;
 
-Provide your response in JSON format:
-{
-  "gapIdentified": "Brief description of the gap or missing specificity identified.",
-  "nextRefinedQuery": "The exact search query to execute for the next round (must be search-friendly, max 20 words)."
-}`;
-
-        const gapResult = await ai.models.generateContent({
-          model: "gemini-3.5-flash",
-          contents: gapAnalysisPrompt,
-          config: {
-            responseMimeType: "application/json"
+        const parsed = await llmProvider.generateStructured<{ gapIdentified: string; nextRefinedQuery: string }>({
+          systemInstruction: `You are a structured gap analyst evaluating search progress for persona "${persona.name}".`,
+          prompt: gapAnalysisPrompt,
+          responseSchema: {
+            type: "OBJECT",
+            properties: {
+              gapIdentified: { type: "STRING", description: "Brief description of the gap or missing specificity identified." },
+              nextRefinedQuery: { type: "STRING", description: "The exact search query to execute for the next round (must be search-friendly, max 20 words)." }
+            },
+            required: ["gapIdentified", "nextRefinedQuery"]
           }
         });
 
-        const parsed = JSON.parse(gapResult.text || "{}");
         nextGap = parsed.gapIdentified || "Need more mathematical formulation specificity.";
         nextQuery = parsed.nextRefinedQuery || `${persona.searchQuery} mathematical formula DRL`;
       } catch (err: any) {
@@ -205,9 +183,8 @@ Structure your response as follows:
 
 Ensure the text is fully professional, scannable, and styled with high-contrast markdown headings.`;
 
-    const synthesisResult = await ai.models.generateContent({
-      model: "gemini-3.5-flash",
-      contents: synthesisPrompt
+    const synthesisResult = await llmProvider.generateText({
+      prompt: synthesisPrompt
     });
 
     finalSummary = synthesisResult.text || "Failed to synthesize final summary.";

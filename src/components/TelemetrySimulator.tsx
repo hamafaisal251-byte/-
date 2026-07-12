@@ -128,7 +128,7 @@ export default function TelemetrySimulator({ activeCandidateName }: TelemetrySim
         }
       }
     } catch (err) {
-      console.error('Error fetching time sync status:', err);
+      console.warn('Error fetching time sync status (expected during startup/restart):', err);
     } finally {
       setIsSyncingTime(false);
     }
@@ -218,7 +218,7 @@ export default function TelemetrySimulator({ activeCandidateName }: TelemetrySim
           }
         }
       } catch (error) {
-        console.error('Error fetching live rates:', error);
+        console.warn('Error fetching live rates (expected during startup/restart):', error);
       }
     };
 
@@ -263,7 +263,7 @@ export default function TelemetrySimulator({ activeCandidateName }: TelemetrySim
           setLogs(data.logs);
         }
       } catch (err) {
-        console.error('Error fetching server telemetry:', err);
+        console.warn('Error fetching server telemetry (expected during startup/restart):', err);
       }
     };
 

@@ -3,6 +3,7 @@ import {
   Brain, Search, Globe, RefreshCw, CheckCircle2, XCircle, 
   Database, Activity, ChevronRight, ChevronDown, BookOpen, Clock, AlertCircle
 } from "lucide-react";
+import SystemIntelligencePanel from "./SystemIntelligencePanel";
 
 export interface SelfImprovementLog {
   id: string;
@@ -66,7 +67,7 @@ export default function SelfImprovementDashboard() {
   } | null>(null);
 
   // New Tab & Panel States
-  const [activeTab, setActiveTab] = useState<"audit" | "deep-research" | "dark-pool" | "calibration">("audit");
+  const [activeTab, setActiveTab] = useState<"audit" | "deep-research" | "dark-pool" | "calibration" | "intelligence">("audit");
   
   // Calibration summary states
   const [calibrationData, setCalibrationData] = useState<{ analysis: any[]; recentLogs: any[] }>({ analysis: [], recentLogs: [] });
@@ -390,6 +391,16 @@ export default function SelfImprovementDashboard() {
           }`}
         >
           ⚖️ پێوانەکردن و ڕێکخستنەوە (Calibration)
+        </button>
+        <button
+          onClick={() => setActiveTab("intelligence")}
+          className={`px-4 py-2 text-xs font-bold transition-all border-b-2 ${
+            activeTab === "intelligence"
+              ? "border-purple-500 text-purple-400 font-extrabold bg-purple-950/20"
+              : "border-transparent text-slate-400 hover:text-slate-200"
+          }`}
+        >
+          🛡️ خۆڕاگری هۆشیار (Intelligence Resilience)
         </button>
       </div>
 
@@ -1330,6 +1341,10 @@ export default function SelfImprovementDashboard() {
                 </div>
               </div>
             </div>
+          )}
+
+          {activeTab === "intelligence" && (
+            <SystemIntelligencePanel />
           )}
         </div>
 

@@ -73,7 +73,7 @@ export default function App() {
           setSelectedId(data.activeCandidateId);
         }
       } catch (err) {
-        console.error('Error syncing candidates from server:', err);
+        console.warn('Error syncing candidates from server (expected during startup/restart):', err);
       }
     };
     fetchInitialState();
@@ -87,7 +87,7 @@ export default function App() {
           setEmergencyFrozen(data.systemStatus === 'EMERGENCY_HALT');
         }
       } catch (err) {
-        console.error('Status sync error:', err);
+        console.warn('Status sync error (expected during startup/restart):', err);
       }
     };
     const statusInterval = setInterval(syncStatus, 1500);

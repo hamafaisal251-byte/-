@@ -30,6 +30,30 @@ safetyBackstop.updateState({ watchdogStatus: "NOMINAL", watchdogLastHeartbeat: n
 async function monitorLoop() {
   try {
     const safety = safetyBackstop.getState();
+    
+    // Check if graceful shutdown is active (via flag file or database)
+    let isGracefulShutdownActive = fs.existsSync("/tmp/graceful_shutdown.flag");
+    
+    if (!isGracefulShutdownActive) {
+      try {
+        const dbRes = await pool.query("SELECT value FROM runtime_state WHERE key = 'graceful_shutdown'");
+        if (dbRes.rows[0]) {
+          const val = dbRes.rows[0].value;
+          isGracefulShutdownActive = val === true || val === "true" || (typeof val === "object" && val !== null && (val.value === true || val.value === "true"));
+        }
+      } catch (dbErr) {
+        // Fallback silently if database is not ready or query fails
+      }
+    }
+
+    if (isGracefulShutdownActive) {
+      consecutiveFailures = 0;
+      consecutiveDrlFailures = 0;
+      console.log("[WATCHDOG] Stand-down active: Core engine is undergoing a zero-downtime graceful restart/handover.");
+      setTimeout(monitorLoop, CHECK_INTERVAL_MS);
+      return;
+    }
+
     let mainServerAlive = false;
     let mainServerState: any = null;
 
@@ -84,7 +108,23 @@ async function monitorLoop() {
       );
       brokerConnections = dbRes.rows;
     } catch (e: any) {
-      console.error("[WATCHDOG-POSTGRES-ERROR] Failed to fetch broker connections:", e.message);
+      // Robust offline fallback: read from postgres_state.json
+      const stateFilePath = path.join(process.cwd(), "postgres_state.json");
+      if (fs.existsSync(stateFilePath)) {
+        try {
+          const fileData = JSON.parse(fs.readFileSync(stateFilePath, "utf8"));
+          if (fileData && Array.isArray(fileData.broker_connections)) {
+            brokerConnections = fileData.broker_connections.map((c: any) => ({
+              id: c.id,
+              brokerType: c.brokerType || c.broker_type,
+              apiUrl: c.apiUrl || c.api_url,
+              accountId: c.accountId || c.account_id,
+              status: c.status,
+              errorMessage: c.errorMessage || c.error_message
+            }));
+          }
+        } catch (readErr) {}
+      }
     }
 
     // --- EVALUATE FAILURE CONDITIONS ---
@@ -199,7 +239,30 @@ async function executeHaltPolicyOnDisk(policy: "FLATTEN_ALL" | "FREEZE_NEW_ONLY"
           );
           console.log("[WATCHDOG-RECOVERY] Successfully committed recovery log directly into PostgreSQL database.");
         } catch (dbErr: any) {
-          console.error("[WATCHDOG-RECOVERY-ERROR] Failed to write audit log to database:", dbErr.message);
+          console.warn("[WATCHDOG-RECOVERY-DB-ERROR] Failed to write audit log to real DB, saving to local json cache:", dbErr.message);
+          const stateFilePath = path.join(process.cwd(), "postgres_state.json");
+          if (fs.existsSync(stateFilePath)) {
+            try {
+              const fileData = JSON.parse(fs.readFileSync(stateFilePath, "utf8"));
+              if (fileData) {
+                if (!Array.isArray(fileData.strategy_audit_logs)) fileData.strategy_audit_logs = [];
+                fileData.strategy_audit_logs.unshift({
+                  id: `audit-${Date.now()}-watchdog`,
+                  timestamp: new Date().toISOString(),
+                  symbol: "ALL",
+                  mode: "FAILOVER WATCHDOG",
+                  triggerValue: null,
+                  actionTaken: `Watchdog executed emergency FLATTEN_ALL policy due to unresponsive core engine. Closed ${positionsCount} positions. Realized PnL: $${totalPnLSum.toFixed(2)}.`,
+                  inputParams: { policy, positionsCount },
+                  outputResult: { finalBalance: updatedStats.balance }
+                });
+                fs.writeFileSync(stateFilePath, JSON.stringify(fileData, null, 2), "utf8");
+                console.log("[WATCHDOG-RECOVERY] Successfully saved recovery log to offline local json cache.");
+              }
+            } catch (writeErr: any) {
+              console.error("[WATCHDOG-RECOVERY] Failed to write recovery log to json:", writeErr.message);
+            }
+          }
         }
       }
     } else {

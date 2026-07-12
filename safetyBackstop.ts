@@ -81,6 +81,7 @@ const DEFAULT_STATE: SafetyState = {
 class SafetyBackstopManager {
   private filepath = path.join(process.cwd(), "safety_state.json");
   private state: SafetyState = { ...DEFAULT_STATE };
+  public onSaveCallback?: (state: SafetyState) => void;
 
   constructor() {
     this.load();
@@ -97,6 +98,12 @@ class SafetyBackstopManager {
     } catch (err) {
       console.error("[SAFETY-BACKSTOP] Load error, falling back to defaults:", err);
       this.state = { ...DEFAULT_STATE };
+      // Safe fallback saving to overwrite any truncated or corrupted state files
+      try {
+        fs.writeFileSync(this.filepath, JSON.stringify(this.state, null, 2), "utf8");
+      } catch (saveErr) {
+        console.error("[SAFETY-BACKSTOP] Failed to save recovery state:", saveErr);
+      }
     }
     return this.state;
   }
@@ -104,6 +111,9 @@ class SafetyBackstopManager {
   public save() {
     try {
       fs.writeFileSync(this.filepath, JSON.stringify(this.state, null, 2), "utf8");
+      if (this.onSaveCallback) {
+        this.onSaveCallback(this.state);
+      }
     } catch (err) {
       console.error("[SAFETY-BACKSTOP] Save error:", err);
     }
@@ -148,6 +158,10 @@ class SafetyBackstopManager {
       details
     };
     this.state.triggerHistory.unshift(logItem);
+    // Limit to 100 triggers to keep file size lightweight and prevent disk corruption
+    if (this.state.triggerHistory.length > 100) {
+      this.state.triggerHistory = this.state.triggerHistory.slice(0, 100);
+    }
     this.save();
   }
 
