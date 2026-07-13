@@ -16,9 +16,11 @@ import AIPilotLab from './components/AIPilotLab';
 import SelfImprovementDashboard from './components/SelfImprovementDashboard';
 import ArbitragePanel from './components/ArbitragePanel';
 import SafetyBackstopPanel from './components/SafetyBackstopPanel';
+import DrlEnsemblePanel from './components/DrlEnsemblePanel';
+import PortfolioRiskPanel from './components/PortfolioRiskPanel';
 import { EvolutionCandidate } from './types/quant';
 
-type TabId = 'architecture' | 'telemetry' | 'evolution' | 'risk-broker' | 'alien-brain' | 'reward-playground' | 'backtest-arena' | 'ai-pilot-lab' | 'self-improvement-log' | 'arbitrage' | 'safety-backstop';
+type TabId = 'architecture' | 'telemetry' | 'evolution' | 'risk-broker' | 'portfolio-risk' | 'alien-brain' | 'reward-playground' | 'backtest-arena' | 'ai-pilot-lab' | 'self-improvement-log' | 'arbitrage' | 'safety-backstop' | 'ensemble';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<TabId>('architecture');
@@ -255,6 +257,20 @@ export default function App() {
             <span>03. تاقیگەی گەشەکردن | AI Sandbox</span>
           </button>
 
+          {/* New Tab: DRL Ensemble */}
+          <button
+            id="tab-btn-ensemble"
+            onClick={() => setActiveTab('ensemble')}
+            className={`px-4 py-2.5 rounded-lg text-xs font-semibold font-mono flex items-center space-x-2 border transition-all cursor-pointer whitespace-nowrap ${
+              activeTab === 'ensemble'
+                ? 'bg-slate-900 border-purple-800 text-purple-200 shadow-sm shadow-purple-950/20'
+                : 'bg-transparent border-transparent text-purple-400 hover:text-purple-300'
+            }`}
+          >
+            <Brain className="w-4 h-4 shrink-0 text-purple-400 animate-pulse" />
+            <span className="text-purple-300 font-bold">★ ئەنسەمبڵی فێربوونی قووڵ | DRL Ensemble Panel</span>
+          </button>
+
           {/* New Tab: Professor AI Co-Pilot & Swarm Arbitrage */}
           <button
             id="tab-btn-ai-pilot-lab"
@@ -281,6 +297,20 @@ export default function App() {
           >
             <ShieldCheck className="w-4 h-4 shrink-0 text-sky-400" />
             <span>04. مەترسی و بڕۆکەر | Risk & Broker</span>
+          </button>
+
+          {/* Tab 4.5: Portfolio Risk & VaR Engine */}
+          <button
+            id="tab-btn-portfolio-risk"
+            onClick={() => setActiveTab('portfolio-risk')}
+            className={`px-4 py-2.5 rounded-lg text-xs font-bold font-mono flex items-center space-x-2 border transition-all cursor-pointer whitespace-nowrap ${
+              activeTab === 'portfolio-risk'
+                ? 'bg-slate-900 border-emerald-800 text-emerald-200 shadow-sm shadow-emerald-950/20'
+                : 'bg-transparent border-transparent text-emerald-400 hover:text-emerald-300'
+            }`}
+          >
+            <ShieldCheck className="w-4 h-4 shrink-0 text-emerald-400 animate-pulse" />
+            <span>04.5. کۆنتڕۆڵی مەترسی پۆرتفۆلیۆ | Portfolio Risk & VaR</span>
           </button>
 
           {/* Tab 5: Alien Brain Advanced Modes */}
@@ -458,6 +488,7 @@ export default function App() {
           {activeTab === 'telemetry' && <TelemetrySimulator activeCandidateName={candidates.find(c => c.id === selectedId)?.name} />}
           {activeTab === 'evolution' && <EvolutionLab candidates={candidates} setCandidates={handleUpdateCandidates} selectedId={selectedId} setSelectedId={handleSelectCandidateId} />}
           {activeTab === 'risk-broker' && <RiskBrokerManager />}
+          {activeTab === 'portfolio-risk' && <PortfolioRiskPanel />}
           {activeTab === 'alien-brain' && <AlienBrainLab />}
           {activeTab === 'reward-playground' && <RewardPlayground />}
           {activeTab === 'backtest-arena' && <BacktestArena candidates={candidates} selectedCandidateId={selectedId} setSelectedCandidateId={handleSelectCandidateId} />}
@@ -465,6 +496,7 @@ export default function App() {
           {activeTab === 'self-improvement-log' && <SelfImprovementDashboard />}
           {activeTab === 'arbitrage' && <ArbitragePanel />}
           {activeTab === 'safety-backstop' && <SafetyBackstopPanel />}
+          {activeTab === 'ensemble' && <DrlEnsemblePanel />}
         </div>
 
       </main>

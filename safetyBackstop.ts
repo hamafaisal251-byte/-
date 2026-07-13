@@ -12,6 +12,9 @@ export interface SafetyState {
   emergencyHaltPolicy: "FLATTEN_ALL" | "FREEZE_NEW_ONLY";
   drawdownThresholdPct: number; // e.g. 5.0 for 5% max drawdown
   peakEquity: number;
+  maxTotalNotionalExposure: number;
+  maxSingleInstrumentExposure: number;
+  maxCorrelatedGroupExposure: number;
   watchdogLastHeartbeat: string;
   watchdogStatus: "ALIVE" | "ERROR" | "NOMINAL";
   lastDrawdownPct: number;
@@ -56,6 +59,9 @@ const DEFAULT_STATE: SafetyState = {
   emergencyHaltPolicy: "FLATTEN_ALL",
   drawdownThresholdPct: 5.0, // 5% default max drawdown
   peakEquity: 104830.40, // Match start equity of the system
+  maxTotalNotionalExposure: 500000.00,
+  maxSingleInstrumentExposure: 300000.00,
+  maxCorrelatedGroupExposure: 400000.00,
   watchdogLastHeartbeat: new Date().toISOString(),
   watchdogStatus: "NOMINAL",
   lastDrawdownPct: 0.0,
@@ -171,9 +177,9 @@ class SafetyBackstopManager {
     this.state.safeModeActive = true;
     this.state.safeModeTriggerReason = reason;
     this.state.safeModeTriggeredAt = new Date().toISOString();
+    this.save();
     this.addNotification(`🚨 [Plan B Failover] Safe Mode ACTIVATED: ${reason}`);
     this.logTrigger("SAFE_MODE", "Safe Mode Activated", reason, { triggeredAt: this.state.safeModeTriggeredAt });
-    this.save();
   }
 
   public exitSafeMode() {
@@ -182,9 +188,9 @@ class SafetyBackstopManager {
     this.state.safeModeActive = false;
     this.state.safeModeTriggerReason = null;
     this.state.safeModeTriggeredAt = null;
+    this.save();
     this.addNotification(`✅ [Plan B Failover] Safe Mode disengaged. System restored to normal trading parameters.`);
     this.logTrigger("SAFE_MODE", "Safe Mode Disengaged", "Manual operator reactivation.");
-    this.save();
   }
 
   public triggerSilentLock(reason: string, details: any = {}) {
@@ -193,9 +199,9 @@ class SafetyBackstopManager {
     this.state.silentLockActive = true;
     this.state.silentLockTriggerReason = reason;
     this.state.silentLockTriggeredAt = new Date().toISOString();
+    this.save();
     this.addNotification(`🛑 [SILENT LOCK] Hard Soft-Halt ENGAGED: ${reason}. All new position entries and evolution candidate promotions are strictly blocked.`);
     this.logTrigger("SILENT_LOCK", "Silent Lock Activated", reason, details);
-    this.save();
   }
 
   public resumeFromSilentLock() {
@@ -204,25 +210,25 @@ class SafetyBackstopManager {
     this.state.silentLockActive = false;
     this.state.silentLockTriggerReason = null;
     this.state.silentLockTriggeredAt = null;
+    this.save();
     this.addNotification(`✅ [SILENT LOCK] Reset. Live trading operations and candidate promotions re-authorized by human operator.`);
     this.logTrigger("SILENT_LOCK", "Silent Lock Reset", "Manual operator override with double verification.");
-    this.save();
   }
 
   public triggerEmergencyHalt(reason: string, details: any = {}) {
     this.load();
     this.state.emergencyHaltActive = true;
+    this.save();
     this.addNotification(`⚠️ [EMERGENCY HALT] Triggered: ${reason}. Policy: ${this.state.emergencyHaltPolicy}`);
     this.logTrigger("EMERGENCY_HALT", "Emergency Halt Tripped", reason, { policy: this.state.emergencyHaltPolicy, ...details });
-    this.save();
   }
 
   public resetEmergencyHalt() {
     this.load();
     this.state.emergencyHaltActive = false;
+    this.save();
     this.addNotification(`✅ [EMERGENCY HALT] System disarmed. Nominals restored.`);
     this.logTrigger("EMERGENCY_HALT", "Emergency Halt Cleared", "Operator reset system status.");
-    this.save();
   }
 }
 
