@@ -1,7 +1,7 @@
 {
-  "safeModeActive": false,
-  "safeModeTriggerReason": "Lost core broker link",
-  "safeModeTriggeredAt": null,
+  "safeModeActive": true,
+  "safeModeTriggerReason": "DRL OUTAGE: Deep Reinforcement Learning backend lost heartbeat for 10 seconds during active exposure. Safe Mode triggered.",
+  "safeModeTriggeredAt": "2026-07-14T08:11:37.969Z",
   "silentLockActive": false,
   "silentLockTriggerReason": "Drawdown limit breached",
   "silentLockTriggeredAt": null,
@@ -9,11 +9,21 @@
   "emergencyHaltPolicy": "FLATTEN_ALL",
   "drawdownThresholdPct": 5,
   "peakEquity": 105337.02,
-  "watchdogLastHeartbeat": "2026-07-13T09:47:14.144Z",
+  "watchdogLastHeartbeat": "2026-07-14T08:49:36.483Z",
   "watchdogStatus": "NOMINAL",
   "lastDrawdownPct": 0,
   "lastRollbackEvent": null,
   "triggerHistory": [
+    {
+      "id": "trig-1784016697972-1dk0o",
+      "timestamp": "2026-07-14T08:11:37.972Z",
+      "type": "SAFE_MODE",
+      "event": "Safe Mode Activated",
+      "reason": "DRL OUTAGE: Deep Reinforcement Learning backend lost heartbeat for 10 seconds during active exposure. Safe Mode triggered.",
+      "details": {
+        "triggeredAt": "2026-07-14T08:11:37.969Z"
+      }
+    },
     {
       "id": "trig-1783935977810-iqqly",
       "timestamp": "2026-07-13T09:46:17.810Z",
@@ -1003,16 +1013,6 @@
       "details": {
         "triggeredAt": null
       }
-    },
-    {
-      "id": "trig-1783935777221-v9drj",
-      "timestamp": "2026-07-13T09:42:57.221Z",
-      "type": "SAFE_MODE",
-      "event": "Safe Mode Activated",
-      "reason": "DRL OUTAGE: Deep Reinforcement Learning backend lost heartbeat for 10 seconds during active exposure. Safe Mode triggered.",
-      "details": {
-        "triggeredAt": null
-      }
     }
   ],
   "notificationConfig": {
@@ -1021,6 +1021,12 @@
     "smsAlerts": false
   },
   "notifications": [
+    {
+      "id": "notif-1784016697970-qswrl",
+      "timestamp": "2026-07-14T08:11:37.970Z",
+      "message": "🚨 [Plan B Failover] Safe Mode ACTIVATED: DRL OUTAGE: Deep Reinforcement Learning backend lost heartbeat for 10 seconds during active exposure. Safe Mode triggered.",
+      "read": false
+    },
     {
       "id": "notif-1783935977810-czth3",
       "timestamp": "2026-07-13T09:46:17.810Z",
@@ -1312,12 +1318,6 @@
     {
       "id": "notif-1783935880514-fdwey",
       "timestamp": "2026-07-13T09:44:40.514Z",
-      "message": "🚨 [Plan B Failover] Safe Mode ACTIVATED: DRL OUTAGE: Deep Reinforcement Learning backend lost heartbeat for 10 seconds during active exposure. Safe Mode triggered.",
-      "read": false
-    },
-    {
-      "id": "notif-1783935878490-jequ9",
-      "timestamp": "2026-07-13T09:44:38.490Z",
       "message": "🚨 [Plan B Failover] Safe Mode ACTIVATED: DRL OUTAGE: Deep Reinforcement Learning backend lost heartbeat for 10 seconds during active exposure. Safe Mode triggered.",
       "read": false
     }

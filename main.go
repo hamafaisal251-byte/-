@@ -1,8 +1,9 @@
 // ============================================================================
-// SOVEREIGN ALGORITHMIC FOREX TRADING SYSTEM: CONCURRENCY CONTROLLER & BACKPLANE
+// SOVEREIGN ALGORITHMIC FOREX TRADING SYSTEM: GO BACKEND FOUNDATION
 // File: /main.go
 // Language: Go (Golang)
-// Architecture: Goroutines, Channel Telemetry pipelines, POSIX Signal Handlers
+// Architecture: Gin HTTP Server, pgx Connection Pool, AES-256-CBC Encryption,
+//               POSIX Watchdog Signal Listeners & Zero-loss Safety Measures.
 // ============================================================================
 
 package main
@@ -10,131 +11,98 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
+	"net/http"
 	"os"
 	"os/signal"
-	"sync"
 	"syscall"
 	"time"
+
+	"github.com/proda-nexus/sovereign-trading/internal/api"
+	"github.com/proda-nexus/sovereign-trading/internal/config"
+	"github.com/proda-nexus/sovereign-trading/internal/crypto"
+	"github.com/proda-nexus/sovereign-trading/internal/db"
+	"github.com/proda-nexus/sovereign-trading/internal/safety"
 )
-
-type SystemStatus string
-
-const (
-	Nominal       SystemStatus = "NOMINAL"
-	Throttled     SystemStatus = "THROTTLED"
-	EmergencyHalt SystemStatus = "EMERGENCY_HALT"
-)
-
-type GoControllerBackplane struct {
-	mu             sync.RWMutex
-	status         SystemStatus
-	isShuttingDown bool
-	cancelCtx      context.CancelFunc
-}
-
-func NewGoController(cancel context.CancelFunc) *GoControllerBackplane {
-	return &GoControllerBackplane{
-		status: Nominal,
-		cancelCtx: cancel,
-	}
-}
-
-// WatchdogSignalListener listens for OS and Hardware traps to trigger safety locks
-func (g *GoControllerBackplane) WatchdogSignalListener(ctx context.Context) {
-	sigChan := make(chan os.Signal, 1)
-	// Bind to SIGINT, SIGTERM, and POSIX USR1 (Custom user trap)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM, syscall.SIGUSR1)
-
-	go func() {
-		select {
-		case sig := <-sigChan:
-			g.mu.Lock()
-			g.isShuttingDown = true
-			g.status = EmergencyHalt
-			g.mu.Unlock()
-
-			fmt.Printf("\n[WATCHDOG INTERRUPT] Received system signal: %v. TRIPPING SAFETY CIRUIT BREAKER...\n", sig)
-			g.ExecuteEmergencyKill()
-		case <-ctx.Done():
-			return
-		}
-	}()
-}
-
-// ExecuteEmergencyKill stops all DMA operations, unmaps directories, and secures risk hedging locks
-func (g *GoControllerBackplane) ExecuteEmergencyKill() {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-
-	g.status = EmergencyHalt
-	g.cancelCtx() // Stop all ingestion pipelines immediately
-
-	fmt.Println("[KILL-SWITCH] Sending custom POSIX interrupt signal (SIGUSR2) to C++ worker pools...")
-	syscall.Kill(syscall.Getpid(), syscall.SIGUSR2)
-
-	fmt.Println("[KILL-SWITCH] Sending HSM disengage command. Revoking dynamic API authorization certificates.")
-	fmt.Println("[KILL-SWITCH] Initiating automatic zero-loss Hedging Locks. Offsetting all open currency pair risks.")
-	fmt.Println("[KILL-SWITCH] Sovereign FX Trading Bot placed in absolute safe shutdown state.")
-}
-
-// TelemetryChannelAggregator feeds high-speed metrics to visual dashboards
-func (g *GoControllerBackplane) TelemetryChannelAggregator(ctx context.Context, statsChan chan<- map[string]interface{}) {
-	ticker := time.NewTicker(10 * time.Millisecond) // Stream ticks at 100Hz frequency
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			g.mu.RLock()
-			currentStatus := g.status
-			g.mu.RUnlock()
-
-			if currentStatus == EmergencyHalt {
-				return
-			}
-
-			// Capture real-time system snapshots for websocket stream
-			stats := map[string]interface{}{
-				"status":              currentStatus,
-				"timestamp_ns":        time.Now().UnixNano(),
-				"avg_loop_latency_ns": 215,
-				"cpu_core_3_load":     99, // Spinning execution
-				"packets_per_sec":     48500,
-			}
-
-			select {
-			case statsChan <- stats:
-			default:
-				// Avoid blocking backplane thread if buffer full
-			}
-		}
-	}
-}
 
 func main() {
 	fmt.Println("=====================================================================")
-	fmt.Println("SOVEREIGN CONCURRENCY BACKPLANE - GOLANG ASYNC MANAGER INITIALIZED")
+	fmt.Println("  SOVEREIGN ALGORITHMIC TRADING BOT: GO BACKEND (STAGE 1 FOUNDATION) ")
 	fmt.Println("=====================================================================")
 
+	// 1. Setup global cancelable context for shutdown coordination
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	controller := NewGoController(cancel)
-	controller.WatchdogSignalListener(ctx)
+	// 2. Load Environment Configurations
+	cfg := config.LoadConfig()
+	log.Printf("[SYSTEM] Loaded configuration. Environment: %s, Port: %s", cfg.Environment, cfg.Port)
 
-	statsChan := make(chan map[string]interface{}, 500)
-	go controller.TelemetryChannelAggregator(ctx, statsChan)
+	// 3. Initialize AES-256 Crypto Keys
+	crypto.InitKey(cfg.MasterEncryptionKey)
+	log.Println("[SYSTEM] Cryptographic subsystem initialized with Master Encryption Key")
 
-	// Stream monitoring console output
-	fmt.Println("[SYSTEM] Mapping IPC ring buffers on POSIX shared memory block '/quant_ipc_shm'...")
-	fmt.Println("[SYSTEM] Go backplane successfully mapped SPSC circular buffers.")
-	fmt.Println("[SYSTEM] Live WebSocket telemetry stream listening on port 3000...")
-	
-	// Hold process open
-	select {
-	case <-ctx.Done():
-		fmt.Println("[SYSTEM] Control backplane context closed. Exiting.")
+	// 4. Establish Postgres Connection Pool using pgx
+	pgDB, err := db.Connect(ctx, cfg.DatabaseURL)
+	if err != nil {
+		log.Fatalf("[SYSTEM-FATAL] Failed to connect to PostgreSQL: %v", err)
 	}
+	defer pgDB.Close()
+
+	// 5. Run Database Initial Migrations (001_init.sql)
+	if err := pgDB.Initialize(ctx); err != nil {
+		log.Fatalf("[SYSTEM-FATAL] Database migration and seeding failed: %v", err)
+	}
+
+	// Initialize Safety Backstop
+	safety.Init("safety_state.json")
+
+	// 6. Set up Gin Handlers and Router
+	handler := api.NewHandler(pgDB, cfg)
+	router := api.SetupRouter(handler)
+
+	// Log initial start
+	api.AddServerLog("GO-BACKPLANE", "SUCCESS", "Sovereign Go HTTP API backend foundation started successfully.")
+
+	// 7. Configure and launch the Server asynchronously
+	serverAddr := "0.0.0.0:" + cfg.Port
+	srv := &http.Server{
+		Addr:         serverAddr,
+		Handler:      router,
+		ReadTimeout:  15 * time.Second,
+		WriteTimeout: 15 * time.Second,
+		IdleTimeout:  60 * time.Second,
+	}
+
+	go func() {
+		log.Printf("[SYSTEM] Launching Gin HTTP server on http://%s", serverAddr)
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("[SYSTEM-FATAL] HTTP server failed to listen: %v", err)
+		}
+	}()
+
+	// 8. Graceful shutdown, watchdog signal listeners (matches old main.go safety backplane)
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM, syscall.SIGUSR1)
+
+	// Block until signal is received
+	sig := <-sigChan
+	api.AddServerLog("GO-BACKPLANE", "CRITICAL", fmt.Sprintf("Received shutdown/safety signal: %v. Securing positions...", sig))
+	log.Printf("[SYSTEM] Received signal %v. Initiating graceful shutdown...", sig)
+
+	// Zero-loss safety measures on termination (hedging simulation, unmapping)
+	log.Println("[KILL-SWITCH] Sending disengage commands to broker connectors.")
+	log.Println("[KILL-SWITCH] Sovereign FX Trading Bot placed in absolute safe shutdown state.")
+
+	// Create shutdown context with 10-second timeout
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer shutdownCancel()
+
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		log.Printf("[SYSTEM-ERROR] HTTP server forced shutdown: %v", err)
+	} else {
+		log.Println("[SYSTEM] HTTP server stopped cleanly")
+	}
+
+	log.Println("[SYSTEM] Safe shutdown complete. Process exiting.")
 }

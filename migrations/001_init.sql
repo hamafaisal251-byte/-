@@ -162,3 +162,21 @@ CREATE TABLE IF NOT EXISTS arbitrage_compliance (
     regulations_permitted BOOLEAN DEFAULT FALSE,
     CONSTRAINT single_row_compliance CHECK (id = 1)
 );
+
+-- 14. Custom Connectors Table
+CREATE TABLE IF NOT EXISTS custom_connectors (
+    id VARCHAR PRIMARY KEY,
+    name VARCHAR NOT NULL,
+    type VARCHAR NOT NULL, -- 'broker' or 'news'
+    base_url TEXT NOT NULL,
+    auth_scheme VARCHAR NOT NULL, -- 'api_key_header', 'api_key_query_param', 'bearer_token', 'hmac_signed', 'basic_auth'
+    auth_config JSONB NOT NULL DEFAULT '{}'::JSONB,
+    endpoints JSONB NOT NULL DEFAULT '{}'::JSONB,
+    status VARCHAR NOT NULL DEFAULT 'DISCONNECTED',
+    last_tested_time TIMESTAMPTZ,
+    error_message TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    CONSTRAINT uq_custom_connector_name UNIQUE (name)
+);
+CREATE INDEX IF NOT EXISTS idx_custom_connectors_type ON custom_connectors(type);
+

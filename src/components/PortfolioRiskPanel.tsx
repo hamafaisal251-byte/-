@@ -47,6 +47,14 @@ interface RiskMetrics {
   peakEquity: number;
   currentEquity: number;
   limits: RiskLimits;
+  dataQuality?: Record<string, {
+    dataPoints: number;
+    timeSpanMinutes: number;
+    isRobust: boolean;
+    statusText: string;
+  }>;
+  insufficientHistory?: boolean;
+  historyMessage?: string;
 }
 
 interface HistoryItem {
@@ -200,6 +208,37 @@ export default function PortfolioRiskPanel() {
           </div>
         </div>
       </div>
+
+      {/* Data Quality & Correlation Stability Status */}
+      {metrics && (
+        <div id="data-quality-banner" className={`p-4 rounded-xl border flex flex-col md:flex-row justify-between items-start md:items-center gap-4 ${
+          metrics.insufficientHistory 
+            ? "bg-amber-950/20 border-amber-500/30 text-amber-300" 
+            : "bg-emerald-950/20 border-emerald-500/30 text-emerald-300"
+        }`} dir="rtl">
+          <div className="flex items-start gap-2">
+            <Info className={`w-5 h-5 shrink-0 mt-0.5 ${metrics.insufficientHistory ? "text-amber-400" : "text-emerald-400"}`} />
+            <div className="text-right">
+              <span className="text-xs font-black block">دۆخی سەقامگیری و دروستی داتای پۆرتفۆلیۆ (Data Quality & Correlation Stability)</span>
+              <span className="text-[11px] text-slate-300 block font-sans mt-0.5">
+                {metrics.historyMessage || "داتای لایڤی سەربەخۆ بە شێوەیەکی ڕاستەوخۆ دەخوێنرێتەوە بۆ چاودێریکردنی مەترسی"}
+              </span>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2 font-mono text-[10px]" dir="ltr">
+            {metrics.dataQuality && Object.entries(metrics.dataQuality).map(([inst, q]: any) => (
+              <div key={inst} className={`p-1.5 px-2.5 rounded border ${
+                q.isRobust 
+                  ? "bg-emerald-950/40 border-emerald-500/30 text-emerald-400" 
+                  : "bg-amber-950/40 border-amber-500/20 text-amber-400"
+              }`}>
+                <span className="font-bold mr-1.5">{inst} :</span>
+                <span>{q.statusText}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {error && (
         <div className="p-4 bg-rose-950/40 border border-rose-500/50 text-rose-300 text-xs rounded-xl flex items-center gap-2 justify-end" dir="rtl">

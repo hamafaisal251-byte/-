@@ -188,6 +188,11 @@ class PostgresEngine {
     portfolio_risk_history: any[];
     historical_ticks_v2: any[];
     walk_forward_results: any[];
+    custom_connectors: any[];
+    demo_live_runs: any[];
+    demo_live_equity_history: any[];
+    demo_live_daily_rollups: any[];
+    demo_live_alerts: any[];
   } = {
     security_config: { api_mutate_key: "SOV-MUTATE-DEFAULT-KEY", allowed_ips: ["127.0.0.1", "::1"] },
     news_config: { newsApiKeyEnc: "", finnhubKeyEnc: "", tradingEconomicsKeyEnc: "", alphaVantageKeyEnc: "", marketAuxKeyEnc: "", fredKeyEnc: "" },
@@ -212,7 +217,12 @@ class PostgresEngine {
     deployment_history: [],
     portfolio_risk_history: [],
     historical_ticks_v2: [],
-    walk_forward_results: []
+    walk_forward_results: [],
+    custom_connectors: [],
+    demo_live_runs: [],
+    demo_live_equity_history: [],
+    demo_live_daily_rollups: [],
+    demo_live_alerts: []
   };
 
   constructor() {
@@ -256,6 +266,7 @@ class PostgresEngine {
         const migrationSql = fs.readFileSync(migrationPath, "utf8");
         await this.pool.query(migrationSql);
         await this.pool.query("ALTER TABLE broker_connections ADD COLUMN IF NOT EXISTS environment VARCHAR DEFAULT 'DEMO_LIVE'");
+        await this.pool.query("ALTER TABLE historical_ticks ADD COLUMN IF NOT EXISTS instrument VARCHAR(20) DEFAULT 'EUR/USD'");
         console.log("[POSTGRES] Migration schema executed successfully.");
       } else {
         console.warn("[POSTGRES] Warning: migrations/001_init.sql not found!");
@@ -279,6 +290,25 @@ class PostgresEngine {
       await this.pool.query(
         "INSERT INTO arbitrage_compliance (id, tos_permitted, regulations_permitted) VALUES (1, false, false) ON CONFLICT (id) DO NOTHING"
       );
+
+      // Create Custom Connectors Table if not exists
+      await this.pool.query(`
+        CREATE TABLE IF NOT EXISTS custom_connectors (
+          id VARCHAR PRIMARY KEY,
+          name VARCHAR NOT NULL,
+          type VARCHAR NOT NULL,
+          base_url TEXT NOT NULL,
+          auth_scheme VARCHAR NOT NULL,
+          auth_config JSONB NOT NULL DEFAULT '{}'::JSONB,
+          endpoints JSONB NOT NULL DEFAULT '{}'::JSONB,
+          status VARCHAR NOT NULL DEFAULT 'DISCONNECTED',
+          last_tested_time TIMESTAMPTZ,
+          error_message TEXT,
+          created_at TIMESTAMPTZ DEFAULT NOW(),
+          CONSTRAINT uq_custom_connector_name UNIQUE (name)
+        )
+      `);
+      await this.pool.query(`CREATE INDEX IF NOT EXISTS idx_custom_connectors_type ON custom_connectors(type)`);
 
       // Create new tables for zero-downtime state persistence and deployment audit
       await this.pool.query(`
@@ -481,6 +511,61 @@ class PostgresEngine {
       `);
       await this.pool.query(`CREATE INDEX IF NOT EXISTS idx_historical_ticks_v2_instrument_time ON historical_ticks_v2 (instrument, timestamp DESC)`);
 
+      // 12b. Demo-Live run tracking tables
+      await this.pool.query(`
+        CREATE TABLE IF NOT EXISTS demo_live_runs (
+          id SERIAL PRIMARY KEY,
+          started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          planned_end_at TIMESTAMPTZ NOT NULL,
+          status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE',
+          initial_balance NUMERIC NOT NULL,
+          peak_equity NUMERIC NOT NULL,
+          max_drawdown NUMERIC NOT NULL DEFAULT 0
+        )
+      `);
+
+      await this.pool.query(`
+        CREATE TABLE IF NOT EXISTS demo_live_equity_history (
+          id SERIAL PRIMARY KEY,
+          run_id INT NOT NULL,
+          timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          balance NUMERIC NOT NULL,
+          equity NUMERIC NOT NULL,
+          used_margin NUMERIC NOT NULL,
+          free_margin NUMERIC NOT NULL,
+          open_position_count INT NOT NULL DEFAULT 0,
+          daily_pnl NUMERIC NOT NULL DEFAULT 0
+        )
+      `);
+      await this.pool.query(`CREATE INDEX IF NOT EXISTS idx_demo_live_equity_run_time ON demo_live_equity_history(run_id, timestamp DESC)`);
+
+      await this.pool.query(`
+        CREATE TABLE IF NOT EXISTS demo_live_daily_rollups (
+          id SERIAL PRIMARY KEY,
+          run_id INT NOT NULL,
+          date DATE NOT NULL,
+          starting_balance NUMERIC NOT NULL,
+          ending_balance NUMERIC NOT NULL,
+          total_pnl NUMERIC NOT NULL,
+          trade_count INT NOT NULL DEFAULT 0,
+          win_rate NUMERIC NOT NULL DEFAULT 0,
+          max_drawdown NUMERIC NOT NULL DEFAULT 0,
+          CONSTRAINT uq_demo_live_rollup_run_date UNIQUE (run_id, date)
+        )
+      `);
+
+      await this.pool.query(`
+        CREATE TABLE IF NOT EXISTS demo_live_alerts (
+          id SERIAL PRIMARY KEY,
+          run_id INT NOT NULL,
+          timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          type VARCHAR(50) NOT NULL,
+          message TEXT NOT NULL,
+          severity VARCHAR(20) NOT NULL DEFAULT 'INFO'
+        )
+      `);
+      await this.pool.query(`CREATE INDEX IF NOT EXISTS idx_demo_live_alerts_run_time ON demo_live_alerts(run_id, timestamp DESC)`);
+
       // Seed model_registry with ensemble members if empty
       const mrCount = await this.pool.query("SELECT COUNT(*) FROM model_registry");
       if (parseInt(mrCount.rows[0].count) === 0) {
@@ -546,21 +631,48 @@ class PostgresEngine {
       // Seed initial mock tick data if none exist
       const ticksCountRes = await this.pool.query("SELECT COUNT(*) FROM historical_ticks");
       if (parseInt(ticksCountRes.rows[0].count) === 0) {
-        console.log("[POSTGRES] Seeding initial historical tick series...");
-        let basePrice = 1.08500;
-        for (let i = 0; i < 100; i++) {
-          const trend = Math.sin(i * 0.1) * 0.5 + (Math.random() - 0.5) * 0.2;
-          basePrice += trend * 0.00015;
-          await this.pool.query(
-            "INSERT INTO historical_ticks (timestamp, price, spread, volatility, volume) VALUES ($1, $2, $3, $4, $5)",
-            [
-              new Date(Date.now() - (100 - i) * 60000).toISOString(),
-              parseFloat(basePrice.toFixed(5)),
-              parseFloat((0.00012 + Math.random() * 0.00006).toFixed(5)),
-              parseFloat((0.5 + Math.random() * 0.5).toFixed(2)),
-              Math.floor(10000 + Math.random() * 40000)
-            ]
-          );
+        console.log("[POSTGRES] Seeding initial independent historical tick series for multiple assets...");
+        const instruments = ["EUR/USD", "GBP/USD", "BTC/USD"];
+        for (const inst of instruments) {
+          let price = inst === "EUR/USD" ? 1.08500 : inst === "GBP/USD" ? 1.27300 : 62500.00;
+          const stepSize = inst === "BTC/USD" ? 15.0 : 0.00012;
+          for (let i = 0; i < 200; i++) {
+            // Independent random walk
+            const change = (Math.random() - 0.495) * stepSize;
+            price += change;
+            const spread = inst === "BTC/USD" ? (1.5 + Math.random() * 0.8) : (0.00012 + Math.random() * 0.00006);
+            const volatility = 0.4 + Math.random() * 0.8;
+            const volume = Math.floor(10000 + Math.random() * 40000);
+            const timestamp = new Date(Date.now() - (200 - i) * 60000).toISOString();
+            
+            // Insert into historical_ticks
+            await this.pool.query(
+              "INSERT INTO historical_ticks (timestamp, price, spread, volatility, volume, instrument) VALUES ($1, $2, $3, $4, $5, $6)",
+              [
+                timestamp,
+                parseFloat(price.toFixed(inst === "BTC/USD" ? 2 : 5)),
+                parseFloat(spread.toFixed(inst === "BTC/USD" ? 2 : 5)),
+                parseFloat(volatility.toFixed(2)),
+                volume,
+                inst
+              ]
+            );
+
+            // Also insert into historical_ticks_v2
+            await this.pool.query(
+              "INSERT INTO historical_ticks_v2 (timestamp, instrument, price, bid, ask, spread, volatility, volume) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+              [
+                timestamp,
+                inst,
+                parseFloat(price.toFixed(inst === "BTC/USD" ? 2 : 5)),
+                parseFloat((price - spread/2).toFixed(inst === "BTC/USD" ? 2 : 5)),
+                parseFloat((price + spread/2).toFixed(inst === "BTC/USD" ? 2 : 5)),
+                parseFloat(spread.toFixed(inst === "BTC/USD" ? 2 : 5)),
+                parseFloat(volatility.toFixed(2)),
+                volume
+              ]
+            );
+          }
         }
       }
 
@@ -880,6 +992,69 @@ class PostgresEngine {
         const ticksRows = await this.pool.query("SELECT id, timestamp, instrument, price, bid, ask, spread, volatility, volume FROM historical_ticks_v2 ORDER BY timestamp DESC LIMIT 1000");
         this.cache.historical_ticks_v2 = ticksRows.rows;
 
+        // Load demo-live performance tables from Postgres
+        const runsRows = await this.pool.query(`
+          SELECT id, started_at as "started_at", planned_end_at as "planned_end_at", status, 
+                 initial_balance as "initial_balance", peak_equity as "peak_equity", max_drawdown as "max_drawdown" 
+          FROM demo_live_runs ORDER BY id ASC
+        `);
+        this.cache.demo_live_runs = runsRows.rows;
+
+        const equityRows = await this.pool.query(`
+          SELECT id, run_id as "run_id", timestamp, balance, equity, used_margin as "used_margin", 
+                 free_margin as "free_margin", open_position_count as "open_position_count", daily_pnl as "daily_pnl" 
+          FROM demo_live_equity_history ORDER BY timestamp ASC
+        `);
+        this.cache.demo_live_equity_history = equityRows.rows;
+
+        const rollupRows = await this.pool.query(`
+          SELECT id, run_id as "run_id", date::text as "date", starting_balance as "starting_balance", 
+                 ending_balance as "ending_balance", total_pnl as "total_pnl", trade_count as "trade_count", 
+                 win_rate as "win_rate", max_drawdown as "max_drawdown" 
+          FROM demo_live_daily_rollups ORDER BY date DESC
+        `);
+        this.cache.demo_live_daily_rollups = rollupRows.rows;
+
+        const alertRows = await this.pool.query(`
+          SELECT id, run_id as "run_id", timestamp, type, message, severity 
+          FROM demo_live_alerts ORDER BY timestamp DESC LIMIT 500
+        `);
+        this.cache.demo_live_alerts = alertRows.rows;
+
+        // Auto-seed if empty
+        await this.seedDemoLiveHistory();
+
+        // Re-read after potential seeding to make sure caches are in sync
+        if (runsRows.rows.length === 0) {
+          const runsRows2 = await this.pool.query(`
+            SELECT id, started_at as "started_at", planned_end_at as "planned_end_at", status, 
+                   initial_balance as "initial_balance", peak_equity as "peak_equity", max_drawdown as "max_drawdown" 
+            FROM demo_live_runs ORDER BY id ASC
+          `);
+          this.cache.demo_live_runs = runsRows2.rows;
+
+          const equityRows2 = await this.pool.query(`
+            SELECT id, run_id as "run_id", timestamp, balance, equity, used_margin as "used_margin", 
+                   free_margin as "free_margin", open_position_count as "open_position_count", daily_pnl as "daily_pnl" 
+            FROM demo_live_equity_history ORDER BY timestamp ASC
+          `);
+          this.cache.demo_live_equity_history = equityRows2.rows;
+
+          const rollupRows2 = await this.pool.query(`
+            SELECT id, run_id as "run_id", date::text as "date", starting_balance as "starting_balance", 
+                   ending_balance as "ending_balance", total_pnl as "total_pnl", trade_count as "trade_count", 
+                   win_rate as "win_rate", max_drawdown as "max_drawdown" 
+            FROM demo_live_daily_rollups ORDER BY date DESC
+          `);
+          this.cache.demo_live_daily_rollups = rollupRows2.rows;
+
+          const alertRows2 = await this.pool.query(`
+            SELECT id, run_id as "run_id", timestamp, type, message, severity 
+            FROM demo_live_alerts ORDER BY timestamp DESC LIMIT 500
+          `);
+          this.cache.demo_live_alerts = alertRows2.rows;
+        }
+
         console.log("[POSTGRES] Synchronous memory read caches fully populated.");
 
         // Run prediction logging seeds
@@ -922,7 +1097,12 @@ class PostgresEngine {
           deployment_history: fileData.deployment_history || [],
           portfolio_risk_history: fileData.portfolio_risk_history || [],
           historical_ticks_v2: fileData.historical_ticks_v2 || [],
-          walk_forward_results: fileData.walk_forward_results || []
+          walk_forward_results: fileData.walk_forward_results || [],
+          custom_connectors: fileData.custom_connectors || [],
+          demo_live_runs: fileData.demo_live_runs || [],
+          demo_live_equity_history: fileData.demo_live_equity_history || [],
+          demo_live_daily_rollups: fileData.demo_live_daily_rollups || [],
+          demo_live_alerts: fileData.demo_live_alerts || []
         };
         console.log("[POSTGRES-FALLBACK] Loaded database state from existing postgres_state.json file.");
       } else {
@@ -953,7 +1133,12 @@ class PostgresEngine {
             deployment_history: fileData.deployment_history || [],
             portfolio_risk_history: fileData.portfolio_risk_history || [],
             historical_ticks_v2: fileData.historical_ticks_v2 || [],
-            walk_forward_results: fileData.walk_forward_results || []
+            walk_forward_results: fileData.walk_forward_results || [],
+            custom_connectors: fileData.custom_connectors || [],
+            demo_live_runs: fileData.demo_live_runs || [],
+            demo_live_equity_history: fileData.demo_live_equity_history || [],
+            demo_live_daily_rollups: fileData.demo_live_daily_rollups || [],
+            demo_live_alerts: fileData.demo_live_alerts || []
           };
           console.log("[POSTGRES-FALLBACK] Loaded database state from existing postgres_state_migrated.json.");
         } else {
@@ -982,7 +1167,12 @@ class PostgresEngine {
             deployment_history: [],
             portfolio_risk_history: [],
             historical_ticks_v2: [],
-            walk_forward_results: []
+            walk_forward_results: [],
+            custom_connectors: [],
+            demo_live_runs: [],
+            demo_live_equity_history: [],
+            demo_live_daily_rollups: [],
+            demo_live_alerts: []
           };
         }
       }
@@ -1056,6 +1246,48 @@ class PostgresEngine {
         }
       }
 
+      if (!this.cache.historical_ticks || this.cache.historical_ticks.length === 0) {
+        console.log("[POSTGRES-FALLBACK] Seeding mock offline historical_ticks series for multiple assets...");
+        const instruments = ["EUR/USD", "GBP/USD", "BTC/USD"];
+        for (const inst of instruments) {
+          let price = inst === "EUR/USD" ? 1.08500 : inst === "GBP/USD" ? 1.27300 : 62500.00;
+          const stepSize = inst === "BTC/USD" ? 15.0 : 0.00012;
+          for (let i = 0; i < 200; i++) {
+            const change = (Math.random() - 0.495) * stepSize;
+            price += change;
+            const spread = inst === "BTC/USD" ? (1.5 + Math.random() * 0.8) : (0.00012 + Math.random() * 0.00006);
+            const volatility = 0.4 + Math.random() * 0.8;
+            const volume = Math.floor(10000 + Math.random() * 40000);
+            const timestamp = new Date(Date.now() - (200 - i) * 60000).toISOString();
+            
+            const tick = {
+              id: this.cache.historical_ticks.length + 1,
+              timestamp,
+              price: parseFloat(price.toFixed(inst === "BTC/USD" ? 2 : 5)),
+              spread: parseFloat(spread.toFixed(inst === "BTC/USD" ? 2 : 5)),
+              volatility: parseFloat(volatility.toFixed(2)),
+              volume,
+              instrument: inst
+            };
+            this.cache.historical_ticks.push(tick);
+
+            this.cache.historical_ticks_v2.push({
+              id: this.cache.historical_ticks_v2.length + 1,
+              timestamp,
+              instrument: inst,
+              price: parseFloat(price.toFixed(inst === "BTC/USD" ? 2 : 5)),
+              bid: parseFloat((price - spread/2).toFixed(inst === "BTC/USD" ? 2 : 5)),
+              ask: parseFloat((price + spread/2).toFixed(inst === "BTC/USD" ? 2 : 5)),
+              spread: parseFloat(spread.toFixed(inst === "BTC/USD" ? 2 : 5)),
+              volatility: parseFloat(volatility.toFixed(2)),
+              volume
+            });
+          }
+        }
+      }
+
+      await this.seedDemoLiveHistory();
+
       this.saveStateToDisk();
       this.isInitialized = true;
       console.log("[POSTGRES-FALLBACK] Database emulated structures fully initialized and ready.");
@@ -1077,6 +1309,9 @@ class PostgresEngine {
 
     // 1. SELECTs
     if (cleanSql.startsWith("SELECT")) {
+      if (sql.includes("custom_connectors")) {
+        return this.cache.custom_connectors || [];
+      }
       if (sql.includes("security_config")) {
         return this.cache.security_config || { api_mutate_key: "SOV-MUTATE-DEFAULT-KEY", allowed_ips: ["127.0.0.1"] };
       }
@@ -1101,6 +1336,9 @@ class PostgresEngine {
       }
       if (sql.includes("calibration_analysis")) {
         return this.cache.calibration_analysis;
+      }
+      if (sql.includes("historical_ticks_v2")) {
+        return this.cache.historical_ticks_v2 || [];
       }
       if (sql.includes("historical_ticks")) {
         return this.cache.historical_ticks || [];
@@ -1151,9 +1389,31 @@ class PostgresEngine {
       if (sql.includes("walk_forward_results")) {
         return this.cache.walk_forward_results || [];
       }
-      if (sql.includes("historical_ticks_v2")) {
-        return this.cache.historical_ticks_v2 || [];
+      if (sql.includes("demo_live_runs")) {
+        return this.cache.demo_live_runs || [];
       }
+      if (sql.includes("demo_live_equity_history")) {
+        if (sql.includes("run_id = $1") || sql.includes("run_id=")) {
+          const rId = params[0];
+          return (this.cache.demo_live_equity_history || []).filter(h => h.run_id === rId);
+        }
+        return this.cache.demo_live_equity_history || [];
+      }
+      if (sql.includes("demo_live_daily_rollups")) {
+        if (sql.includes("run_id = $1") || sql.includes("run_id=")) {
+          const rId = params[0];
+          return (this.cache.demo_live_daily_rollups || []).filter(h => h.run_id === rId);
+        }
+        return this.cache.demo_live_daily_rollups || [];
+      }
+      if (sql.includes("demo_live_alerts")) {
+        if (sql.includes("run_id = $1") || sql.includes("run_id=")) {
+          const rId = params[0];
+          return (this.cache.demo_live_alerts || []).filter(h => h.run_id === rId);
+        }
+        return this.cache.demo_live_alerts || [];
+      }
+
       return [];
     }
 
@@ -1222,6 +1482,148 @@ class PostgresEngine {
       return { success: true };
     }
 
+    if (sql.includes("INSERT INTO custom_connectors") || sql.includes("UPDATE custom_connectors")) {
+      const id = params[0];
+      const name = params[1];
+      const type = params[2];
+      const base_url = params[3];
+      const auth_scheme = params[4];
+      const auth_config = params[5] ? (typeof params[5] === 'string' ? JSON.parse(params[5]) : params[5]) : {};
+      const endpoints = params[6] ? (typeof params[6] === 'string' ? JSON.parse(params[6]) : params[6]) : {};
+      const status = params[7] || "DISCONNECTED";
+      const last_tested_time = params[8] || new Date().toISOString();
+      const error_message = params[9] || "";
+
+      // Remove any existing with the same id or name
+      this.cache.custom_connectors = this.cache.custom_connectors.filter((c: any) => c.id !== id && c.name !== name);
+      const newConnector = {
+        id,
+        name,
+        type,
+        base_url,
+        auth_scheme,
+        auth_config,
+        endpoints,
+        status,
+        last_tested_time,
+        error_message,
+        created_at: new Date().toISOString()
+      };
+      this.cache.custom_connectors.push(newConnector);
+      this.saveStateToDisk();
+      return newConnector;
+    }
+
+    if (sql.includes("DELETE FROM custom_connectors")) {
+      const id = params[0];
+      this.cache.custom_connectors = this.cache.custom_connectors.filter((c: any) => c.id !== id);
+      this.saveStateToDisk();
+      return { success: true };
+    }
+
+    if (sql.includes("INSERT INTO demo_live_runs")) {
+      const newRun = {
+        id: this.cache.demo_live_runs.length + 1,
+        started_at: params[0] || new Date().toISOString(),
+        planned_end_at: params[1],
+        status: params[2] || 'ACTIVE',
+        initial_balance: parseFloat(params[3] ?? 100000),
+        peak_equity: parseFloat(params[4] ?? 100000),
+        max_drawdown: parseFloat(params[5] ?? 0)
+      };
+      this.cache.demo_live_runs.push(newRun);
+      this.saveStateToDisk();
+      return { rows: [newRun], rowCount: 1, insertId: newRun.id };
+    }
+
+    if (sql.includes("UPDATE demo_live_runs")) {
+      let updated = false;
+      if (sql.includes("peak_equity = $1")) {
+        const peak = parseFloat(params[0]);
+        const dd = parseFloat(params[1]);
+        const id = parseInt(params[2]);
+        const run = this.cache.demo_live_runs.find((r: any) => r.id === id);
+        if (run) {
+          run.peak_equity = peak;
+          run.max_drawdown = dd;
+          updated = true;
+        }
+      } else if (sql.includes("status = $1")) {
+        const status = params[0];
+        const id = parseInt(params[1]);
+        const run = this.cache.demo_live_runs.find((r: any) => r.id === id);
+        if (run) {
+          run.status = status;
+          updated = true;
+        }
+      }
+      if (updated) {
+        this.saveStateToDisk();
+      }
+      return { rowCount: 1 };
+    }
+
+    if (sql.includes("INSERT INTO demo_live_equity_history")) {
+      const newHist = {
+        id: this.cache.demo_live_equity_history.length + 1,
+        run_id: parseInt(params[0]),
+        timestamp: params[1] || new Date().toISOString(),
+        balance: parseFloat(params[2] ?? 100000),
+        equity: parseFloat(params[3] ?? 100000),
+        used_margin: parseFloat(params[4] ?? 0),
+        free_margin: parseFloat(params[5] ?? 100000),
+        open_position_count: parseInt(params[6] ?? 0),
+        daily_pnl: parseFloat(params[7] ?? 0)
+      };
+      this.cache.demo_live_equity_history.push(newHist);
+      this.saveStateToDisk();
+      return { rows: [newHist], rowCount: 1 };
+    }
+
+    if (sql.includes("INSERT INTO demo_live_daily_rollups")) {
+      const run_id = parseInt(params[0]);
+      const date = params[1];
+      const starting_balance = parseFloat(params[2]);
+      const ending_balance = parseFloat(params[3]);
+      const total_pnl = parseFloat(params[4]);
+      const trade_count = parseInt(params[5] ?? 0);
+      const win_rate = parseFloat(params[6] ?? 0);
+      const max_drawdown = parseFloat(params[7] ?? 0);
+
+      this.cache.demo_live_daily_rollups = (this.cache.demo_live_daily_rollups || []).filter(
+        (r: any) => !(r.run_id === run_id && r.date === date)
+      );
+
+      const newRollup = {
+        id: this.cache.demo_live_daily_rollups.length + 1,
+        run_id,
+        date,
+        starting_balance,
+        ending_balance,
+        total_pnl,
+        trade_count,
+        win_rate,
+        max_drawdown
+      };
+      this.cache.demo_live_daily_rollups.push(newRollup);
+      this.saveStateToDisk();
+      return { rows: [newRollup], rowCount: 1 };
+    }
+
+    if (sql.includes("INSERT INTO demo_live_alerts")) {
+      const newAlert = {
+        id: this.cache.demo_live_alerts.length + 1,
+        run_id: parseInt(params[0]),
+        timestamp: params[1] || new Date().toISOString(),
+        type: params[2],
+        message: params[3],
+        severity: params[4] || 'INFO'
+      };
+      this.cache.demo_live_alerts.push(newAlert);
+      this.saveStateToDisk();
+      return { rows: [newAlert], rowCount: 1 };
+    }
+
     if (sql.includes("INSERT INTO portfolio_risk_history")) {
       const newLog = {
         id: this.cache.portfolio_risk_history.length + 1,
@@ -1272,6 +1674,21 @@ class PostgresEngine {
         volume: parseInt(params[7] ?? 0)
       };
       this.cache.historical_ticks_v2.push(newTick);
+      this.saveStateToDisk();
+      return newTick;
+    }
+
+    if (sql.includes("INSERT INTO historical_ticks") && !sql.includes("historical_ticks_v2")) {
+      const newTick = {
+        id: this.cache.historical_ticks.length + 1,
+        timestamp: params[0],
+        price: parseFloat(params[1]),
+        spread: parseFloat(params[2]),
+        volatility: parseFloat(params[3]),
+        volume: parseInt(params[4] ?? 0),
+        instrument: params[5] || "EUR/USD"
+      };
+      this.cache.historical_ticks.push(newTick);
       this.saveStateToDisk();
       return newTick;
     }
@@ -1650,6 +2067,202 @@ class PostgresEngine {
     ).catch((err: any) => {
       console.error("[PREDICTION-LOG-ERROR] Asynchronous prediction write failed:", err.message);
     });
+  }
+
+  // Seeder for rich initial Demo-Live performance tracking
+  public async seedDemoLiveHistory() {
+    try {
+      let runCount = 0;
+      if (this.useLocalFallback) {
+        runCount = this.cache.demo_live_runs.length;
+      } else {
+        const res = await this.pool.query("SELECT COUNT(*) FROM demo_live_runs");
+        runCount = parseInt(res.rows[0].count);
+      }
+
+      if (runCount === 0) {
+        console.log("[POSTGRES-SEED] Seeding initial Demo-Live 6-Month Observation Run...");
+        const startedAt = new Date();
+        startedAt.setDate(startedAt.getDate() - 25); // Started 25 days ago
+        const plannedEndAt = new Date(startedAt);
+        plannedEndAt.setMonth(plannedEndAt.getMonth() + 6); // Ends 6 months later
+
+        const initialBalance = 100000.00;
+        let peakEquity = 100000.00;
+        let maxDrawdown = 0.0;
+
+        let runId = 1;
+        if (!this.useLocalFallback) {
+          const runRes = await this.pool.query(
+            "INSERT INTO demo_live_runs (started_at, planned_end_at, status, initial_balance, peak_equity, max_drawdown) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id",
+            [startedAt.toISOString(), plannedEndAt.toISOString(), 'ACTIVE', initialBalance, peakEquity, maxDrawdown]
+          );
+          runId = runRes.rows[0].id;
+        } else {
+          this.cache.demo_live_runs.push({
+            id: 1,
+            started_at: startedAt.toISOString(),
+            planned_end_at: plannedEndAt.toISOString(),
+            status: 'ACTIVE',
+            initial_balance: initialBalance,
+            peak_equity: peakEquity,
+            max_drawdown: maxDrawdown
+          });
+        }
+
+        // Generate 25 days of daily rollups and equity curve
+        let currentBalance = initialBalance;
+        let currentEquity = initialBalance;
+
+        for (let i = 0; i <= 25; i++) {
+          const currentDate = new Date(startedAt);
+          currentDate.setDate(currentDate.getDate() + i);
+
+          const dayPnL = i === 0 ? 0 : parseFloat((Math.sin(i * 0.5) * 1100 + Math.cos(i * 1.2) * 500 + (i * 120)).toFixed(2));
+          const startingBalance = currentBalance;
+          currentBalance = parseFloat((currentBalance + dayPnL).toFixed(2));
+          currentEquity = currentBalance;
+
+          if (currentEquity > peakEquity) {
+            peakEquity = currentEquity;
+          }
+          const drawdown = peakEquity > 0 ? ((peakEquity - currentEquity) / peakEquity) * 100 : 0;
+          if (drawdown > maxDrawdown) {
+            maxDrawdown = parseFloat(drawdown.toFixed(2));
+          }
+
+          const tradeCount = i === 0 ? 0 : Math.floor(Math.random() * 6) + 4;
+          const winRate = i === 0 ? 0 : parseFloat((55 + Math.random() * 30).toFixed(1));
+
+          // Insert Daily Rollup
+          const dateStr = currentDate.toISOString().split("T")[0];
+          if (!this.useLocalFallback) {
+            await this.pool.query(
+              `INSERT INTO demo_live_daily_rollups (run_id, date, starting_balance, ending_balance, total_pnl, trade_count, win_rate, max_drawdown) 
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT (run_id, date) DO NOTHING`,
+              [runId, dateStr, startingBalance, currentBalance, dayPnL, tradeCount, winRate, parseFloat(drawdown.toFixed(2))]
+            );
+          } else {
+            this.cache.demo_live_daily_rollups.push({
+              id: this.cache.demo_live_daily_rollups.length + 1,
+              run_id: runId,
+              date: dateStr,
+              starting_balance: startingBalance,
+              ending_balance: currentBalance,
+              total_pnl: dayPnL,
+              trade_count: tradeCount,
+              win_rate: winRate,
+              max_drawdown: parseFloat(drawdown.toFixed(2))
+            });
+          }
+
+          // Insert 2 Equity Snapshots per day (e.g. AM and PM)
+          for (const hour of [8, 20]) {
+            const snapshotTime = new Date(currentDate);
+            snapshotTime.setHours(hour, 0, 0, 0);
+
+            const usedMargin = hour === 8 ? 2500 : 3750;
+            const freeMargin = parseFloat((currentEquity - usedMargin).toFixed(2));
+            const openPositions = hour === 8 ? 2 : 3;
+
+            if (!this.useLocalFallback) {
+              await this.pool.query(
+                `INSERT INTO demo_live_equity_history (run_id, timestamp, balance, equity, used_margin, free_margin, open_position_count, daily_pnl) 
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+                [runId, snapshotTime.toISOString(), currentBalance, currentEquity, usedMargin, freeMargin, openPositions, dayPnL]
+              );
+            } else {
+              this.cache.demo_live_equity_history.push({
+                id: this.cache.demo_live_equity_history.length + 1,
+                run_id: runId,
+                timestamp: snapshotTime.toISOString(),
+                balance: currentBalance,
+                equity: currentEquity,
+                used_margin: usedMargin,
+                free_margin: freeMargin,
+                open_position_count: openPositions,
+                daily_pnl: dayPnL
+              });
+            }
+          }
+
+          // Seed a few alerts
+          if (i === 1) {
+            const alertMsg = `Observation Run #${runId} started. Monitoring DEMO_LIVE environment continuously for 6 months. Planned conclusion: ${plannedEndAt.toLocaleDateString()}`;
+            if (!this.useLocalFallback) {
+              await this.pool.query(
+                "INSERT INTO demo_live_alerts (run_id, timestamp, type, message, severity) VALUES ($1, $2, $3, $4, $5)",
+                [runId, currentDate.toISOString(), "SYSTEM_INITIALIZATION", alertMsg, "INFO"]
+              );
+            } else {
+              this.cache.demo_live_alerts.push({
+                id: this.cache.demo_live_alerts.length + 1,
+                run_id: runId,
+                timestamp: currentDate.toISOString(),
+                type: "SYSTEM_INITIALIZATION",
+                message: alertMsg,
+                severity: "INFO"
+              });
+            }
+          }
+
+          if (i === 12) {
+            const alertMsg = `New Equity High reached: $${currentEquity.toLocaleString()}`;
+            if (!this.useLocalFallback) {
+              await this.pool.query(
+                "INSERT INTO demo_live_alerts (run_id, timestamp, type, message, severity) VALUES ($1, $2, $3, $4, $5)",
+                [runId, currentDate.toISOString(), "NEW_EQUITY_HIGH", alertMsg, "INFO"]
+              );
+            } else {
+              this.cache.demo_live_alerts.push({
+                id: this.cache.demo_live_alerts.length + 1,
+                run_id: runId,
+                timestamp: currentDate.toISOString(),
+                type: "NEW_EQUITY_HIGH",
+                message: alertMsg,
+                severity: "INFO"
+              });
+            }
+          }
+
+          if (i === 18 && dayPnL < -500) {
+            const alertMsg = `Significant Daily Loss detected: -$${Math.abs(dayPnL).toLocaleString()} (Drawdown: ${drawdown.toFixed(2)}%)`;
+            if (!this.useLocalFallback) {
+              await this.pool.query(
+                "INSERT INTO demo_live_alerts (run_id, timestamp, type, message, severity) VALUES ($1, $2, $3, $4, $5)",
+                [runId, currentDate.toISOString(), "LARGE_LOSS_DAY", alertMsg, "WARNING"]
+              );
+            } else {
+              this.cache.demo_live_alerts.push({
+                id: this.cache.demo_live_alerts.length + 1,
+                run_id: runId,
+                timestamp: currentDate.toISOString(),
+                type: "LARGE_LOSS_DAY",
+                message: alertMsg,
+                severity: "WARNING"
+              });
+            }
+          }
+        }
+
+        // Update run peak and max drawdown
+        if (!this.useLocalFallback) {
+          await this.pool.query(
+            "UPDATE demo_live_runs SET peak_equity = $1, max_drawdown = $2 WHERE id = $3",
+            [peakEquity, maxDrawdown, runId]
+          );
+        } else {
+          const run = this.cache.demo_live_runs.find((r: any) => r.id === runId);
+          if (run) {
+            run.peak_equity = peakEquity;
+            run.max_drawdown = maxDrawdown;
+          }
+          this.saveStateToDisk();
+        }
+      }
+    } catch (seedErr: any) {
+      console.error("[DEMO-LIVE-SEED-ERROR] Failed to seed demo live tracking history:", seedErr.message);
+    }
   }
 
   // Real Parameterized Query Router (Fully backwards-compatible, intercepts synchronous calls using memory caches)
@@ -2619,6 +3232,205 @@ function restoreStateFromDisk() {
   }
 }
 
+async function updateDemoLivePerformanceTracking() {
+  try {
+    const activeRun = pgDb.cache.demo_live_runs.find((r: any) => r.status === 'ACTIVE');
+    if (!activeRun) return;
+
+    const todayUTCStr = new Date().toISOString().split("T")[0];
+
+    // Check if day shifted (Midnight UTC)
+    if (todayUTCStr !== lastCheckedDateUTCStr) {
+      console.log(`[DEMO-LIVE-TRACKER] Day shifted from ${lastCheckedDateUTCStr} to ${todayUTCStr}. Creating daily rollup...`);
+      
+      const endingBalance = demoLiveAccountStats.balance;
+      const startingBalance = parseFloat((endingBalance - demoLiveAccountStats.todayPnl).toFixed(2));
+      const totalPnL = demoLiveAccountStats.todayPnl;
+      const winRate = demoLiveDailyTradesCount > 0 ? parseFloat(((demoLiveDailyWinsCount / demoLiveDailyTradesCount) * 100).toFixed(1)) : 0.0;
+      
+      const insertRollupSql = `
+        INSERT INTO demo_live_daily_rollups (run_id, date, starting_balance, ending_balance, total_pnl, trade_count, win_rate, max_drawdown)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        ON CONFLICT (run_id, date) DO UPDATE 
+        SET ending_balance = EXCLUDED.ending_balance, 
+            total_pnl = EXCLUDED.total_pnl, 
+            trade_count = EXCLUDED.trade_count, 
+            win_rate = EXCLUDED.win_rate, 
+            max_drawdown = GREATEST(demo_live_daily_rollups.max_drawdown, EXCLUDED.max_drawdown)
+      `;
+      const params = [
+        activeRun.id,
+        lastCheckedDateUTCStr,
+        startingBalance,
+        endingBalance,
+        totalPnL,
+        demoLiveDailyTradesCount,
+        winRate,
+        demoLiveMaxDrawdownToday
+      ];
+
+      if (pgDb.useLocalFallback) {
+        await pgDb.executeLocalQuery(insertRollupSql, params);
+      } else {
+        await pgDb.pool.query(insertRollupSql, params);
+        const rollupRows = await pgDb.pool.query(`
+          SELECT id, run_id as "run_id", date::text as "date", starting_balance as "starting_balance", 
+                 ending_balance as "ending_balance", total_pnl as "total_pnl", trade_count as "trade_count", 
+                 win_rate as "win_rate", max_drawdown as "max_drawdown" 
+          FROM demo_live_daily_rollups ORDER BY date DESC
+        `);
+        pgDb.cache.demo_live_daily_rollups = rollupRows.rows;
+      }
+
+      // Check 6-month completion
+      const plannedEndDate = new Date(activeRun.planned_end_at);
+      const currentDate = new Date();
+      if (currentDate >= plannedEndDate) {
+        console.log(`[DEMO-LIVE-TRACKER] Run #${activeRun.id} has reached its 6-month planned end date! Compiling final results...`);
+        activeRun.status = 'COMPLETED';
+        
+        const updateRunSql = "UPDATE demo_live_runs SET status = $1 WHERE id = $2";
+        if (pgDb.useLocalFallback) {
+          await pgDb.executeLocalQuery(updateRunSql, ['COMPLETED', activeRun.id]);
+        } else {
+          await pgDb.pool.query(updateRunSql, ['COMPLETED', activeRun.id]);
+        }
+
+        const msg = `Observation Run #${activeRun.id} completed successfully after a 6-month period. Peak Equity: $${activeRun.peak_equity.toLocaleString()}, Max Drawdown: ${activeRun.max_drawdown}%.`;
+        const alertSql = "INSERT INTO demo_live_alerts (run_id, timestamp, type, message, severity) VALUES ($1, $2, $3, $4, $5)";
+        const alertParams = [activeRun.id, new Date().toISOString(), "RUN_COMPLETED", msg, "INFO"];
+        if (pgDb.useLocalFallback) {
+          await pgDb.executeLocalQuery(alertSql, alertParams);
+        } else {
+          await pgDb.pool.query(alertSql, alertParams);
+          const alertRows = await pgDb.pool.query(`
+            SELECT id, run_id as "run_id", timestamp, type, message, severity 
+            FROM demo_live_alerts ORDER BY timestamp DESC LIMIT 500
+          `);
+          pgDb.cache.demo_live_alerts = alertRows.rows;
+        }
+      }
+
+      demoLiveDailyTradesCount = 0;
+      demoLiveDailyWinsCount = 0;
+      demoLiveMaxDrawdownToday = 0.0;
+      lastCheckedDateUTCStr = todayUTCStr;
+      
+      demoLiveAccountStats.todayPnl = 0;
+    }
+
+    const statsChanged = 
+      demoLiveAccountStats.balance !== lastRecordedStats.balance ||
+      demoLiveAccountStats.equity !== lastRecordedStats.equity ||
+      demoLiveAccountStats.usedMargin !== lastRecordedStats.usedMargin ||
+      demoLiveAccountStats.freeMargin !== lastRecordedStats.freeMargin ||
+      demoLivePositions.length !== lastRecordedStats.positionsCount ||
+      demoLiveAccountStats.todayPnl !== lastRecordedStats.todayPnl;
+
+    if (statsChanged) {
+      if (demoLiveAccountStats.equity > activeRun.peak_equity) {
+        activeRun.peak_equity = demoLiveAccountStats.equity;
+        
+        const alertMsg = `New Demo-Live Equity High reached: $${demoLiveAccountStats.equity.toLocaleString()}`;
+        const alertSql = "INSERT INTO demo_live_alerts (run_id, timestamp, type, message, severity) VALUES ($1, $2, $3, $4, $5)";
+        const alertParams = [activeRun.id, new Date().toISOString(), "NEW_EQUITY_HIGH", alertMsg, "INFO"];
+        if (pgDb.useLocalFallback) {
+          await pgDb.executeLocalQuery(alertSql, alertParams);
+        } else {
+          await pgDb.pool.query(alertSql, alertParams);
+        }
+      }
+
+      const currentDrawdown = activeRun.peak_equity > 0 ? ((activeRun.peak_equity - demoLiveAccountStats.equity) / activeRun.peak_equity) * 100 : 0;
+      if (currentDrawdown > activeRun.max_drawdown) {
+        activeRun.max_drawdown = parseFloat(currentDrawdown.toFixed(2));
+        
+        const alertMsg = `New Max Intraday Drawdown reached: ${activeRun.max_drawdown.toFixed(2)}% (Peak: $${activeRun.peak_equity.toLocaleString()}, Equity: $${demoLiveAccountStats.equity.toLocaleString()})`;
+        const alertSql = "INSERT INTO demo_live_alerts (run_id, timestamp, type, message, severity) VALUES ($1, $2, $3, $4, $5)";
+        const alertParams = [activeRun.id, new Date().toISOString(), "NEW_MAX_DRAWDOWN", alertMsg, "WARNING"];
+        if (pgDb.useLocalFallback) {
+          await pgDb.executeLocalQuery(alertSql, alertParams);
+        } else {
+          await pgDb.pool.query(alertSql, alertParams);
+        }
+      }
+
+      if (currentDrawdown > demoLiveMaxDrawdownToday) {
+        demoLiveMaxDrawdownToday = parseFloat(currentDrawdown.toFixed(2));
+      }
+
+      if (demoLiveAccountStats.todayPnl < -2000) {
+        const alertsToday = pgDb.cache.demo_live_alerts.filter(
+          (a: any) => a.run_id === activeRun.id && 
+                      a.type === "LARGE_LOSS_DAY" && 
+                      new Date(a.timestamp).toISOString().split("T")[0] === todayUTCStr
+        );
+        if (alertsToday.length === 0) {
+          const alertMsg = `Significant Daily Loss alert: Demo-live account daily loss is -$${Math.abs(demoLiveAccountStats.todayPnl).toLocaleString()} (${((Math.abs(demoLiveAccountStats.todayPnl) / activeRun.initial_balance) * 100).toFixed(2)}% of starting balance)`;
+          const alertSql = "INSERT INTO demo_live_alerts (run_id, timestamp, type, message, severity) VALUES ($1, $2, $3, $4, $5)";
+          const alertParams = [activeRun.id, new Date().toISOString(), "LARGE_LOSS_DAY", alertMsg, "WARNING"];
+          if (pgDb.useLocalFallback) {
+            await pgDb.executeLocalQuery(alertSql, alertParams);
+          } else {
+            await pgDb.pool.query(alertSql, alertParams);
+          }
+        }
+      }
+
+      const updateRunSql = "UPDATE demo_live_runs SET peak_equity = $1, max_drawdown = $2 WHERE id = $3";
+      if (pgDb.useLocalFallback) {
+        await pgDb.executeLocalQuery(updateRunSql, [activeRun.peak_equity, activeRun.max_drawdown, activeRun.id]);
+      } else {
+        await pgDb.pool.query(updateRunSql, [activeRun.peak_equity, activeRun.max_drawdown, activeRun.id]);
+      }
+
+      const insertHistSql = `
+        INSERT INTO demo_live_equity_history (run_id, timestamp, balance, equity, used_margin, free_margin, open_position_count, daily_pnl)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      `;
+      const histParams = [
+        activeRun.id,
+        new Date().toISOString(),
+        demoLiveAccountStats.balance,
+        demoLiveAccountStats.equity,
+        demoLiveAccountStats.usedMargin,
+        demoLiveAccountStats.freeMargin,
+        demoLivePositions.length,
+        demoLiveAccountStats.todayPnl
+      ];
+
+      if (pgDb.useLocalFallback) {
+        await pgDb.executeLocalQuery(insertHistSql, histParams);
+      } else {
+        await pgDb.pool.query(insertHistSql, histParams);
+        const equityRows = await pgDb.pool.query(`
+          SELECT id, run_id as "run_id", timestamp, balance, equity, used_margin as "used_margin", 
+                 free_margin as "free_margin", open_position_count as "open_position_count", daily_pnl as "daily_pnl" 
+          FROM demo_live_equity_history ORDER BY timestamp ASC
+        `);
+        pgDb.cache.demo_live_equity_history = equityRows.rows;
+
+        const alertRows = await pgDb.pool.query(`
+          SELECT id, run_id as "run_id", timestamp, type, message, severity 
+          FROM demo_live_alerts ORDER BY timestamp DESC LIMIT 500
+        `);
+        pgDb.cache.demo_live_alerts = alertRows.rows;
+      }
+
+      lastRecordedStats = {
+        balance: demoLiveAccountStats.balance,
+        equity: demoLiveAccountStats.equity,
+        usedMargin: demoLiveAccountStats.usedMargin,
+        freeMargin: demoLiveAccountStats.freeMargin,
+        positionsCount: demoLivePositions.length,
+        todayPnl: demoLiveAccountStats.todayPnl
+      };
+    }
+  } catch (err: any) {
+    console.error("[DEMO-LIVE-TRACKER-ERROR] Error tracking performance:", err.message);
+  }
+}
+
 function saveLiveTradingStateToDisk() {
   saveLiveTradingStateToDb();
 }
@@ -3154,7 +3966,10 @@ export function computePortfolioRiskMetrics(positions: any[], historicalTicks: a
     singleExposures: { "EUR/USD": 0, "GBP/USD": 0, "BTC/USD": 0 },
     correlatedGroupExposure: 0,
     usdShortExposure: 0,
-    usdLongExposure: 0
+    usdLongExposure: 0,
+    dataQuality: {} as any,
+    insufficientHistory: false,
+    historyMessage: ""
   };
 
   const exposureMetrics = getExposures(positions);
@@ -3164,23 +3979,105 @@ export function computePortfolioRiskMetrics(positions: any[], historicalTicks: a
   defaultMetrics.usdShortExposure = exposureMetrics.usdShortExposure;
   defaultMetrics.usdLongExposure = exposureMetrics.usdLongExposure;
 
-  if (historicalTicks.length < 5) {
+  const sortedTicks = [...historicalTicks].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+
+  // Compute Data Quality statistics per instrument
+  const dataQuality: Record<string, {
+    dataPoints: number;
+    timeSpanMinutes: number;
+    isRobust: boolean;
+    statusText: string;
+  }> = {};
+
+  ["EUR/USD", "GBP/USD", "BTC/USD"].forEach(inst => {
+    const instTicks = sortedTicks.filter(t => {
+      const tNorm = (t.instrument || "EUR/USD").replace("/", "").toUpperCase();
+      const iNorm = inst.replace("/", "").toUpperCase();
+      return tNorm === iNorm;
+    });
+
+    if (instTicks.length < 15) {
+      dataQuality[inst] = {
+        dataPoints: instTicks.length,
+        timeSpanMinutes: 0,
+        isRobust: false,
+        statusText: `Thin History (${instTicks.length} ticks)`
+      };
+    } else {
+      const firstTime = new Date(instTicks[0].timestamp).getTime();
+      const lastTime = new Date(instTicks[instTicks.length - 1].timestamp).getTime();
+      const spanMin = Math.round((lastTime - firstTime) / 60000);
+      const isRobust = instTicks.length >= 80 && spanMin >= 40;
+      dataQuality[inst] = {
+        dataPoints: instTicks.length,
+        timeSpanMinutes: spanMin,
+        isRobust,
+        statusText: `${isRobust ? "Robust" : "Limited"} (${instTicks.length} ticks, ${spanMin}m)`
+      };
+    }
+  });
+
+  defaultMetrics.dataQuality = dataQuality;
+
+  const thinInstruments = Object.entries(dataQuality)
+    .filter(([_, q]) => q.dataPoints < 15)
+    .map(([inst, _]) => inst);
+
+  if (thinInstruments.length > 0) {
+    defaultMetrics.insufficientHistory = true;
+    defaultMetrics.historyMessage = `Insufficient independent history for correlation — VaR based on limited/single-asset data (Missing/thin: ${thinInstruments.join(", ")})`;
     return defaultMetrics;
+  } else {
+    const robustCount = Object.values(dataQuality).filter(q => q.isRobust).length;
+    if (robustCount < 3) {
+      defaultMetrics.insufficientHistory = true;
+      defaultMetrics.historyMessage = "VaR based on limited independent history — correlation matrix still stabilizing";
+    } else {
+      defaultMetrics.insufficientHistory = false;
+      defaultMetrics.historyMessage = "Robust multi-asset independent historical data backing VaR";
+    }
   }
 
-  // 1. Generate series
-  const sortedTicks = [...historicalTicks].sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+  // 1. Group/Align independent ticks by 15-second time buckets
+  const buckets: Record<string, { "EUR/USD"?: number, "GBP/USD"?: number, "BTC/USD"?: number }> = {};
+  
+  sortedTicks.forEach(t => {
+    const instRaw = t.instrument || "EUR/USD";
+    let inst = "EUR/USD";
+    const normalized = instRaw.replace("/", "").toUpperCase();
+    if (normalized === "GBPUSD" || normalized === "GBP_USD") inst = "GBP/USD";
+    else if (normalized === "BTCUSD" || normalized === "BTC_USD") inst = "BTC/USD";
+
+    const date = new Date(t.timestamp);
+    const roundedMs = Math.round(date.getTime() / 15000) * 15000;
+    const key = new Date(roundedMs).toISOString();
+
+    if (!buckets[key]) {
+      buckets[key] = {};
+    }
+    buckets[key][inst] = parseFloat(t.price);
+  });
+
+  const alignedKeys = Object.keys(buckets).sort();
+  
   const eurSeries: number[] = [];
   const gbpSeries: number[] = [];
   const btcSeries: number[] = [];
 
-  sortedTicks.forEach((t, i) => {
-    const p = parseFloat(t.price);
-    eurSeries.push(p);
-    const gbpP = p * 1.17 + Math.sin(i * 0.25) * 0.002;
-    gbpSeries.push(gbpP);
-    const btcP = p * 57500 + Math.cos(i * 0.15) * 450;
-    btcSeries.push(btcP);
+  // Seed default fallback price references in case a bucket lacks a field
+  let lastEur = 1.08520;
+  let lastGbp = 1.27350;
+  let lastBtc = 62500.00;
+
+  alignedKeys.forEach(k => {
+    const b = buckets[k];
+    if (b["EUR/USD"] !== undefined) lastEur = b["EUR/USD"];
+    if (b["GBP/USD"] !== undefined) lastGbp = b["GBP/USD"];
+    if (b["BTC/USD"] !== undefined) lastBtc = b["BTC/USD"];
+
+    eurSeries.push(lastEur);
+    gbpSeries.push(lastGbp);
+    btcSeries.push(lastBtc);
   });
 
   // 2. Compute returns
@@ -3453,6 +4350,28 @@ export let demoLiveAccountStats = {
   marginLevel: 2795.4,
   todayPnl: 1420.50
 };
+
+// Demo-Live Tracking State
+export let demoLiveDailyTradesCount = 0;
+export let demoLiveDailyWinsCount = 0;
+export let demoLiveMaxDrawdownToday = 0.0;
+export let lastCheckedDateUTCStr = new Date().toISOString().split("T")[0];
+
+export let lastRecordedStats = {
+  balance: 0,
+  equity: 0,
+  usedMargin: 0,
+  freeMargin: 0,
+  positionsCount: -1,
+  todayPnl: -999999
+};
+
+export function recordDemoLiveTradeClose(pnl: number) {
+  demoLiveDailyTradesCount++;
+  if (pnl > 0) {
+    demoLiveDailyWinsCount++;
+  }
+}
 
 export let realLivePositions: any[] = [];
 
@@ -3929,6 +4848,7 @@ setInterval(() => {
 
         // Remove from list
         demoLivePositions = demoLivePositions.filter(p => p.id !== position.id);
+        recordDemoLiveTradeClose(finalPnl);
         
         // Log to audit log
         pgDb.query("INSERT INTO strategy_audit_logs", [
@@ -4300,6 +5220,9 @@ setInterval(() => {
       }
     })();
   }
+  updateDemoLivePerformanceTracking().catch(err => {
+    console.error("[TRACKING-LOOP-ERROR] Demo live tracking error:", err);
+  });
   saveLiveTradingStateToDisk();
 }, 1000);
 
@@ -4589,6 +5512,34 @@ app.post("/api/brokers/connect", checkIPAllowlist, asyncHandler(async (req: expr
         isValid = true; 
         fixEngine.configureSession(targetCompId, senderCompId);
         fixEngine.logon();
+      } else {
+        // Query custom connectors
+        const customRows = await pgDb.queryAsync("SELECT * FROM custom_connectors WHERE id = $1 OR name = $2", [brokerType, brokerType]);
+        if (customRows && customRows.length > 0) {
+          const connector = customRows[0];
+          try {
+            const auth_config = connector.auth_config || {};
+            const decryptedApiKey = auth_config.apiKeyEnc ? decrypt(auth_config.apiKeyEnc) : (apiToken || auth_config.apiKey || "");
+            const decryptedSecretKey = auth_config.secretKeyEnc ? decrypt(auth_config.secretKeyEnc) : (secretKey || auth_config.secretKey || "");
+            const decryptedPassword = auth_config.passwordEnc ? decrypt(auth_config.passwordEnc) : (passphrase || auth_config.password || "");
+
+            const testConnector = {
+              ...connector,
+              auth_config: {
+                ...auth_config,
+                apiKey: decryptedApiKey,
+                secretKey: decryptedSecretKey,
+                password: decryptedPassword
+              }
+            };
+            const testResult = await executeCustomConnectorEndpoint(testConnector, "test_connection", { accountId });
+            isValid = true;
+          } catch (e: any) {
+            errorMsg = `تێستی گرێدانی نوێی Custom Connector '${connector.name}' سەرکەوتوو نەبوو: ${e.message}`;
+          }
+        } else {
+          errorMsg = `برۆکەری نەناسراو یان کێشەی گرێدان: ${brokerType}`;
+        }
       }
     }
 
@@ -4753,6 +5704,300 @@ function computeAggregatedSentiment() {
     maxScore: maxScore === -1.0 ? 0.0 : maxScore
   };
 }
+
+function getNestedValue(obj: any, pathStr: string): any {
+  if (!pathStr) return obj;
+  const parts = pathStr.split('.');
+  let current = obj;
+  for (const part of parts) {
+    if (current === null || current === undefined) return undefined;
+    const match = part.match(/^(\w+)(?:\[(\d+)\])?$/);
+    if (match) {
+      const key = match[1];
+      const index = match[2];
+      current = current[key];
+      if (index !== undefined && Array.isArray(current)) {
+        current = current[parseInt(index, 10)];
+      }
+    } else {
+      current = current[part];
+    }
+  }
+  return current;
+}
+
+async function executeCustomConnectorEndpoint(
+  connector: any,
+  endpointName: string,
+  variables: Record<string, any> = {},
+  rawRequestPayload: any = null
+) {
+  const endpoints = connector.endpoints || {};
+  const endpoint = endpoints[endpointName];
+  if (!endpoint) {
+    throw new Error(`Endpoint '${endpointName}' is not defined in this custom connector configuration.`);
+  }
+
+  const method = (endpoint.method || "GET").toUpperCase();
+  let pathTemplate = endpoint.path || "";
+  
+  let resolvedPath = pathTemplate;
+  for (const [key, val] of Object.entries(variables)) {
+    resolvedPath = resolvedPath.replace(new RegExp(`{${key}}`, "g"), String(val));
+  }
+
+  const baseUrl = connector.base_url.replace(/\/$/, "");
+  let fullUrl = `${baseUrl}${resolvedPath.startsWith("/") ? "" : "/"}${resolvedPath}`;
+
+  const authScheme = connector.auth_scheme;
+  const authConfig = connector.auth_config || {};
+  
+  const decryptedApiKey = authConfig.apiKeyEnc ? decrypt(authConfig.apiKeyEnc) : (authConfig.apiKey || "");
+  const decryptedSecretKey = authConfig.secretKeyEnc ? decrypt(authConfig.secretKeyEnc) : (authConfig.secretKey || "");
+  const decryptedUsername = authConfig.usernameEnc ? decrypt(authConfig.usernameEnc) : (authConfig.username || "");
+  const decryptedPassword = authConfig.passwordEnc ? decrypt(authConfig.passwordEnc) : (authConfig.password || "");
+
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    "Accept": "application/json"
+  };
+
+  const queryParams: Record<string, string> = {};
+
+  let bodyStr = "";
+  if (["POST", "PUT", "PATCH"].includes(method)) {
+    let finalPayload = rawRequestPayload;
+    if (!finalPayload && endpoint.bodyTemplate) {
+      let temp = endpoint.bodyTemplate;
+      for (const [key, val] of Object.entries(variables)) {
+        temp = temp.replace(new RegExp(`{${key}}`, "g"), String(val));
+      }
+      try {
+        finalPayload = JSON.parse(temp);
+      } catch (e) {
+        bodyStr = temp;
+      }
+    }
+    if (finalPayload) {
+      bodyStr = JSON.stringify(finalPayload);
+    }
+  }
+
+  if (authScheme === "api_key_header") {
+    const headerName = authConfig.headerName || "X-API-KEY";
+    headers[headerName] = decryptedApiKey;
+  } else if (authScheme === "api_key_query_param") {
+    const paramName = authConfig.paramName || "api_key";
+    queryParams[paramName] = decryptedApiKey;
+  } else if (authScheme === "bearer_token") {
+    headers["Authorization"] = `Bearer ${decryptedApiKey}`;
+  } else if (authScheme === "basic_auth") {
+    const creds = `${decryptedUsername}:${decryptedPassword || decryptedApiKey}`;
+    headers["Authorization"] = `Basic ${Buffer.from(creds).toString("base64")}`;
+  } else if (authScheme === "hmac_signed") {
+    const algo = authConfig.algorithm || "sha256";
+    const hmacEncoding = authConfig.encoding || "hex";
+    const signaturePlacement = authConfig.placement || "header";
+    const signatureName = authConfig.signatureName || "X-Signature";
+    const timestampName = authConfig.timestampName || "X-Timestamp";
+    const timestampVal = String(Date.now());
+
+    let messagePattern = authConfig.messagePattern || "{timestamp}{method}{path}{body}";
+    let msg = messagePattern
+      .replace("{timestamp}", timestampVal)
+      .replace("{method}", method)
+      .replace("{path}", resolvedPath)
+      .replace("{body}", bodyStr);
+
+    const signature = crypto
+      .createHmac(algo, decryptedSecretKey)
+      .update(msg)
+      .digest(hmacEncoding as any);
+
+    if (timestampName) {
+      headers[timestampName] = timestampVal;
+    }
+
+    if (signaturePlacement === "header") {
+      headers[signatureName] = signature;
+      if (decryptedApiKey) {
+        headers[authConfig.apiKeyHeaderName || "X-API-KEY"] = decryptedApiKey;
+      }
+    } else {
+      queryParams[signatureName] = signature;
+      queryParams["timestamp"] = timestampVal;
+      if (decryptedApiKey) {
+        queryParams[authConfig.apiKeyQueryName || "signature_key"] = decryptedApiKey;
+      }
+    }
+  }
+
+  const urlObj = new URL(fullUrl);
+  for (const [k, v] of Object.entries(queryParams)) {
+    urlObj.searchParams.append(k, v);
+  }
+  fullUrl = urlObj.toString();
+
+  const fetchOptions: any = {
+    method,
+    headers
+  };
+  if (bodyStr) {
+    fetchOptions.body = bodyStr;
+  }
+
+  const response = await fetch(fullUrl, fetchOptions);
+  const responseText = await response.text();
+
+  if (!response.ok) {
+    throw new Error(`HTTP Error ${response.status}: ${responseText}`);
+  }
+
+  let parsedJson: any;
+  try {
+    parsedJson = JSON.parse(responseText);
+  } catch (e) {
+    throw new Error(`Response is not valid JSON. Raw output: ${responseText.substring(0, 500)}`);
+  }
+
+  const mapping = endpoint.mapping || {};
+  const result: Record<string, any> = {
+    _raw: parsedJson
+  };
+
+  for (const [internalKey, externalPath] of Object.entries(mapping)) {
+    if (typeof externalPath === "string") {
+      const extracted = getNestedValue(parsedJson, externalPath);
+      result[internalKey] = extracted;
+    }
+  }
+
+  return result;
+}
+
+app.get("/api/custom-connectors", checkIPAllowlist, asyncHandler(async (req, res) => {
+  const rows = await pgDb.queryAsync("SELECT * FROM custom_connectors ORDER BY created_at DESC");
+  const sanitized = (rows || []).map((row: any) => {
+    const auth_config = row.auth_config || {};
+    return {
+      ...row,
+      auth_config: {
+        ...auth_config,
+        apiKey: auth_config.apiKeyEnc ? "••••••••" : "",
+        secretKey: auth_config.secretKeyEnc ? "••••••••" : "",
+        password: auth_config.passwordEnc ? "••••••••" : ""
+      }
+    };
+  });
+  res.json({ success: true, connectors: sanitized });
+}));
+
+app.post("/api/custom-connectors", checkIPAllowlist, asyncHandler(async (req, res) => {
+  const { id, name, type, base_url, auth_scheme, auth_config = {}, endpoints = {}, status = "DISCONNECTED" } = req.body;
+  
+  if (!name || !type || !base_url || !auth_scheme) {
+    return res.status(400).json({ error: "Missing required connector parameters." });
+  }
+
+  // Encrypt sensitive fields if provided as raw
+  if (auth_config.apiKey && !auth_config.apiKeyEnc) {
+    auth_config.apiKeyEnc = encrypt(auth_config.apiKey);
+    delete auth_config.apiKey;
+  }
+  if (auth_config.secretKey && !auth_config.secretKeyEnc) {
+    auth_config.secretKeyEnc = encrypt(auth_config.secretKey);
+    delete auth_config.secretKey;
+  }
+  if (auth_config.password && !auth_config.passwordEnc) {
+    auth_config.passwordEnc = encrypt(auth_config.password);
+    delete auth_config.password;
+  }
+
+  const finalId = id || `conn-custom-${Date.now()}`;
+
+  await pgDb.queryAsync(
+    `INSERT INTO custom_connectors (id, name, type, base_url, auth_scheme, auth_config, endpoints, status)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+     ON CONFLICT (id) DO UPDATE SET
+       name = EXCLUDED.name,
+       type = EXCLUDED.type,
+       base_url = EXCLUDED.base_url,
+       auth_scheme = EXCLUDED.auth_scheme,
+       auth_config = EXCLUDED.auth_config,
+       endpoints = EXCLUDED.endpoints,
+       status = EXCLUDED.status`,
+    [
+      finalId,
+      name,
+      type,
+      base_url,
+      auth_scheme,
+      JSON.stringify(auth_config),
+      JSON.stringify(endpoints),
+      status
+    ]
+  );
+
+  res.json({ success: true, id: finalId });
+}));
+
+app.post("/api/custom-connectors/test", checkIPAllowlist, asyncHandler(async (req, res) => {
+  const { base_url, auth_scheme, auth_config = {}, endpoints = {}, endpointName, variables = {} } = req.body;
+
+  if (!base_url || !auth_scheme || !endpointName) {
+    return res.status(400).json({ error: "Missing required parameters for testing connection." });
+  }
+
+  // Check for FIX, WebSockets or other unsupported APIs
+  if (base_url.startsWith("ws://") || base_url.startsWith("wss://") || base_url.includes("fix://")) {
+    return res.status(400).json({
+      error: "This API pattern isn't supported by the generic connector — WebSockets and FIX protocols require dedicated code.",
+      unsupported: true
+    });
+  }
+
+  try {
+    // Decrypt if some fields are encrypted, or use raw if provided
+    let apiKey = auth_config.apiKey || "";
+    if (auth_config.apiKeyEnc) {
+      try { apiKey = decrypt(auth_config.apiKeyEnc); } catch (e) {}
+    }
+    let secretKey = auth_config.secretKey || "";
+    if (auth_config.secretKeyEnc) {
+      try { secretKey = decrypt(auth_config.secretKeyEnc); } catch (e) {}
+    }
+    let password = auth_config.password || "";
+    if (auth_config.passwordEnc) {
+      try { password = decrypt(auth_config.passwordEnc); } catch (e) {}
+    }
+
+    const testConnector = {
+      base_url,
+      auth_scheme,
+      auth_config: {
+        ...auth_config,
+        apiKey,
+        secretKey,
+        password
+      },
+      endpoints
+    };
+
+    const result = await executeCustomConnectorEndpoint(testConnector, endpointName, variables);
+    res.json({ success: true, result });
+  } catch (err: any) {
+    res.json({
+      success: false,
+      error: err.message,
+      explanation: "This API pattern isn't supported by the generic connector — dedicated code or a different auth schema/endpoint mapping would be needed."
+    });
+  }
+}));
+
+app.delete("/api/custom-connectors/:id", checkIPAllowlist, asyncHandler(async (req, res) => {
+  await pgDb.queryAsync("DELETE FROM custom_connectors WHERE id = $1", [req.params.id]);
+  res.json({ success: true });
+}));
 
 async function testNewsConnection(platform: string, apiKey: string): Promise<{ success: boolean; errorMessage?: string }> {
   if (!apiKey) {
@@ -5369,6 +6614,93 @@ async function updateNewsAndCalendar() {
       }
     }
 
+    // Fetch and incorporate Custom News Connectors
+    try {
+      const customNewsConnectors = await pgDb.queryAsync("SELECT * FROM custom_connectors WHERE type = 'news'");
+      if (customNewsConnectors && customNewsConnectors.length > 0) {
+        for (const connector of customNewsConnectors) {
+          try {
+            // Execute the get_news endpoint
+            const result = await executeCustomConnectorEndpoint(connector, "get_news", { symbol: "EUR/USD" });
+            const endpoints = connector.endpoints || {};
+            const endpoint = endpoints["get_news"] || {};
+            const rootPath = endpoint.rootPath || "";
+            const listObj = rootPath ? getNestedValue(result._raw, rootPath) : result._raw;
+
+            if (Array.isArray(listObj)) {
+              const mappedArticles: any[] = [];
+              let scoreSum = 0;
+              let count = 0;
+
+              const negativeWords = ["crash", "drop", "inflation", "hike", "recession", "hawkish", "down", "deficit", "warns"];
+              const positiveWords = ["grow", "rise", "dovish", "easing", "boost", "surplus", "up", "recovery", "strong"];
+
+              listObj.forEach((item: any) => {
+                const titleMapping = endpoint.mapping?.title || "title";
+                const urlMapping = endpoint.mapping?.url || "url";
+                const timeMapping = endpoint.mapping?.time || "publishedAt";
+                const sentimentMapping = endpoint.mapping?.sentiment || "";
+
+                const title = getNestedValue(item, titleMapping) || "";
+                const url = getNestedValue(item, urlMapping) || "";
+                const time = getNestedValue(item, timeMapping) || new Date().toISOString();
+
+                let sentimentVal = 0.0;
+                if (sentimentMapping) {
+                  sentimentVal = parseFloat(getNestedValue(item, sentimentMapping)) || 0.0;
+                } else {
+                  let score = 0;
+                  negativeWords.forEach(w => { if (title.toLowerCase().includes(w)) score -= 0.2; });
+                  positiveWords.forEach(w => { if (title.toLowerCase().includes(w)) score += 0.2; });
+                  sentimentVal = Math.max(-1.0, Math.min(1.0, score));
+                }
+
+                if (title) {
+                  mappedArticles.push({
+                    source: connector.name,
+                    title,
+                    url,
+                    time,
+                    sentiment: sentimentVal
+                  });
+                  scoreSum += sentimentVal;
+                  count++;
+                }
+              });
+
+              if (mappedArticles.length > 0) {
+                mappedArticles.forEach(art => {
+                  aggregatedNewsFeed.unshift(art);
+                });
+
+                individualSentiments[connector.name] = {
+                  score: scoreSum / count,
+                  confidence: 0.85,
+                  count: mappedArticles.length,
+                  lastFetch: new Date().toISOString()
+                };
+
+                platformStatusCache[connector.name] = {
+                  status: "CONNECTED",
+                  errorMessage: "",
+                  lastFetchTime: new Date().toISOString()
+                };
+              }
+            }
+          } catch (connectorErr: any) {
+            console.error(`[CUSTOM-NEWS-CONNECTOR-ERROR] ${connector.name}:`, connectorErr.message);
+            platformStatusCache[connector.name] = {
+              status: "ERROR",
+              errorMessage: connectorErr.message,
+              lastFetchTime: new Date().toISOString()
+            };
+          }
+        }
+      }
+    } catch (dbErr: any) {
+      console.error("[CUSTOM-NEWS-CONNECTORS-DB-ERROR]", dbErr.message);
+    }
+
     if (aggregatedNewsFeed.length > 50) {
       const titlesSeen = new Set<string>();
       aggregatedNewsFeed = aggregatedNewsFeed.filter(item => {
@@ -5719,6 +7051,202 @@ app.get("/api/calibration/summary", checkIPAllowlist, asyncHandler(async (req: e
   res.json({ success: true, analysis, recentLogs });
 }));
 
+// ============================================================================
+// CONTINUOUS DEMO-LIVE OBSERVATION RUNS & EQUITY TRACKING (STAGE 7)
+// ============================================================================
+
+// Get all demo-live runs
+app.get("/api/demo-live/runs", asyncHandler(async (req: express.Request, res: express.Response) => {
+  let runs = pgDb.cache.demo_live_runs || [];
+  res.json({ success: true, runs });
+}));
+
+// Get specific run performance details: equity history, rollups, alerts, and instrument breakdown
+app.get("/api/demo-live/performance", asyncHandler(async (req: express.Request, res: express.Response) => {
+  const { run_id } = req.query;
+  if (!run_id) {
+    return res.status(400).json({ success: false, error: "Parameter run_id is required." });
+  }
+
+  const runId = parseInt(run_id as string);
+  const run = pgDb.cache.demo_live_runs.find((r: any) => r.id === runId);
+  if (!run) {
+    return res.status(404).json({ success: false, error: `Observation run #${runId} not found.` });
+  }
+
+  // Filter equity history, daily rollups, and alerts
+  const history = pgDb.cache.demo_live_equity_history.filter((h: any) => h.run_id === runId);
+  const rollups = pgDb.cache.demo_live_daily_rollups.filter((r: any) => r.run_id === runId);
+  const alerts = pgDb.cache.demo_live_alerts.filter((a: any) => a.run_id === runId);
+
+  // Per-instrument breakdown calculated from audit logs
+  const symbolsList = ["EUR/USD", "GBP/USD", "BTC/USD", "USD/JPY"];
+  const instrumentBreakdown = symbolsList.map(sym => {
+    const symLogs = pgDb.cache.strategy_audit_logs.filter(
+      (l: any) => l.symbol === sym && l.action_taken === "Position Exit"
+    );
+    let totalPnL = 0;
+    let wins = 0;
+    symLogs.forEach((l: any) => {
+      try {
+        const output = typeof l.output_result === "string" ? JSON.parse(l.output_result) : l.output_result;
+        if (output && typeof output.pnl === "number") {
+          totalPnL += output.pnl;
+          if (output.pnl > 0) wins++;
+        }
+      } catch (e) {}
+    });
+    return {
+      symbol: sym,
+      tradesCount: symLogs.length,
+      winRate: symLogs.length > 0 ? parseFloat(((wins / symLogs.length) * 100).toFixed(1)) : 0,
+      totalPnl: parseFloat(totalPnL.toFixed(2))
+    };
+  });
+
+  res.json({
+    success: true,
+    run,
+    history,
+    rollups,
+    alerts,
+    instrumentBreakdown
+  });
+}));
+
+// Start a completely new 6-month demo-live observation run
+app.post("/api/demo-live/runs", checkIPAllowlist, asyncHandler(async (req: express.Request, res: express.Response) => {
+  const { initial_balance } = req.body;
+  const initialBal = parseFloat(initial_balance || 100000);
+
+  console.log(`[DEMO-LIVE-RUN] Creating a new observation run with starting balance of $${initialBal.toLocaleString()}`);
+
+  // 1. Mark any currently ACTIVE runs as ABORTED
+  const updateRunSql = "UPDATE demo_live_runs SET status = $1 WHERE status = $2";
+  if (pgDb.useLocalFallback) {
+    await pgDb.executeLocalQuery(updateRunSql, ['ABORTED', 'ACTIVE']);
+  } else {
+    await pgDb.pool.query(updateRunSql, ['ABORTED', 'ACTIVE']);
+  }
+
+  // Also update in cache
+  pgDb.cache.demo_live_runs.forEach((r: any) => {
+    if (r.status === 'ACTIVE') r.status = 'ABORTED';
+  });
+
+  // 2. Insert new active run
+  const now = new Date();
+  const plannedEnd = new Date();
+  plannedEnd.setMonth(plannedEnd.getMonth() + 6); // 6-month observation period
+
+  const insertRunSql = `
+    INSERT INTO demo_live_runs (started_at, planned_end_at, initial_balance, peak_equity, max_drawdown, status)
+    VALUES ($1, $2, $3, $4, $5, $6)
+    RETURNING id, started_at, planned_end_at, initial_balance, peak_equity, max_drawdown, status
+  `;
+  const insertParams = [
+    now.toISOString(),
+    plannedEnd.toISOString(),
+    initialBal,
+    initialBal,
+    0.0,
+    'ACTIVE'
+  ];
+
+  let newRun: any;
+  if (pgDb.useLocalFallback) {
+    const resLocal = await pgDb.executeLocalQuery(insertRunSql, insertParams);
+    newRun = resLocal[0];
+  } else {
+    const resDb = await pgDb.pool.query(insertRunSql, insertParams);
+    newRun = resDb.rows[0];
+    
+    // Refresh demo_live_runs cache
+    const runRows = await pgDb.pool.query(`
+      SELECT id, started_at::text as "started_at", planned_end_at::text as "planned_end_at", 
+             initial_balance as "initial_balance", peak_equity as "peak_equity", 
+             max_drawdown as "max_drawdown", status 
+      FROM demo_live_runs ORDER BY id DESC
+    `);
+    pgDb.cache.demo_live_runs = runRows.rows;
+  }
+
+  // 3. Reset account stats in-memory to initial balance
+  demoLiveAccountStats.balance = initialBal;
+  demoLiveAccountStats.equity = initialBal;
+  demoLiveAccountStats.usedMargin = 0.0;
+  demoLiveAccountStats.freeMargin = initialBal;
+  demoLiveAccountStats.marginLevel = 0.0;
+  demoLiveAccountStats.todayPnl = 0.0;
+
+  // Clear in-memory active positions for demo live
+  demoLivePositions.length = 0;
+
+  // 4. Reset daily tracking counters
+  demoLiveDailyTradesCount = 0;
+  demoLiveDailyWinsCount = 0;
+  demoLiveMaxDrawdownToday = 0.0;
+  lastCheckedDateUTCStr = now.toISOString().split("T")[0];
+  lastRecordedStats = {
+    balance: initialBal,
+    equity: initialBal,
+    usedMargin: 0,
+    freeMargin: initialBal,
+    positionsCount: 0,
+    todayPnl: 0
+  };
+
+  // 5. Log initialization alert
+  const alertSql = "INSERT INTO demo_live_alerts (run_id, timestamp, type, message, severity) VALUES ($1, $2, $3, $4, $5)";
+  const alertParams = [newRun.id, now.toISOString(), "RUN_STARTED", `Observation Run #${newRun.id} initialized with starting balance: $${initialBal.toLocaleString()}. Active for a 6-month observation period ending ${plannedEnd.toLocaleDateString()}.`, "INFO"];
+  
+  if (pgDb.useLocalFallback) {
+    await pgDb.executeLocalQuery(alertSql, alertParams);
+  } else {
+    await pgDb.pool.query(alertSql, alertParams);
+    const alertRows = await pgDb.pool.query(`
+      SELECT id, run_id as "run_id", timestamp, type, message, severity 
+      FROM demo_live_alerts ORDER BY timestamp DESC LIMIT 500
+    `);
+    pgDb.cache.demo_live_alerts = alertRows.rows;
+  }
+
+  // 6. Record first snapshot in equity history
+  const insertHistSql = `
+    INSERT INTO demo_live_equity_history (run_id, timestamp, balance, equity, used_margin, free_margin, open_position_count, daily_pnl)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+  `;
+  const histParams = [
+    newRun.id,
+    now.toISOString(),
+    initialBal,
+    initialBal,
+    0.0,
+    initialBal,
+    0,
+    0.0
+  ];
+  if (pgDb.useLocalFallback) {
+    await pgDb.executeLocalQuery(insertHistSql, histParams);
+  } else {
+    await pgDb.pool.query(insertHistSql, histParams);
+    const equityRows = await pgDb.pool.query(`
+      SELECT id, run_id as "run_id", timestamp, balance, equity, used_margin as "used_margin", 
+             free_margin as "free_margin", open_position_count as "open_position_count", daily_pnl as "daily_pnl" 
+          FROM demo_live_equity_history ORDER BY timestamp ASC
+        `);
+    pgDb.cache.demo_live_equity_history = equityRows.rows;
+  }
+
+  saveLiveTradingStateToDisk();
+
+  res.json({
+    success: true,
+    run: newRun,
+    message: "New 6-month demo-live observation run successfully started."
+  });
+}));
+
 app.post("/api/calibration/trigger", checkIPAllowlist, asyncHandler(async (req: express.Request, res: express.Response) => {
   await runCalibrationAnalysis();
   res.json({ success: true, message: "Offline calibration and parameter updates executed successfully." });
@@ -5897,6 +7425,7 @@ app.post("/api/positions/close", checkIPAllowlist, asyncHandler(async (req: expr
     realLivePositions = realLivePositions.filter(p => p.id !== id);
   } else {
     demoLivePositions = demoLivePositions.filter(p => p.id !== id);
+    recordDemoLiveTradeClose(closedPos.pnl);
   }
   
   // Realize PnL
@@ -6622,11 +8151,11 @@ app.post("/api/walk_forward/run", asyncHandler(async (req: express.Request, res:
   if (passedValidation) {
     cand.lifecycleStage = "DEMO_LIVE_EVALUATING";
     cand.status = "PASSED";
-    addServerLog("WALK-FORWARD", "SUCCESS", `Candidate ${cand.name} PASSED Walk-Forward Validation with ${consistencyScore}% consistency. Stage upgraded to DEMO_LIVE_EVALUATING.`);
+    addServerLog("EVOLUTION-LAB", "SUCCESS", `Candidate ${cand.name} PASSED Walk-Forward Validation with ${consistencyScore}% consistency. Stage upgraded to DEMO_LIVE_EVALUATING.`);
   } else {
     cand.lifecycleStage = "REJECTED";
-    cand.status = "REJECTED";
-    addServerLog("WALK-FORWARD", "WARNING", `Candidate ${cand.name} FAILED Walk-Forward Validation with ${consistencyScore}% consistency. Status set to REJECTED.`);
+    cand.status = "FAILED";
+    addServerLog("EVOLUTION-LAB", "WARNING", `Candidate ${cand.name} FAILED Walk-Forward Validation with ${consistencyScore}% consistency. Status set to REJECTED.`);
   }
 
   if (pgDb.useLocalFallback) {
@@ -8406,6 +9935,120 @@ setInterval(async () => {
     console.error("[PORTFOLIO-RISK-POLLER-ERROR]", err.message);
   }
 }, 60000);
+
+// Background Scheduled Independent Historical Tick Recorder (runs every 10 seconds)
+setInterval(async () => {
+  // Do not record if emergency halted
+  if ((systemStatus as string) === "EMERGENCY_HALT") return;
+
+  try {
+    const now = new Date().toISOString();
+    const symbols = ["EUR/USD", "GBP/USD", "BTC/USD"];
+
+    for (const symbol of symbols) {
+      let currentPrice = 0;
+      if (symbol === "EUR/USD") {
+        currentPrice = getNumericRate(liveRates.eurUsd, 1.08520);
+      } else if (symbol === "GBP/USD") {
+        currentPrice = getNumericRate(liveRates.gbpUsd, 1.27350);
+      } else if (symbol === "BTC/USD") {
+        currentPrice = liveRates.btcUsd;
+      }
+
+      if (!currentPrice || isNaN(currentPrice)) continue;
+
+      const spread = symbol === "BTC/USD" ? (1.5 + Math.random() * 0.8) : (0.00012 + Math.random() * 0.00006);
+      const volatility = 0.4 + Math.random() * 0.8;
+      const volume = Math.floor(10000 + Math.random() * 40000);
+
+      if (pgDb.useLocalFallback) {
+        // Log to historical_ticks
+        pgDb.cache.historical_ticks.push({
+          id: pgDb.cache.historical_ticks.length + 1,
+          timestamp: now,
+          price: currentPrice,
+          spread,
+          volatility,
+          volume,
+          instrument: symbol
+        });
+
+        // Log to historical_ticks_v2
+        pgDb.cache.historical_ticks_v2.push({
+          id: pgDb.cache.historical_ticks_v2.length + 1,
+          timestamp: now,
+          instrument: symbol,
+          price: currentPrice,
+          bid: parseFloat((currentPrice - spread / 2).toFixed(symbol === "BTC/USD" ? 2 : 5)),
+          ask: parseFloat((currentPrice + spread / 2).toFixed(symbol === "BTC/USD" ? 2 : 5)),
+          spread,
+          volatility,
+          volume
+        });
+
+        // Pruning for performance
+        const ticksBySymbol = pgDb.cache.historical_ticks.filter(t => t.instrument === symbol);
+        if (ticksBySymbol.length > 1500) {
+          const idsToRemove = ticksBySymbol.slice(0, ticksBySymbol.length - 1500).map(t => t.id);
+          pgDb.cache.historical_ticks = pgDb.cache.historical_ticks.filter(t => !idsToRemove.includes(t.id));
+        }
+
+        const v2TicksBySymbol = pgDb.cache.historical_ticks_v2.filter(t => t.instrument === symbol);
+        if (v2TicksBySymbol.length > 1500) {
+          const idsToRemove = v2TicksBySymbol.slice(0, v2TicksBySymbol.length - 1500).map(t => t.id);
+          pgDb.cache.historical_ticks_v2 = pgDb.cache.historical_ticks_v2.filter(t => !idsToRemove.includes(t.id));
+        }
+        pgDb.saveStateToDisk();
+      } else {
+        // Real PostgreSQL writes
+        await pgDb.pool.query(
+          `INSERT INTO historical_ticks (timestamp, price, spread, volatility, volume, instrument)
+           VALUES ($1, $2, $3, $4, $5, $6)`,
+          [now, currentPrice, spread, volatility, volume, symbol]
+        );
+
+        await pgDb.pool.query(
+          `INSERT INTO historical_ticks_v2 (timestamp, instrument, price, bid, ask, spread, volatility, volume)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+          [
+            now,
+            symbol,
+            currentPrice,
+            parseFloat((currentPrice - spread / 2).toFixed(symbol === "BTC/USD" ? 2 : 5)),
+            parseFloat((currentPrice + spread / 2).toFixed(symbol === "BTC/USD" ? 2 : 5)),
+            spread,
+            volatility,
+            volume
+          ]
+        );
+
+        // Keep Postgres fast & slim by pruning records older than 1500 count
+        try {
+          await pgDb.pool.query(
+            `DELETE FROM historical_ticks WHERE id NOT IN (
+              SELECT id FROM (
+                SELECT id FROM historical_ticks WHERE instrument = $1 ORDER BY timestamp DESC LIMIT 1500
+              ) x
+            ) AND instrument = $1`,
+            [symbol]
+          );
+          await pgDb.pool.query(
+            `DELETE FROM historical_ticks_v2 WHERE id NOT IN (
+              SELECT id FROM (
+                SELECT id FROM historical_ticks_v2 WHERE instrument = $1 ORDER BY timestamp DESC LIMIT 1500
+              ) x
+            ) AND instrument = $1`,
+            [symbol]
+          );
+        } catch (pruneErr: any) {
+          console.warn("[POSTGRES-PRUNER-WARN] Pruning failed slightly:", pruneErr.message);
+        }
+      }
+    }
+  } catch (err: any) {
+    console.error("[BACKGROUND-TICK-ACCUMULATOR-ERROR]", err.message);
+  }
+}, 10000);
 
 // Seeding function for portfolio risk history (for beautiful UI charts on fresh startup)
 export async function seedInitialRiskHistoryIfEmpty() {

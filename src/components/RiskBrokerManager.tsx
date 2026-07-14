@@ -100,6 +100,42 @@ export default function RiskBrokerManager() {
   const [sentimentState, setSentimentState] = useState<any>(null);
   const [hasCalendarFeed, setHasCalendarFeed] = useState<boolean>(false);
 
+  // Custom Connectors States
+  const [customConnectors, setCustomConnectors] = useState<any[]>([]);
+  const [showAddCustom, setShowAddCustom] = useState<boolean>(false);
+  const [editingConnector, setEditingConnector] = useState<any | null>(null);
+
+  const [customName, setCustomName] = useState('');
+  const [customType, setCustomType] = useState<'broker' | 'news'>('news');
+  const [customBaseUrl, setCustomBaseUrl] = useState('');
+  const [customAuthScheme, setCustomAuthScheme] = useState('api_key_header');
+  const [customApiKey, setCustomApiKey] = useState('');
+  const [customSecretKey, setCustomSecretKey] = useState('');
+  const [customUsername, setCustomUsername] = useState('');
+  const [customPassword, setCustomPassword] = useState('');
+  const [customHeaderName, setCustomHeaderName] = useState('X-API-KEY');
+  const [customParamName, setCustomParamName] = useState('api_key');
+
+  const [customHmacAlgo, setCustomHmacAlgo] = useState('sha256');
+  const [customHmacEncoding, setCustomHmacEncoding] = useState('hex');
+  const [customHmacPlacement, setCustomHmacPlacement] = useState('header');
+  const [customHmacSigName, setCustomHmacSigName] = useState('X-Signature');
+  const [customHmacTimeName, setCustomHmacTimeName] = useState('X-Timestamp');
+
+  const [newsRootPath, setNewsRootPath] = useState('articles');
+  const [newsTitlePath, setNewsTitlePath] = useState('title');
+  const [newsUrlPath, setNewsUrlPath] = useState('url');
+  const [newsTimePath, setNewsTimePath] = useState('publishedAt');
+  const [newsSentimentPath, setNewsSentimentPath] = useState('');
+
+  const [brokerTestPath, setBrokerTestPath] = useState('/accounts');
+  const [brokerTestMapping, setBrokerTestMapping] = useState('accounts');
+
+  const [testResponseOutput, setTestResponseOutput] = useState<string>('');
+  const [isTestingCustom, setIsTestingCustom] = useState<boolean>(false);
+  const [testCustomSuccess, setTestCustomSuccess] = useState<string>('');
+  const [testCustomError, setTestCustomError] = useState<string>('');
+
   // Form security allowlist state
   const [formAllowedIps, setFormAllowedIps] = useState('');
   const [allowlistSaved, setAllowlistSaved] = useState(false);
@@ -153,6 +189,18 @@ export default function RiskBrokerManager() {
   const fixTerminalEndRef = useRef<HTMLDivElement>(null);
 
   // 5. Lifecycle Data Polls
+  const fetchCustomConnectors = async () => {
+    try {
+      const res = await fetch('/api/custom-connectors');
+      const data = await res.json();
+      if (data.success) {
+        setCustomConnectors(data.connectors);
+      }
+    } catch (e) {
+      console.error("Failed to fetch custom connectors:", e);
+    }
+  };
+
   const fetchConnections = async () => {
     try {
       const res = await fetch('/api/brokers/connections');
@@ -273,6 +321,7 @@ export default function RiskBrokerManager() {
   };
 
   useEffect(() => {
+    fetchCustomConnectors();
     fetchConnections();
     fetchNewsPlatforms();
     fetchNewsFeed();
@@ -283,6 +332,7 @@ export default function RiskBrokerManager() {
     fetchStrategyAuditLogs();
 
     // Set polling timers
+    const intervalCustom = setInterval(fetchCustomConnectors, 10000);
     const intervalConns = setInterval(fetchConnections, 12000);
     const intervalNewsPlatforms = setInterval(fetchNewsPlatforms, 15000);
     const intervalNews = setInterval(fetchNewsFeed, 10000);
@@ -293,6 +343,7 @@ export default function RiskBrokerManager() {
     const intervalAuditLogs = setInterval(fetchStrategyAuditLogs, 2000);
 
     return () => {
+      clearInterval(intervalCustom);
       clearInterval(intervalConns);
       clearInterval(intervalNewsPlatforms);
       clearInterval(intervalNews);
@@ -569,6 +620,269 @@ export default function RiskBrokerManager() {
     }
   };
 
+  // Custom connector action handlers
+  const handleSaveCustomConnector = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setTestCustomError('');
+    setTestCustomSuccess('');
+    
+    if (!customName || !customBaseUrl || !customAuthScheme) {
+      setTestCustomError('تکایە هەموو زانیارییە ناچارییەکان پڕبکەرەوە.');
+      return;
+    }
+
+    // Assemble auth_config
+    const auth_config: any = {};
+    if (customAuthScheme === 'api_key_header') {
+      auth_config.headerName = customHeaderName;
+      auth_config.apiKey = customApiKey;
+    } else if (customAuthScheme === 'api_key_query_param') {
+      auth_config.paramName = customParamName;
+      auth_config.apiKey = customApiKey;
+    } else if (customAuthScheme === 'bearer_token') {
+      auth_config.apiKey = customApiKey;
+    } else if (customAuthScheme === 'basic_auth') {
+      auth_config.username = customUsername;
+      auth_config.password = customPassword;
+    } else if (customAuthScheme === 'hmac_signed') {
+      auth_config.apiKey = customApiKey;
+      auth_config.secretKey = customSecretKey;
+      auth_config.algorithm = customHmacAlgo;
+      auth_config.encoding = customHmacEncoding;
+      auth_config.placement = customHmacPlacement;
+      auth_config.signatureName = customHmacSigName;
+      auth_config.timestampName = customHmacTimeName;
+    }
+
+    // Assemble endpoints
+    const endpoints: any = {};
+    if (customType === 'news') {
+      endpoints.get_news = {
+        method: 'GET',
+        path: '/v2/news?symbol={symbol}',
+        rootPath: newsRootPath,
+        mapping: {
+          title: newsTitlePath,
+          url: newsUrlPath,
+          time: newsTimePath,
+          sentiment: newsSentimentPath
+        }
+      };
+    } else {
+      endpoints.test_connection = {
+        method: 'GET',
+        path: brokerTestPath,
+        mapping: {
+          success: brokerTestMapping
+        }
+      };
+    }
+
+    try {
+      const payload = {
+        id: editingConnector?.id || undefined,
+        name: customName,
+        type: customType,
+        base_url: customBaseUrl,
+        auth_scheme: customAuthScheme,
+        auth_config,
+        endpoints,
+        status: editingConnector?.status || 'CONNECTED'
+      };
+
+      const res = await fetch('/api/custom-connectors', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setTestCustomSuccess('بە سەرکەوتوویی پاشەکەوت کرا.');
+        setShowAddCustom(false);
+        setEditingConnector(null);
+        resetCustomForm();
+        fetchCustomConnectors();
+      } else {
+        setTestCustomError(data.error || 'هەڵەیەک ڕوویدا لە کاتی پاشەکەوتکردن.');
+      }
+    } catch (err: any) {
+      setTestCustomError(err.message);
+    }
+  };
+
+  const handleTestCustomConnector = async (endpointName: string) => {
+    setIsTestingCustom(true);
+    setTestCustomError('');
+    setTestCustomSuccess('');
+    setTestResponseOutput('');
+
+    // Check for WS, FIX or other unsupported APIs
+    if (customBaseUrl.startsWith('ws://') || customBaseUrl.startsWith('wss://') || customBaseUrl.includes('fix://')) {
+      setTestCustomError('ئەم شێوازە پشتگیری ناکرێت: پڕۆتۆکۆلەکانی FIX یان WebSockets پێویستیان بە کۆدی تایبەت هەیە.');
+      setIsTestingCustom(false);
+      return;
+    }
+
+    const auth_config: any = {};
+    if (customAuthScheme === 'api_key_header') {
+      auth_config.headerName = customHeaderName;
+      auth_config.apiKey = customApiKey;
+    } else if (customAuthScheme === 'api_key_query_param') {
+      auth_config.paramName = customParamName;
+      auth_config.apiKey = customApiKey;
+    } else if (customAuthScheme === 'bearer_token') {
+      auth_config.apiKey = customApiKey;
+    } else if (customAuthScheme === 'basic_auth') {
+      auth_config.username = customUsername;
+      auth_config.password = customPassword;
+    } else if (customAuthScheme === 'hmac_signed') {
+      auth_config.apiKey = customApiKey;
+      auth_config.secretKey = customSecretKey;
+      auth_config.algorithm = customHmacAlgo;
+      auth_config.encoding = customHmacEncoding;
+      auth_config.placement = customHmacPlacement;
+      auth_config.signatureName = customHmacSigName;
+      auth_config.timestampName = customHmacTimeName;
+    }
+
+    const endpoints: any = {};
+    if (customType === 'news') {
+      endpoints.get_news = {
+        method: 'GET',
+        path: '/v2/news?symbol={symbol}',
+        rootPath: newsRootPath,
+        mapping: {
+          title: newsTitlePath,
+          url: newsUrlPath,
+          time: newsTimePath,
+          sentiment: newsSentimentPath
+        }
+      };
+    } else {
+      endpoints.test_connection = {
+        method: 'GET',
+        path: brokerTestPath,
+        mapping: {
+          success: brokerTestMapping
+        }
+      };
+    }
+
+    try {
+      const res = await fetch('/api/custom-connectors/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          base_url: customBaseUrl,
+          auth_scheme: customAuthScheme,
+          auth_config,
+          endpoints,
+          endpointName,
+          variables: { symbol: 'EUR/USD', accountId: 'test-account-123' }
+        })
+      });
+
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setTestCustomSuccess('گرێدانەکە سەرکەوتوو بوو! وەڵامی وەرگیراو لێرەیە.');
+        setTestResponseOutput(JSON.stringify(data.result, null, 2));
+      } else {
+        setTestCustomError(data.error || data.explanation || 'کێشە لە تاقیکردنەوەی گرێدان.');
+        if (data.result) {
+          setTestResponseOutput(JSON.stringify(data.result, null, 2));
+        }
+      }
+    } catch (err: any) {
+      setTestCustomError(err.message);
+    } finally {
+      setIsTestingCustom(false);
+    }
+  };
+
+  const handleDeleteCustomConnector = async (id: string) => {
+    if (!confirm('ئایا دڵنیای لە سڕینەوەی ئەم کۆنێکتەرە؟')) return;
+    try {
+      const res = await fetch(`/api/custom-connectors/${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        fetchCustomConnectors();
+      }
+    } catch (e) {
+      console.error('Failed to delete custom connector:', e);
+    }
+  };
+
+  const handleLoadConnectorToEdit = (c: any) => {
+    setEditingConnector(c);
+    setCustomName(c.name);
+    setCustomType(c.type);
+    setCustomBaseUrl(c.base_url);
+    setCustomAuthScheme(c.auth_scheme);
+    
+    const auth = c.auth_config || {};
+    setCustomApiKey(auth.apiKey || '');
+    setCustomSecretKey(auth.secretKey || '');
+    setCustomUsername(auth.username || '');
+    setCustomPassword(auth.password || '');
+    setCustomHeaderName(auth.headerName || 'X-API-KEY');
+    setCustomParamName(auth.paramName || 'api_key');
+    
+    setCustomHmacAlgo(auth.algorithm || 'sha256');
+    setCustomHmacEncoding(auth.encoding || 'hex');
+    setCustomHmacPlacement(auth.placement || 'header');
+    setCustomHmacSigName(auth.signatureName || 'X-Signature');
+    setCustomHmacTimeName(auth.timestampName || 'X-Timestamp');
+
+    const eps = c.endpoints || {};
+    if (c.type === 'news') {
+      const ep = eps.get_news || {};
+      setNewsRootPath(ep.rootPath || '');
+      const map = ep.mapping || {};
+      setNewsTitlePath(map.title || 'title');
+      setNewsUrlPath(map.url || 'url');
+      setNewsTimePath(map.time || 'publishedAt');
+      setNewsSentimentPath(map.sentiment || '');
+    } else {
+      const ep = eps.test_connection || {};
+      setBrokerTestPath(ep.path || '/accounts');
+      const map = ep.mapping || {};
+      setBrokerTestMapping(map.success || 'accounts');
+    }
+
+    setTestResponseOutput('');
+    setTestCustomError('');
+    setTestCustomSuccess('');
+    setShowAddCustom(true);
+  };
+
+  const resetCustomForm = () => {
+    setCustomName('');
+    setCustomType('news');
+    setCustomBaseUrl('');
+    setCustomAuthScheme('api_key_header');
+    setCustomApiKey('');
+    setCustomSecretKey('');
+    setCustomUsername('');
+    setCustomPassword('');
+    setCustomHeaderName('X-API-KEY');
+    setCustomParamName('api_key');
+    setCustomHmacAlgo('sha256');
+    setCustomHmacEncoding('hex');
+    setCustomHmacPlacement('header');
+    setCustomHmacSigName('X-Signature');
+    setCustomHmacTimeName('X-Timestamp');
+    setNewsRootPath('articles');
+    setNewsTitlePath('title');
+    setNewsUrlPath('url');
+    setNewsTimePath('publishedAt');
+    setNewsSentimentPath('');
+    setBrokerTestPath('/accounts');
+    setBrokerTestMapping('accounts');
+    setTestResponseOutput('');
+    setTestCustomError('');
+    setTestCustomSuccess('');
+  };
+
   // Helper broker labels
   const brokerLabels: Record<string, string> = {
     oanda: "OANDA v20 REST",
@@ -840,6 +1154,491 @@ export default function RiskBrokerManager() {
                   className="px-4 py-2 bg-slate-800 hover:bg-slate-750 text-slate-300 font-bold text-xs rounded border border-slate-700 transition-all cursor-pointer"
                 >
                   پاشگەزبوونەوە
+                </button>
+              </div>
+            </form>
+          </div>
+        )}
+      </div>
+
+      {/* CUSTOM REST CONNECTOR HUB */}
+      <div id="custom-connector-hub" className="lg:col-span-8 bg-slate-950 border border-slate-800 rounded-xl p-5 space-y-4">
+        <div className="flex justify-between items-center border-b border-slate-900 pb-3" dir="rtl">
+          <div className="flex items-center space-x-2.5 space-x-reverse">
+            <div className="p-2 bg-emerald-950/40 border border-emerald-500/30 rounded text-emerald-400">
+              <Globe className="w-5 h-5" />
+            </div>
+            <div className="text-right">
+              <h3 className="text-sm font-bold text-slate-100 uppercase tracking-wider">سەنتەری کەنەکتەرە گشتییەکان (Generic REST Connector Hub)</h3>
+              <span className="text-[10px] text-slate-500 font-mono block">DYNAMIC REST WEB TEMPLATES FOR PLUG & PLAY</span>
+            </div>
+          </div>
+          <button
+            onClick={() => {
+              resetCustomForm();
+              setEditingConnector(null);
+              setShowAddCustom(!showAddCustom);
+            }}
+            className="px-3 py-1 bg-emerald-650 hover:bg-emerald-555 text-slate-950 font-bold text-xs rounded transition-all cursor-pointer flex items-center gap-1.5"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            <span>کەنەکتەری نوێ</span>
+          </button>
+        </div>
+
+        <p className="text-xs text-slate-400 leading-relaxed text-right" dir="rtl">
+          لێرەوە دەتوانیت برۆکەر یان سەرچاوەی هەواڵی دەرەکی نوێ زیاد بکەیت تەنها بە دیاریکردنی بنچینەی REST API و شێوازی پاراستن و نەخشەسازی JSON بە بێ گۆڕانکاری لە کۆدی سەرەکی سەکۆکە.
+        </p>
+
+        {/* List of Custom Connectors */}
+        <div className="space-y-2" dir="rtl">
+          {customConnectors.length === 0 ? (
+            <div className="text-slate-600 italic text-center py-6 text-xs bg-slate-900/30 border border-slate-900 rounded-lg">
+              هیچ کەنەکتەرێکی تایبەت دروست نەکراوە. کلیک لە دوگمەی 'کەنەکتەری نوێ' بکە بۆ دەستپێکردن.
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 gap-2.5">
+              {customConnectors.map((c) => (
+                <div key={c.id} className="p-3.5 bg-slate-900/50 border border-slate-800/80 rounded-lg flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                  <div className="text-right space-y-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold text-slate-200">{c.name}</span>
+                      <span className={`px-2 py-0.5 text-[8px] font-bold rounded ${c.type === 'news' ? 'bg-amber-950 text-amber-400 border border-amber-900/30' : 'bg-sky-950 text-sky-400 border border-sky-900/30'}`}>
+                        {c.type === 'news' ? 'NEWS PLATFORM' : 'BROKER API'}
+                      </span>
+                      <span className="px-2 py-0.5 text-[8px] bg-slate-950 text-slate-400 font-mono border border-slate-800 rounded">
+                        {c.auth_scheme.replace(/_/g, ' ').toUpperCase()}
+                      </span>
+                    </div>
+                    <div className="text-[10px] text-slate-500 font-mono leading-none">{c.base_url}</div>
+                  </div>
+
+                  <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+                    <button
+                      onClick={() => handleLoadConnectorToEdit(c)}
+                      className="py-1 px-2.5 bg-slate-800 hover:bg-slate-750 border border-slate-700 text-sky-400 rounded text-[10px] font-bold cursor-pointer transition-all"
+                    >
+                      دەستکاری (Edit)
+                    </button>
+                    <button
+                      onClick={() => handleDeleteCustomConnector(c.id)}
+                      className="py-1 px-2.5 bg-rose-950/40 hover:bg-rose-950/60 border border-rose-800/30 text-rose-400 rounded text-[10px] font-bold cursor-pointer transition-all"
+                    >
+                      سڕینەوە (Delete)
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Dynamic Form / Slider Drawer for Adding/Editing Custom Connector */}
+        {showAddCustom && (
+          <div className="p-5 bg-slate-900/60 border border-emerald-500/30 rounded-xl space-y-4 animate-in fade-in duration-300 text-right" dir="rtl">
+            <div className="flex justify-between items-center border-b border-slate-800 pb-2">
+              <button
+                onClick={() => {
+                  setShowAddCustom(false);
+                  setEditingConnector(null);
+                  resetCustomForm();
+                }}
+                className="p-1 hover:bg-slate-800 rounded text-slate-400 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+              <h4 className="text-xs font-bold text-slate-200">
+                {editingConnector ? `دەستکاریکردنی کەنەکتەری: ${editingConnector.name}` : 'تۆمارکردنی کەنەکتەری نوێ (New REST Template)'}
+              </h4>
+            </div>
+
+            {/* Capability limitation warning */}
+            <div className="p-3 bg-amber-950/20 border border-amber-500/30 rounded-lg text-[11px] leading-relaxed text-amber-400 text-right space-y-1">
+              <div className="font-bold flex items-center gap-1.5 justify-end">
+                <span>ئاگاداری گرنگ لەسەر سنوورەکانی کارکردن</span>
+                <AlertTriangle className="w-3.5 h-3.5" />
+              </div>
+              <p>
+                ئەم پەنەلە بە شێوەیەکی تایبەت بۆ کۆنێکتەرەکانی جۆری **REST API** دروستکراوە. پڕۆتۆکۆلەکانی تر وەک **FIX Engine** یان **WebSockets** بەهۆی پێویستیان بە پێوەندی بەردەوام و خێرا، لە ڕێگەی ئەم فۆرمەوە دروست ناکرێن و پێویستیان بە پەرەپێدانی کۆدی ناوخۆیی هەیە.
+              </p>
+            </div>
+
+            <form onSubmit={handleSaveCustomConnector} className="space-y-4">
+              
+              {/* Name & Type */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                <div className="space-y-1">
+                  <label className="text-[10px] text-slate-400 block font-bold">ناوی کەنەکتەر (Connector Name)</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="نموونە: MarketNews, FXCustomBroker"
+                    value={customName}
+                    onChange={(e) => setCustomName(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-1.5 text-xs text-slate-200 focus:border-emerald-500 focus:outline-none"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] text-slate-400 block font-bold">جۆری کەنەکتەر (Connector Type)</label>
+                  <select
+                    value={customType}
+                    onChange={(e) => setCustomType(e.target.value as 'broker' | 'news')}
+                    className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-1.5 text-xs text-slate-200 focus:border-emerald-500 focus:outline-none"
+                  >
+                    <option value="news">سەرچاوەی هەواڵ (News Sourcing)</option>
+                    <option value="broker">برۆکەری بازرگانی (REST Broker API)</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Base URL & Auth Scheme */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                <div className="space-y-1">
+                  <label className="text-[10px] text-slate-400 block font-bold">ناونیشانی بنەڕەت (Base URL)</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="https://api.externalplatform.com/v1"
+                    value={customBaseUrl}
+                    onChange={(e) => setCustomBaseUrl(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-1.5 text-xs text-slate-200 font-mono focus:border-emerald-500 focus:outline-none text-left"
+                    dir="ltr"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] text-slate-400 block font-bold">شێوازی پاراستن و Auth Scheme</label>
+                  <select
+                    value={customAuthScheme}
+                    onChange={(e) => setCustomAuthScheme(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-1.5 text-xs text-slate-200 focus:border-emerald-500 focus:outline-none"
+                  >
+                    <option value="api_key_header">API Key لە Header</option>
+                    <option value="api_key_query_param">API Key لە Query Parameter</option>
+                    <option value="bearer_token">Bearer Token (Authorization Header)</option>
+                    <option value="basic_auth">Basic Authentication (User/Password)</option>
+                    <option value="hmac_signed">HMAC Cryptographic Signature</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Conditional Auth Config Fields */}
+              <div className="p-3.5 bg-slate-950 border border-slate-850 rounded-lg space-y-3">
+                <h5 className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">ڕێکخستنی بڕوانامەکانی چوونەژوورەوە</h5>
+
+                {/* API Key Header */}
+                {customAuthScheme === 'api_key_header' && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="text-[9px] text-slate-450 block">ناوی Header</label>
+                      <input
+                        type="text"
+                        value={customHeaderName}
+                        onChange={(e) => setCustomHeaderName(e.target.value)}
+                        className="w-full bg-slate-900 border border-slate-800 rounded px-2.5 py-1 text-xs text-slate-200 font-mono focus:outline-none"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[9px] text-slate-450 block">کلیلی API Key</label>
+                      <input
+                        type="password"
+                        placeholder="ئەم کلیلە بە AES-255 دادەپۆشرێت"
+                        value={customApiKey}
+                        onChange={(e) => setCustomApiKey(e.target.value)}
+                        className="w-full bg-slate-900 border border-slate-800 rounded px-2.5 py-1 text-xs text-slate-200 font-mono focus:outline-none"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* API Key Query Param */}
+                {customAuthScheme === 'api_key_query_param' && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="text-[9px] text-slate-450 block">ناوی پارامیتەر (Query Parameter Name)</label>
+                      <input
+                        type="text"
+                        value={customParamName}
+                        onChange={(e) => setCustomParamName(e.target.value)}
+                        className="w-full bg-slate-900 border border-slate-800 rounded px-2.5 py-1 text-xs text-slate-200 font-mono focus:outline-none"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[9px] text-slate-450 block">کلیلی API Key</label>
+                      <input
+                        type="password"
+                        placeholder="ئەم کلیلە بە AES-255 دادەپۆشرێت"
+                        value={customApiKey}
+                        onChange={(e) => setCustomApiKey(e.target.value)}
+                        className="w-full bg-slate-900 border border-slate-800 rounded px-2.5 py-1 text-xs text-slate-200 font-mono focus:outline-none"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* Bearer Token */}
+                {customAuthScheme === 'bearer_token' && (
+                  <div className="space-y-1">
+                    <label className="text-[9px] text-slate-450 block">تۆکنی Bearer</label>
+                    <input
+                      type="password"
+                      placeholder="تۆکن لێرە بنووسە"
+                      value={customApiKey}
+                      onChange={(e) => setCustomApiKey(e.target.value)}
+                      className="w-full bg-slate-900 border border-slate-800 rounded px-2.5 py-1 text-xs text-slate-200 font-mono focus:outline-none text-left"
+                      dir="ltr"
+                    />
+                  </div>
+                )}
+
+                {/* Basic Auth */}
+                {customAuthScheme === 'basic_auth' && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="text-[9px] text-slate-450 block">ناوی بەکارهێنەر (Username)</label>
+                      <input
+                        type="text"
+                        value={customUsername}
+                        onChange={(e) => setCustomUsername(e.target.value)}
+                        className="w-full bg-slate-900 border border-slate-800 rounded px-2.5 py-1 text-xs text-slate-200 font-mono focus:outline-none"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[9px] text-slate-450 block">وشەی تێپەڕ (Password)</label>
+                      <input
+                        type="password"
+                        value={customPassword}
+                        onChange={(e) => setCustomPassword(e.target.value)}
+                        className="w-full bg-slate-900 border border-slate-800 rounded px-2.5 py-1 text-xs text-slate-200 font-mono focus:outline-none"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* HMAC Signed */}
+                {customAuthScheme === 'hmac_signed' && (
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <label className="text-[9px] text-slate-450 block">کلیل (API Key)</label>
+                        <input
+                          type="password"
+                          value={customApiKey}
+                          onChange={(e) => setCustomApiKey(e.target.value)}
+                          className="w-full bg-slate-900 border border-slate-800 rounded px-2.5 py-1 text-xs text-slate-200 font-mono focus:outline-none"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[9px] text-slate-450 block">کلیلی نهێنی (HMAC Secret Key)</label>
+                        <input
+                          type="password"
+                          value={customSecretKey}
+                          onChange={(e) => setCustomSecretKey(e.target.value)}
+                          className="w-full bg-slate-900 border border-slate-800 rounded px-2.5 py-1 text-xs text-slate-200 font-mono focus:outline-none"
+                        />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-right">
+                      <div className="space-y-1">
+                        <label className="text-[8px] text-slate-450 block">ئەلگۆریتم</label>
+                        <select
+                          value={customHmacAlgo}
+                          onChange={(e) => setCustomHmacAlgo(e.target.value)}
+                          className="w-full bg-slate-900 border border-slate-800 rounded px-2 py-1 text-[10px] text-slate-200 focus:outline-none"
+                        >
+                          <option value="sha256">SHA-256</option>
+                          <option value="sha512">SHA-512</option>
+                        </select>
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[8px] text-slate-450 block">جۆری ناوەڕۆک (Encoding)</label>
+                        <select
+                          value={customHmacEncoding}
+                          onChange={(e) => setCustomHmacEncoding(e.target.value)}
+                          className="w-full bg-slate-900 border border-slate-800 rounded px-2 py-1 text-[10px] text-slate-200 focus:outline-none"
+                        >
+                          <option value="hex">Hexadecimal</option>
+                          <option value="base64">Base64</option>
+                        </select>
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[8px] text-slate-450 block">جێگیرکردن (Placement)</label>
+                        <select
+                          value={customHmacPlacement}
+                          onChange={(e) => setCustomHmacPlacement(e.target.value)}
+                          className="w-full bg-slate-900 border border-slate-800 rounded px-2 py-1 text-[10px] text-slate-200 focus:outline-none"
+                        >
+                          <option value="header">Request Headers</option>
+                          <option value="query">Query Params</option>
+                        </select>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <label className="text-[9px] text-slate-450 block">ناوی واژوو (Signature Name)</label>
+                        <input
+                          type="text"
+                          value={customHmacSigName}
+                          onChange={(e) => setCustomHmacSigName(e.target.value)}
+                          className="w-full bg-slate-900 border border-slate-800 rounded px-2.5 py-1 text-xs text-slate-200 font-mono focus:outline-none"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[9px] text-slate-450 block">ناوی مۆری کاتی (Timestamp Name)</label>
+                        <input
+                          type="text"
+                          value={customHmacTimeName}
+                          onChange={(e) => setCustomHmacTimeName(e.target.value)}
+                          className="w-full bg-slate-900 border border-slate-800 rounded px-2.5 py-1 text-xs text-slate-200 font-mono focus:outline-none"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Endpoints & Mapping Configurations */}
+              <div className="p-3.5 bg-slate-950 border border-slate-850 rounded-lg space-y-3">
+                <h5 className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
+                  {customType === 'news' ? 'نەخشەسازی هەواڵ (News Response Path Mapping)' : 'بەستەر و ڕێڕەوی تاقیکردنەوە (Broker Test Endpoint Path)'}
+                </h5>
+
+                {customType === 'news' ? (
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <label className="text-[9px] text-slate-450 block">ڕێڕەوی تەنەکانی لیستی هەواڵ (News List JSON Root Path)</label>
+                        <input
+                          type="text"
+                          value={newsRootPath}
+                          onChange={(e) => setNewsRootPath(e.target.value)}
+                          className="w-full bg-slate-900 border border-slate-800 rounded px-2.5 py-1 text-xs text-slate-200 font-mono focus:outline-none text-left"
+                          dir="ltr"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[9px] text-slate-450 block">ڕێڕەوی ناونیشان (Title Key Path)</label>
+                        <input
+                          type="text"
+                          value={newsTitlePath}
+                          onChange={(e) => setNewsTitlePath(e.target.value)}
+                          className="w-full bg-slate-900 border border-slate-800 rounded px-2.5 py-1 text-xs text-slate-200 font-mono focus:outline-none text-left"
+                          dir="ltr"
+                        />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                      <div className="space-y-1">
+                        <label className="text-[8px] text-slate-450 block">ڕێڕەوی بەستەر (URL Path)</label>
+                        <input
+                          type="text"
+                          value={newsUrlPath}
+                          onChange={(e) => setNewsUrlPath(e.target.value)}
+                          className="w-full bg-slate-900 border border-slate-800 rounded px-2 py-1 text-[10px] text-slate-200 font-mono focus:outline-none text-left"
+                          dir="ltr"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[8px] text-slate-450 block">ڕێڕەوی کات (Published Time Path)</label>
+                        <input
+                          type="text"
+                          value={newsTimePath}
+                          onChange={(e) => setNewsTimePath(e.target.value)}
+                          className="w-full bg-slate-900 border border-slate-800 rounded px-2 py-1 text-[10px] text-slate-200 font-mono focus:outline-none text-left"
+                          dir="ltr"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[8px] text-slate-450 block">ڕێڕەوی هەستسەنگاندن (Sentiment Path - ئارەزوومەندانە)</label>
+                        <input
+                          type="text"
+                          placeholder="بەجێی بهێڵە بۆ خەمڵاندنی خۆکار"
+                          value={newsSentimentPath}
+                          onChange={(e) => setNewsSentimentPath(e.target.value)}
+                          className="w-full bg-slate-900 border border-slate-800 rounded px-2 py-1 text-[10px] text-slate-200 font-mono focus:outline-none text-left"
+                          dir="ltr"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="text-[9px] text-slate-450 block">ڕێڕەوی تاقیکردنەوە (Test Connection Path)</label>
+                      <input
+                        type="text"
+                        value={brokerTestPath}
+                        onChange={(e) => setBrokerTestPath(e.target.value)}
+                        className="w-full bg-slate-900 border border-slate-800 rounded px-2.5 py-1 text-xs text-slate-200 font-mono focus:outline-none text-left"
+                        dir="ltr"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[9px] text-slate-450 block">کلیل یان جۆری چەسپاندن لە وەڵامدا (Response Success Mapping Key)</label>
+                      <input
+                        type="text"
+                        value={brokerTestMapping}
+                        onChange={(e) => setBrokerTestMapping(e.target.value)}
+                        className="w-full bg-slate-900 border border-slate-800 rounded px-2.5 py-1 text-xs text-slate-200 font-mono focus:outline-none text-left"
+                        dir="ltr"
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Status and Action Panel */}
+              {testCustomError && (
+                <div className="p-3 bg-rose-950/20 border border-rose-500/30 rounded-lg text-xs flex items-center gap-1.5 text-rose-400 justify-start" dir="ltr">
+                  <AlertTriangle className="w-4 h-4 shrink-0" />
+                  <span>{testCustomError}</span>
+                </div>
+              )}
+
+              {testCustomSuccess && (
+                <div className="p-3 bg-emerald-950/20 border border-emerald-500/30 rounded-lg text-xs flex items-center gap-1.5 text-emerald-400 justify-start" dir="ltr">
+                  <CheckCircle className="w-4 h-4 shrink-0" />
+                  <span>{testCustomSuccess}</span>
+                </div>
+              )}
+
+              {/* Sandbox Test JSON Response Output Terminal */}
+              {testResponseOutput && (
+                <div className="space-y-1 text-right">
+                  <label className="text-[9px] text-slate-400 font-mono">SANDBOX JSON RESPONDER INTERCEPTOR</label>
+                  <pre className="w-full bg-slate-950 border border-slate-900 rounded-lg p-3 max-h-40 overflow-y-auto font-mono text-[10px] text-emerald-500 text-left" dir="ltr">
+                    {testResponseOutput}
+                  </pre>
+                </div>
+              )}
+
+              {/* Form Buttons */}
+              <div className="flex gap-2 justify-start pt-2">
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-emerald-650 hover:bg-emerald-555 text-slate-950 font-bold text-xs rounded transition-all cursor-pointer flex items-center gap-1.5"
+                >
+                  <CheckCircle className="w-3.5 h-3.5" />
+                  <span>ڕزگارکردن و پاشەکەوت (Save Template)</span>
+                </button>
+                <button
+                  type="button"
+                  disabled={isTestingCustom}
+                  onClick={() => handleTestCustomConnector(customType === 'news' ? 'get_news' : 'test_connection')}
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-750 text-sky-400 border border-slate-700 font-bold text-xs rounded transition-all cursor-pointer flex items-center gap-1.5"
+                >
+                  {isTestingCustom ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Terminal className="w-3.5 h-3.5" />}
+                  <span>تاقیکردنەوەی مەیدانی (Sandbox Test Run)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowAddCustom(false);
+                    setEditingConnector(null);
+                    resetCustomForm();
+                  }}
+                  className="px-4 py-2 bg-slate-900 hover:bg-slate-850 text-slate-400 border border-slate-850 font-bold text-xs rounded transition-all cursor-pointer"
+                >
+                  پاشگەزبوونەوە (Cancel)
                 </button>
               </div>
             </form>

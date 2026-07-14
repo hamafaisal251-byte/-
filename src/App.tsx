@@ -18,9 +18,10 @@ import ArbitragePanel from './components/ArbitragePanel';
 import SafetyBackstopPanel from './components/SafetyBackstopPanel';
 import DrlEnsemblePanel from './components/DrlEnsemblePanel';
 import PortfolioRiskPanel from './components/PortfolioRiskPanel';
+import DemoLiveObservationPanel from './components/DemoLiveObservationPanel';
 import { EvolutionCandidate } from './types/quant';
 
-type TabId = 'architecture' | 'telemetry' | 'evolution' | 'risk-broker' | 'portfolio-risk' | 'alien-brain' | 'reward-playground' | 'backtest-arena' | 'ai-pilot-lab' | 'self-improvement-log' | 'arbitrage' | 'safety-backstop' | 'ensemble';
+type TabId = 'architecture' | 'telemetry' | 'evolution' | 'risk-broker' | 'portfolio-risk' | 'alien-brain' | 'reward-playground' | 'backtest-arena' | 'ai-pilot-lab' | 'self-improvement-log' | 'arbitrage' | 'safety-backstop' | 'ensemble' | 'demo-live';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<TabId>('architecture');
@@ -397,6 +398,20 @@ export default function App() {
             <span className="font-bold">10. لایەری پاراستنی نێکسەس | NEXUS Safety Backstop</span>
           </button>
 
+          {/* Tab 11: Continuous Demo-Live Observation */}
+          <button
+            id="tab-btn-demo-live"
+            onClick={() => setActiveTab('demo-live')}
+            className={`px-4 py-2.5 rounded-lg text-xs font-semibold font-mono flex items-center space-x-2 border transition-all cursor-pointer whitespace-nowrap ${
+              activeTab === 'demo-live'
+                ? 'bg-slate-900 border-emerald-800 text-emerald-200 shadow-sm shadow-emerald-950/20'
+                : 'bg-transparent border-transparent text-emerald-400 hover:text-emerald-300'
+            }`}
+          >
+            <Activity className="w-4 h-4 shrink-0 text-emerald-400 animate-pulse" />
+            <span className="font-bold">11. چاودێری دیمۆ-لایڤ | Demo-Live Observation</span>
+          </button>
+
         </div>
       </nav>
 
@@ -497,6 +512,7 @@ export default function App() {
           {activeTab === 'arbitrage' && <ArbitragePanel />}
           {activeTab === 'safety-backstop' && <SafetyBackstopPanel />}
           {activeTab === 'ensemble' && <DrlEnsemblePanel />}
+          {activeTab === 'demo-live' && <DemoLiveObservationPanel />}
         </div>
 
       </main>
