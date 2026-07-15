@@ -7,7 +7,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { 
   Target, ShieldAlert, CheckCircle2, XCircle, RefreshCw, Terminal, 
   Sliders, Play, Sparkles, Lightbulb, Zap, Brain, Settings,
-  Flame, LineChart, Activity, Award, Check
+  Flame, LineChart, Activity, Award, Check, Clock, Bookmark, Github
 } from 'lucide-react';
 import { EvolutionCandidate } from '../types/quant';
 
@@ -19,6 +19,59 @@ interface EvolutionLabProps {
 }
 
 export default function EvolutionLab({ candidates, setCandidates, selectedId, setSelectedId }: EvolutionLabProps) {
+
+  const [activeDashboardTab, setActiveDashboardTab] = useState<'sandbox' | 'synthesis'>('sandbox');
+  const [synthesisData, setSynthesisData] = useState<any>({
+    stats: { totalAttempts: 0, outperformedCount: 0, underperformedCount: 0, neutralCount: 0 },
+    hypotheses: [],
+    techniques: [],
+    attempts: []
+  });
+  const [isSynthesizing, setIsSynthesizing] = useState<boolean>(false);
+  const [synthesisLog, setSynthesisLog] = useState<string>('');
+  const [synthesisResult, setSynthesisResult] = useState<any>(null);
+
+  const fetchSynthesisData = async () => {
+    try {
+      const res = await fetch('/api/synthesis/dashboard');
+      if (res.ok) {
+        const data = await res.json();
+        setSynthesisData(data);
+      }
+    } catch (err) {
+      console.error("Failed to fetch synthesis data:", err);
+    }
+  };
+
+  useEffect(() => {
+    fetchSynthesisData();
+  }, []);
+
+  const handleTriggerSynthesis = async () => {
+    setIsSynthesizing(true);
+    setSynthesisResult(null);
+    setSynthesisLog('سەرەتای لێکدانەوە و لێکۆڵینەوە لە بیرۆکەکان...');
+    try {
+      const res = await fetch('/api/synthesis/run', { method: 'POST' });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setSynthesisResult(data.results);
+        setSynthesisLog('پەرەپێدانی بیرۆکەکان بە سەرکەوتوویی تەواو بوو! کاندیدی نوێ زیادکرا بۆ تاقیگە.');
+        fetchSynthesisData();
+        const candRes = await fetch('/api/candidates');
+        if (candRes.ok) {
+          const candData = await candRes.json();
+          setCandidates(candData.candidates);
+        }
+      } else {
+        setSynthesisLog(`خەتایەک لە کاتی پەرەپێداندا ڕوویدا: ${data.error || 'نشستن هاوکاری'}`);
+      }
+    } catch (err) {
+      setSynthesisLog('خەتای تۆر: پەیوەندی پچڕا.');
+    } finally {
+      setIsSynthesizing(false);
+    }
+  };
 
   const [pipelineState, setPipelineState] = useState<'IDLE' | 'STEP_1_AST' | 'STEP_2_COMPILE' | 'STEP_3_VALGRIND' | 'STEP_4_RELOAD' | 'FINISHED'>('IDLE');
   const [pipelineSuccess, setPipelineSuccess] = useState<boolean | null>(null);
@@ -632,401 +685,629 @@ export default function EvolutionLab({ candidates, setCandidates, selectedId, se
         </div>
       </div>
 
-      <div id="evolution-lab-container" className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Left Column: Candidates list & Active Details */}
-        <div id="evolution-candidates-panel" className="lg:col-span-5 flex flex-col justify-between space-y-4 bg-slate-950 border border-slate-800 rounded-xl p-5">
-          <div className="text-right" dir="rtl">
-            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">تاقیگەی پەرەپێدانی کۆدی C++</h3>
-            <p className="text-[11px] text-slate-500">یەکێک لە کاندیدەکانی بەردەم هەڵبژێرە بۆ بینینی لۆجیکەکەی و تێستکردنی تووند لەناو سانبۆکسدا.</p>
-          </div>
+      {/* Tab Selectors */}
+      <div className="flex justify-start border-b border-slate-800" dir="rtl">
+        <button
+          onClick={() => setActiveDashboardTab('sandbox')}
+          className={`px-5 py-3 text-xs font-bold uppercase tracking-wider border-b-2 transition-all flex items-center gap-2 ${
+            activeDashboardTab === 'sandbox'
+              ? 'border-purple-500 text-purple-400'
+              : 'border-transparent text-slate-400 hover:text-slate-200'
+          }`}
+        >
+          <Sliders className="w-4 h-4" />
+          تاقیگەی پەرەپێدانی کۆد (C++ Sandbox & Backtests)
+        </button>
+        <button
+          onClick={() => setActiveDashboardTab('synthesis')}
+          className={`px-5 py-3 text-xs font-bold uppercase tracking-wider border-b-2 transition-all flex items-center gap-2 ${
+            activeDashboardTab === 'synthesis'
+              ? 'border-purple-500 text-purple-400'
+              : 'border-transparent text-slate-400 hover:text-slate-200'
+          }`}
+        >
+          <Sparkles className="w-4 h-4" />
+          مەکینەی لێکدەر و پەرەپێدانی بیرۆکەکان (Synthesis Hub)
+        </button>
+      </div>
 
-          {/* Candidate selector buttons */}
-          <div id="candidates-selector-list" className="space-y-3 flex-1 my-3 overflow-y-auto max-h-[380px] pr-1">
-            {candidates.map((cand) => (
-              <button
-                key={cand.id}
-                onClick={() => {
-                  if (pipelineState === 'IDLE' || pipelineState === 'FINISHED') {
-                    setSelectedId(cand.id);
-                    setPipelineState('IDLE');
-                    setPipelineSuccess(null);
-                    setTerminalOutput([]);
-                  }
-                }}
-                className={`w-full text-left p-3.5 rounded-lg border transition-all ${
-                  selectedId === cand.id
-                    ? 'bg-purple-950/20 border-purple-500 shadow-md shadow-purple-950/25'
-                    : 'bg-slate-900 border-slate-800 hover:border-slate-700'
-                } ${pipelineState !== 'IDLE' && pipelineState !== 'FINISHED' ? 'opacity-40 cursor-not-allowed' : ''}`}
-              >
-                <div className="flex justify-between items-start mb-1.5">
-                  <span className="text-[10px] font-mono font-bold text-slate-500 uppercase">{cand.creator}</span>
-                  <div className="flex gap-1.5 flex-wrap">
-                    {cand.lifecycleStage && (
-                      <span className={`text-[8px] font-mono font-bold px-1 rounded ${
-                        cand.lifecycleStage === 'PROMOTED_REAL_LIVE'
-                          ? 'bg-emerald-950 text-emerald-400 border border-emerald-800'
-                          : cand.lifecycleStage === 'AWAITING_HUMAN_CONFIRMATION'
-                          ? 'bg-amber-950 text-amber-400 border border-amber-800 animate-pulse'
-                          : cand.lifecycleStage === 'DEMO_LIVE_EVALUATING'
-                          ? 'bg-purple-950 text-purple-400 border border-purple-800 animate-pulse'
-                          : cand.lifecycleStage === 'REJECTED'
-                          ? 'bg-rose-950 text-rose-400 border border-rose-900'
-                          : 'bg-slate-900 text-slate-400 border border-slate-800'
+      {activeDashboardTab === 'sandbox' ? (
+        <div id="evolution-lab-container" className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          {/* Left Column: Candidates list & Active Details */}
+          <div id="evolution-candidates-panel" className="lg:col-span-5 flex flex-col justify-between space-y-4 bg-slate-950 border border-slate-800 rounded-xl p-5">
+            <div className="text-right" dir="rtl">
+              <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">تاقیگەی پەرەپێدانی کۆدی C++</h3>
+              <p className="text-[11px] text-slate-500">یەکێک لە کاندیدەکانی بەردەم هەڵبژێرە بۆ بینینی لۆجیکەکەی و تێستکردنی تووند لەناو سانبۆکسدا.</p>
+            </div>
+
+            {/* Candidate selector buttons */}
+            <div id="candidates-selector-list" className="space-y-3 flex-1 my-3 overflow-y-auto max-h-[380px] pr-1">
+              {candidates.map((cand) => (
+                <button
+                  key={cand.id}
+                  onClick={() => {
+                    if (pipelineState === 'IDLE' || pipelineState === 'FINISHED') {
+                      setSelectedId(cand.id);
+                      setPipelineState('IDLE');
+                      setPipelineSuccess(null);
+                      setTerminalOutput([]);
+                    }
+                  }}
+                  className={`w-full text-left p-3.5 rounded-lg border transition-all ${
+                    selectedId === cand.id
+                      ? 'bg-purple-950/20 border-purple-500 shadow-md shadow-purple-950/25'
+                      : 'bg-slate-900 border-slate-800 hover:border-slate-700'
+                  } ${pipelineState !== 'IDLE' && pipelineState !== 'FINISHED' ? 'opacity-40 cursor-not-allowed' : ''}`}
+                >
+                  <div className="flex justify-between items-start mb-1.5">
+                    <span className="text-[10px] font-mono font-bold text-slate-500 uppercase">{cand.creator}</span>
+                    <div className="flex gap-1.5 flex-wrap">
+                      {cand.lifecycleStage && (
+                        <span className={`text-[8px] font-mono font-bold px-1 rounded ${
+                          cand.lifecycleStage === 'PROMOTED_REAL_LIVE'
+                            ? 'bg-emerald-950 text-emerald-400 border border-emerald-800'
+                            : cand.lifecycleStage === 'AWAITING_HUMAN_CONFIRMATION'
+                            ? 'bg-amber-950 text-amber-400 border border-amber-800 animate-pulse'
+                            : cand.lifecycleStage === 'DEMO_LIVE_EVALUATING'
+                            ? 'bg-purple-950 text-purple-400 border border-purple-800 animate-pulse'
+                            : cand.lifecycleStage === 'REJECTED'
+                            ? 'bg-rose-950 text-rose-400 border border-rose-900'
+                            : 'bg-slate-900 text-slate-400 border border-slate-800'
+                        }`}>
+                          {cand.lifecycleStage.replace('_', ' ')}
+                        </span>
+                      )}
+                      <span className={`text-[8px] font-mono font-bold px-1.5 py-0.5 rounded ${
+                        !cand.failureReason
+                          ? 'bg-emerald-950/40 text-emerald-400 border border-emerald-800/30' 
+                          : 'bg-rose-950/40 text-rose-400 border border-rose-800/30'
                       }`}>
-                        {cand.lifecycleStage.replace('_', ' ')}
+                        {!cand.failureReason ? 'STABLE' : 'RISK'}
                       </span>
-                    )}
-                    <span className={`text-[8px] font-mono font-bold px-1.5 py-0.5 rounded ${
-                      !cand.failureReason
-                        ? 'bg-emerald-950/40 text-emerald-400 border border-emerald-800/30' 
-                        : 'bg-rose-950/40 text-rose-400 border border-rose-800/30'
-                    }`}>
-                      {!cand.failureReason ? 'STABLE' : 'RISK'}
-                    </span>
+                    </div>
                   </div>
-                </div>
-                <h4 className="text-xs font-bold text-slate-200 line-clamp-2">{cand.name}</h4>
-              </button>
-            ))}
-          </div>
-
-          {/* Selected Candidate Code Editor */}
-          <div id="candidate-code-snippet" className="p-3.5 bg-slate-900 border border-slate-800 rounded-lg space-y-2">
-            <div className="flex justify-between items-center text-right" dir="rtl">
-              <span className="text-[10px] font-mono font-bold text-slate-400">دەستکاریکردنی لۆکاڵی کۆدی C++ (Interactive Editor)</span>
-              <span className="text-[9px] text-purple-400 font-mono">calculateReward.cpp</span>
+                  <h4 className="text-xs font-bold text-slate-200 line-clamp-2">{cand.name}</h4>
+                </button>
+              ))}
             </div>
-            <textarea
-              value={activeCandidate?.code || ''}
-              onChange={(e) => {
-                const newCode = e.target.value;
-                setCandidates(prev => prev.map(c => c.id === selectedId ? { ...c, code: newCode } : c));
-              }}
-              className="w-full h-36 bg-slate-950 border border-slate-800 rounded p-2.5 text-xs font-mono text-emerald-400 focus:outline-none focus:border-purple-500 whitespace-pre scrollbar-thin select-text"
-              style={{ direction: 'ltr', unicodeBidi: 'embed' }}
-            />
-            <p className="text-[9px] text-slate-500 text-right" dir="rtl">
-              * دەتوانیت ڕاستەوخۆ لێرەوە کۆدی نەخشەی پاداشتەکە دەستکاری بکەیت، پاشان دوگمەی خوارەوە لێبدەیت بۆ دڵنیابوونەوەی کەرنەڵی سانبۆکس.
-            </p>
-          </div>
 
-          {/* Scientific Grounded Citations & Sources */}
-          {activeCandidate?.researchSources && activeCandidate.researchSources.length > 0 && (
-            <div className="p-3.5 bg-slate-900/80 border border-purple-500/20 rounded-lg space-y-2 text-right animate-fade-in" dir="rtl">
-              <h4 className="text-[10px] font-bold text-purple-400 uppercase tracking-wider flex items-center gap-1.5 justify-end">
-                <Sparkles className="w-3.5 h-3.5" />
-                سەرچاوە و بەڵگە زانستییە دۆزراوەکان (Web Grounded Sources)
-              </h4>
-              <p className="text-[10px] text-slate-400">ئەم ستراتیژییە لەسەر بنەمای لێکۆڵینەوە و دۆکیومێنتە فەرمییەکانی ژێرەوە دارێژراوە:</p>
-              <div className="space-y-1.5 pt-1 text-left animate-fade-in" dir="ltr">
-                {activeCandidate.researchSources.map((source: any, sIdx: number) => (
-                  <a
-                    key={sIdx}
-                    href={source.uri}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="block text-[10px] text-blue-400 hover:underline hover:text-blue-300 truncate"
-                  >
-                    📚 {source.title}
-                  </a>
-                ))}
+            {/* Selected Candidate Code Editor */}
+            <div id="candidate-code-snippet" className="p-3.5 bg-slate-900 border border-slate-800 rounded-lg space-y-2">
+              <div className="flex justify-between items-center text-right" dir="rtl">
+                <span className="text-[10px] font-mono font-bold text-slate-400">دەستکاریکردنی لۆکاڵی کۆدی C++ (Interactive Editor)</span>
+                <span className="text-[9px] text-purple-400 font-mono">calculateReward.cpp</span>
               </div>
-              {activeCandidate.groundedText && (
-                <div className="text-[10px] text-slate-400 bg-slate-950 p-2 rounded border border-slate-900 mt-2 max-h-24 overflow-y-auto leading-relaxed text-right font-sans select-text">
-                  {activeCandidate.groundedText}
-                </div>
-              )}
+              <textarea
+                value={activeCandidate?.code || ''}
+                onChange={(e) => {
+                  const newCode = e.target.value;
+                  setCandidates(prev => prev.map(c => c.id === selectedId ? { ...c, code: newCode } : c));
+                }}
+                className="w-full h-36 bg-slate-950 border border-slate-800 rounded p-2.5 text-xs font-mono text-emerald-400 focus:outline-none focus:border-purple-500 whitespace-pre scrollbar-thin select-text"
+                style={{ direction: 'ltr', unicodeBidi: 'embed' }}
+              />
+              <p className="text-[9px] text-slate-500 text-right" dir="rtl">
+                * دەتوانیت ڕاستەوخۆ لێرەوە کۆدی نەخشەی پاداشتەکە دەستکاری بکەیت، پاشان دوگمەی خوارەوە لێبدەیت بۆ دڵنیابوونەوەی کەرنەڵی سانبۆکس.
+              </p>
             </div>
-          )}
 
-          {/* DEMO_LIVE Evaluation & Human Capital Promotion Panel */}
-          {activeCandidate && (
-            <div className="p-4 bg-slate-900 border border-slate-800 rounded-lg space-y-4 text-right animate-fade-in" dir="rtl">
-              <div className="flex justify-between items-center border-b border-slate-850 pb-2">
-                <span className="text-[10px] text-slate-400 font-bold uppercase">قۆناغی ژیانی کاندید (Candidate Lifecycle Status)</span>
-                <span className={`text-[10px] px-2 py-0.5 rounded font-bold font-mono ${
-                  activeCandidate.lifecycleStage === 'PROMOTED_REAL_LIVE'
-                    ? 'bg-emerald-950 text-emerald-400 border border-emerald-900'
-                    : activeCandidate.lifecycleStage === 'AWAITING_HUMAN_CONFIRMATION'
-                    ? 'bg-amber-950 text-amber-400 border border-amber-900 animate-pulse'
-                    : activeCandidate.lifecycleStage === 'DEMO_LIVE_EVALUATING'
-                    ? 'bg-purple-950 text-purple-400 border border-purple-900'
-                    : 'bg-slate-950 text-slate-400 border border-slate-900'
-                }`}>
-                  {activeCandidate.lifecycleStage || 'SANDBOX'}
+            {/* Scientific Grounded Citations & Sources */}
+            {activeCandidate?.researchSources && activeCandidate.researchSources.length > 0 && (
+              <div className="p-3.5 bg-slate-900/80 border border-purple-500/20 rounded-lg space-y-2 text-right animate-fade-in" dir="rtl">
+                <h4 className="text-[10px] font-bold text-purple-400 uppercase tracking-wider flex items-center gap-1.5 justify-end">
+                  <Sparkles className="w-3.5 h-3.5" />
+                  سەرچاوە و بەڵگە زانستییە دۆزراوەکان (Web Grounded Sources)
+                </h4>
+                <p className="text-[10px] text-slate-400">ئەم ستراتیژییە لەسەر بنەمای لێکۆڵینەوە و دۆکیومێنتە فەرمییەکانی ژێرەوە دارێژراوە:</p>
+                <div className="space-y-1.5 pt-1 text-left animate-fade-in" dir="ltr">
+                  {activeCandidate.researchSources.map((source: any, sIdx: number) => (
+                    <a
+                      key={sIdx}
+                      href={source.uri}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="block text-[10px] text-blue-400 hover:underline hover:text-blue-300 truncate"
+                    >
+                      📚 {source.title}
+                    </a>
+                  ))}
+                </div>
+                {activeCandidate.groundedText && (
+                  <div className="text-[10px] text-slate-400 bg-slate-950 p-2 rounded border border-slate-900 mt-2 max-h-24 overflow-y-auto leading-relaxed text-right font-sans select-text">
+                    {activeCandidate.groundedText}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {activeCandidate?.lineage && (
+              <div className="p-4 bg-gradient-to-r from-purple-950/20 to-slate-900 border border-purple-500/25 rounded-lg space-y-3 text-right" dir="rtl">
+                <h4 className="text-xs font-bold text-purple-400 uppercase tracking-wider flex items-center gap-1.5 justify-end">
+                  <Sparkles className="w-4 h-4 text-purple-400" />
+                  پەیوەندی و نەژادی بیرۆکەکان (Lineage & Parentage)
+                </h4>
+                <p className="text-[11px] text-slate-300">
+                  ئەم کاندیدە لە ڕێگەی لێکدانی بیرۆکەی جیاوازەوە دروست کراوە:
+                </p>
+                <div className="flex flex-wrap gap-1.5 justify-end mt-2">
+                  {activeCandidate.lineage.sources.map((source: string, idx: number) => (
+                    <span key={idx} className="bg-purple-950/70 text-purple-300 border border-purple-500/30 text-[10px] font-medium px-2 py-1 rounded-full flex items-center gap-1">
+                      <Zap className="w-3 h-3 text-amber-400" />
+                      {source}
+                    </span>
+                  ))}
+                </div>
+                <div className="p-2.5 bg-slate-950/60 border border-slate-800 rounded mt-2">
+                  <p className="text-[10px] text-slate-400 font-mono text-left leading-relaxed">
+                    <span className="text-purple-400 font-bold block mb-1 text-right">ڕوونکردنەوەی فەلسەفەی لێکدان:</span>
+                    {activeCandidate.lineage.reasoning}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* DEMO_LIVE Evaluation & Human Capital Promotion Panel */}
+            {activeCandidate && (
+              <div className="p-4 bg-slate-900 border border-slate-800 rounded-lg space-y-4 text-right animate-fade-in" dir="rtl">
+                <div className="flex justify-between items-center border-b border-slate-850 pb-2">
+                  <span className="text-[10px] text-slate-400 font-bold uppercase">قۆناغی ژیانی کاندید (Candidate Lifecycle Status)</span>
+                  <span className={`text-[10px] px-2 py-0.5 rounded font-bold font-mono ${
+                    activeCandidate.lifecycleStage === 'PROMOTED_REAL_LIVE'
+                      ? 'bg-emerald-950 text-emerald-400 border border-emerald-900'
+                      : activeCandidate.lifecycleStage === 'AWAITING_HUMAN_CONFIRMATION'
+                      ? 'bg-amber-950 text-amber-400 border border-amber-900 animate-pulse'
+                      : activeCandidate.lifecycleStage === 'DEMO_LIVE_EVALUATING'
+                      ? 'bg-purple-950 text-purple-400 border border-purple-900'
+                      : 'bg-slate-950 text-slate-400 border border-slate-900'
+                  }`}>
+                    {activeCandidate.lifecycleStage || 'SANDBOX'}
+                  </span>
+                </div>
+
+                {/* DEMO LIVE real-time metrics */}
+                {(activeCandidate.liveDemoMetrics || activeCandidate.lifecycleStage === 'DEMO_LIVE_EVALUATING') && (
+                  <div className="space-y-2">
+                    <div className="flex justify-between items-center">
+                      <h4 className="text-[11px] font-bold text-slate-300">ئامارەکانی بازرگانی تاقیکاری لایڤ (DEMO_LIVE Market Performance)</h4>
+                      {activeCandidate.lifecycleStage === 'DEMO_LIVE_EVALUATING' && (
+                        <span className="text-[9px] text-purple-400 animate-pulse flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-purple-400 animate-ping"></span>
+                          خەریکی کۆکردنەوەی داتای لایڤە
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-center font-mono text-[10px]">
+                      <div className="bg-slate-950 p-2 rounded border border-slate-850">
+                        <span className="text-slate-500 block text-[8px]">Sharpe Ratio</span>
+                        <span className={`font-bold text-xs ${
+                          (activeCandidate.liveDemoMetrics?.SharpeRatio || 0) >= 1.25 ? 'text-emerald-400' : 'text-slate-300'
+                        }`}>
+                          {activeCandidate.liveDemoMetrics?.SharpeRatio?.toFixed(2) || '0.00'}
+                        </span>
+                      </div>
+                      <div className="bg-slate-950 p-2 rounded border border-slate-850">
+                        <span className="text-slate-500 block text-[8px]">Max Drawdown</span>
+                        <span className={`font-bold text-xs ${
+                          (activeCandidate.liveDemoMetrics?.maxDrawdown || 0) < 3.5 ? 'text-emerald-400' : 'text-rose-400'
+                        }`}>
+                          {activeCandidate.liveDemoMetrics?.maxDrawdown?.toFixed(2) || '0.00'}%
+                        </span>
+                      </div>
+                      <div className="bg-slate-950 p-2 rounded border border-slate-850">
+                        <span className="text-slate-500 block text-[8px]">Simulated Trades</span>
+                        <span className="font-bold text-xs text-slate-300">
+                          {activeCandidate.liveDemoMetrics?.tradesCount || 0}
+                        </span>
+                      </div>
+                      <div className="bg-slate-950 p-2 rounded border border-slate-850">
+                        <span className="text-slate-500 block text-[8px]">Tick Count</span>
+                        <span className="font-bold text-xs text-purple-400">
+                          {activeCandidate.liveDemoMetrics?.evaluationTicks || 0} / 20
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Sovereign Mind recommendation */}
+                {activeCandidate.mindRecommendation && (
+                  <div className={`p-3 rounded-lg space-y-2 text-right border ${
+                    activeCandidate.mindRecommendation.recommended 
+                      ? 'bg-purple-950/20 border-purple-500/20 text-slate-300' 
+                      : 'bg-rose-950/20 border-rose-500/30 text-rose-100'
+                  }`}>
+                    <div className={`flex items-center gap-1.5 font-bold text-[10px] ${
+                      activeCandidate.mindRecommendation.recommended ? 'text-purple-400' : 'text-rose-400'
+                    }`}>
+                      <Brain className="w-3.5 h-3.5" />
+                      <span>🧠 ڕاسپاردەی فەرمی Sovereign Mind (Confidence Assessment)</span>
+                    </div>
+                    <p className="text-[10px] leading-relaxed pr-5">
+                      {activeCandidate.mindRecommendation.reasoning}
+                    </p>
+                    <div className="text-[8px] text-slate-500 pr-5 font-mono">
+                      بڕیاردرا لە: {new Date(activeCandidate.mindRecommendation.timestamp).toLocaleString()} | ڕاسپاردە: {
+                        activeCandidate.mindRecommendation.recommended 
+                          ? 'Recommended (CONFIDENT)' 
+                          : 'Review Required / NOT RECOMMENDED'
+                      }
+                    </div>
+                  </div>
+                )}
+
+                {/* Two-step confirmation controls */}
+                {activeCandidate.lifecycleStage === 'AWAITING_HUMAN_CONFIRMATION' && (
+                  <div className="space-y-3 pt-2">
+                    <div className="bg-amber-950/20 border border-amber-500/20 p-3 rounded-lg text-[10px] text-slate-300 leading-normal">
+                      <p className="text-amber-400 font-bold flex items-center gap-1 mb-1">
+                        <ShieldAlert className="w-4 h-4" /> سیستەمی دوو-قۆناغی پشتڕاستکردنەوەی مرۆڤ (Two-Step Safety Gate)
+                      </p>
+                      پێشنیاری بڕیاردەر لە لایەن Sovereign Mind تەنها فلتەرە. بۆ خستنەکاری سەرمایەی ڕاستەقینە و چالاککردنی لەسەر ئەکاونتی REAL_LIVE، پێویستە جێبەجێکار بە شێوەیەکی دەستی ڕێگەپێدان بدات.
+                    </div>
+
+                    {activeCandidate.mindRecommendation && !activeCandidate.mindRecommendation.recommended && (
+                      <div className="p-3.5 bg-rose-950/45 border-2 border-rose-500 rounded-xl text-right space-y-2 animate-pulse" dir="rtl">
+                        <div className="flex items-center gap-2 justify-end text-rose-400 font-extrabold text-[11px]">
+                          <ShieldAlert className="w-4 h-4 text-rose-400" />
+                          <span>⚠️ ئاگاداری زۆر گرنگ: ئەم کاندیدە ڕاسپاردە نەکراوە! (NOT RECOMMENDED)</span>
+                        </div>
+                        <p className="text-[10px] text-rose-100 font-sans font-medium pr-5">
+                          {activeCandidate.mindRecommendation.reasoning}
+                        </p>
+                        <div className="text-[9.5px] text-rose-300/90 font-bold pr-5 border-t border-rose-900/40 pt-1.5">
+                          [CRITICAL WARNING] Sovereign Mind has flagged this candidate as UNSAFE or parsing has failed. Default safety protocols recommend REJECTION. Manual override will bypass this assessment and expose capital.
+                        </div>
+                      </div>
+                    )}
+
+                    {promotionMessage && (
+                      <div className="bg-slate-950 p-2 rounded border border-slate-800 text-[10px] font-mono text-center text-amber-400">
+                        {promotionMessage}
+                      </div>
+                    )}
+
+                    <div className="flex gap-2">
+                      {promotionStep !== 2 ? (
+                        <button
+                          onClick={() => handlePromoteCandidate(activeCandidate.id, 1)}
+                          disabled={isPromoting}
+                          className="flex-1 py-2 px-3 bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow"
+                        >
+                          {isPromoting ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Brain className="w-3.5 h-3.5" />}
+                          <span>دەستپێکردنی پشتڕاستکردنەوە (Step 1 of 2)</span>
+                        </button>
+                      ) : (
+                        <div className="w-full space-y-2">
+                          <button
+                            onClick={() => handlePromoteCandidate(activeCandidate.id, 2)}
+                            disabled={isPromoting}
+                            className="w-full py-2.5 px-3 bg-rose-600 hover:bg-rose-500 text-white font-black text-xs rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-lg animate-pulse"
+                          >
+                            {isPromoting ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Zap className="w-3.5 h-3.5" />}
+                            <span>پشتڕاستکردنەوە و گواستنەوە بۆ REAL_LIVE (Release Capital)</span>
+                          </button>
+                          <button
+                            onClick={() => {
+                              setPromotionStep(null);
+                              setPromotionMessage('');
+                            }}
+                            className="w-full py-1 text-slate-400 hover:text-slate-200 text-[10px] transition-all"
+                          >
+                            پاشگەزبوونەوە / لۆککردنەوەی سەرمایە
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Already promoted indicator */}
+                {activeCandidate.lifecycleStage === 'PROMOTED_REAL_LIVE' && (
+                  <div className="bg-emerald-950/30 border border-emerald-500/20 p-3 rounded-lg text-[10px] text-emerald-400 flex items-center gap-2 justify-center">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400 animate-pulse" />
+                    <span className="font-bold">ئەم مۆدێلە لە ئێستادا لەسەر ئەکاونتی ڕاستەقینە (REAL_LIVE) چالاکە و سەرمایەی لەسەرە!</span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Action Button */}
+            <button
+              id="btn-trigger-pipeline"
+              disabled={pipelineState !== 'IDLE' && pipelineState !== 'FINISHED'}
+              onClick={handleRunPipeline}
+              className="w-full py-3 border border-purple-500 bg-purple-600 hover:bg-purple-500 text-white disabled:opacity-35 disabled:cursor-not-allowed rounded-lg font-bold text-xs flex items-center justify-center space-x-2 transition-all cursor-pointer shadow-lg shadow-purple-950/40"
+            >
+              <Play className="w-4 h-4" />
+              <span>کۆمپایلکردن و پشکنینی سانبۆکسی فەرمی</span>
+            </button>
+          </div>
+
+          {/* Right Column: Interactive Compile Stepper & Sandbox Log Terminal */}
+          <div id="compiler-stepper-and-console" className="lg:col-span-7 flex flex-col bg-slate-950 border border-slate-800 rounded-xl overflow-hidden min-h-[420px]">
+            
+            {/* Step Flow Bar */}
+            <div className="grid grid-cols-4 border-b border-slate-800 bg-slate-900/40 text-center text-[10px] font-mono text-slate-400">
+              
+              <div className={`py-3.5 border-r border-slate-800 flex flex-col items-center justify-center ${
+                pipelineState === 'STEP_1_AST' ? 'bg-purple-950/20 text-purple-400 font-bold' : ''
+              }`}>
+                <span className="block mb-0.5">STEP 1</span>
+                <span>Static AST Scan</span>
+              </div>
+
+              <div className={`py-3.5 border-r border-slate-800 flex flex-col items-center justify-center ${
+                pipelineState === 'STEP_2_COMPILE' ? 'bg-purple-950/20 text-purple-400 font-bold' : ''
+              }`}>
+                <span className="block mb-0.5">STEP 2</span>
+                <span>G++ Sandbox</span>
+              </div>
+
+              <div className={`py-3.5 border-r border-slate-800 flex flex-col items-center justify-center ${
+                pipelineState === 'STEP_3_VALGRIND' ? 'bg-purple-950/20 text-purple-400 font-bold' : ''
+              }`}>
+                <span className="block mb-0.5">STEP 3</span>
+                <span>Valgrind Leak</span>
+              </div>
+
+              <div className={`py-3.5 flex flex-col items-center justify-center ${
+                pipelineState === 'STEP_4_RELOAD' ? 'bg-purple-950/20 text-purple-400 font-bold' : ''
+              }`}>
+                <span className="block mb-0.5">STEP 4</span>
+                <span>Hot Swap Link</span>
+              </div>
+
+            </div>
+
+            {/* Log Window Terminal */}
+            <div className="flex-1 flex flex-col bg-[#030611] overflow-hidden min-h-[300px]">
+              {/* Terminal control bar */}
+              <div className="flex items-center justify-between px-4 py-2 bg-slate-950 border-b border-slate-900 text-slate-500 text-xs font-mono">
+                <div className="flex items-center space-x-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-red-500/70"></span>
+                  <span className="w-2.5 h-2.5 rounded-full bg-yellow-500/70"></span>
+                  <span className="w-2.5 h-2.5 rounded-full bg-green-500/70"></span>
+                  <span className="ml-2 text-slate-400">evolution_sandbox_stdout.log</span>
+                </div>
+                
+                {/* Status indicators */}
+                {pipelineState !== 'IDLE' && pipelineState !== 'FINISHED' && (
+                  <div className="flex items-center space-x-2 text-purple-400 animate-pulse">
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>EVALUATING...</span>
+                  </div>
+                )}
+                {pipelineState === 'FINISHED' && pipelineSuccess === true && (
+                  <div className="flex items-center space-x-1.5 text-emerald-400 font-bold">
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>PASSED</span>
+                  </div>
+                )}
+                {pipelineState === 'FINISHED' && pipelineSuccess === false && (
+                  <div className="flex items-center space-x-1.5 text-rose-500 font-bold">
+                    <XCircle className="w-4 h-4" />
+                    <span>SAFETY REJECTED</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Code outputs */}
+              <div 
+                ref={termRef}
+                className="flex-1 p-5 overflow-y-auto font-mono text-xs text-slate-300 space-y-2 select-text"
+              >
+                {terminalOutput.length === 0 ? (
+                  <div className="text-slate-500 italic h-full flex flex-col justify-center items-center text-center p-8">
+                    <Terminal className="w-12 h-12 text-slate-700 mb-2.5" />
+                    <p className="font-sans text-slate-400 font-bold">کۆنسۆلی سانبۆکس بێدەنگە</p>
+                    <p className="font-sans text-[10px] text-slate-500 mt-1 max-w-sm">
+                      دوگمەی "کۆمپایلکردن و پشکنینی سانبۆکس" لێبدە بۆ لێکدانەوەی لایڤ، جێبەجێکردنی نەخشەکان، و پشکنینی یادگە بە Valgrind.
+                    </p>
+                  </div>
+                ) : (
+                  terminalOutput.map((line, idx) => (
+                    <div key={idx} className="whitespace-pre-wrap leading-relaxed border-b border-slate-900/20 pb-1 text-left" dir="ltr">
+                      {line}
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
+            {/* Safety Guardrail Summary Panel */}
+            <div className="p-4 bg-slate-900 border-t border-slate-800 grid grid-cols-2 gap-4 text-xs text-right" dir="rtl">
+              <div>
+                <span className="text-slate-400 font-bold block mb-1">سیستەمی پاراستنی GCC</span>
+                <span className="font-mono text-[10px] text-slate-500 block">
+                  -O3 -Wall -Werror -fsanitize=address,undefined -shared -fPIC
                 </span>
               </div>
-
-              {/* DEMO LIVE real-time metrics */}
-              {(activeCandidate.liveDemoMetrics || activeCandidate.lifecycleStage === 'DEMO_LIVE_EVALUATING') && (
-                <div className="space-y-2">
-                  <div className="flex justify-between items-center">
-                    <h4 className="text-[11px] font-bold text-slate-300">ئامارەکانی بازرگانی تاقیکاری لایڤ (DEMO_LIVE Market Performance)</h4>
-                    {activeCandidate.lifecycleStage === 'DEMO_LIVE_EVALUATING' && (
-                      <span className="text-[9px] text-purple-400 animate-pulse flex items-center gap-1">
-                        <span className="w-1.5 h-1.5 rounded-full bg-purple-400 animate-ping"></span>
-                        خەریکی کۆکردنەوەی داتای لایڤە
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-center font-mono text-[10px]">
-                    <div className="bg-slate-950 p-2 rounded border border-slate-850">
-                      <span className="text-slate-500 block text-[8px]">Sharpe Ratio</span>
-                      <span className={`font-bold text-xs ${
-                        (activeCandidate.liveDemoMetrics?.SharpeRatio || 0) >= 1.25 ? 'text-emerald-400' : 'text-slate-300'
-                      }`}>
-                        {activeCandidate.liveDemoMetrics?.SharpeRatio?.toFixed(2) || '0.00'}
-                      </span>
-                    </div>
-                    <div className="bg-slate-950 p-2 rounded border border-slate-850">
-                      <span className="text-slate-500 block text-[8px]">Max Drawdown</span>
-                      <span className={`font-bold text-xs ${
-                        (activeCandidate.liveDemoMetrics?.maxDrawdown || 0) < 3.5 ? 'text-emerald-400' : 'text-rose-400'
-                      }`}>
-                        {activeCandidate.liveDemoMetrics?.maxDrawdown?.toFixed(2) || '0.00'}%
-                      </span>
-                    </div>
-                    <div className="bg-slate-950 p-2 rounded border border-slate-850">
-                      <span className="text-slate-500 block text-[8px]">Simulated Trades</span>
-                      <span className="font-bold text-xs text-slate-300">
-                        {activeCandidate.liveDemoMetrics?.tradesCount || 0}
-                      </span>
-                    </div>
-                    <div className="bg-slate-950 p-2 rounded border border-slate-850">
-                      <span className="text-slate-500 block text-[8px]">Tick Count</span>
-                      <span className="font-bold text-xs text-purple-400">
-                        {activeCandidate.liveDemoMetrics?.evaluationTicks || 0} / 20
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Sovereign Mind recommendation */}
-              {activeCandidate.mindRecommendation && (
-                <div className={`p-3 rounded-lg space-y-2 text-right border ${
-                  activeCandidate.mindRecommendation.recommended 
-                    ? 'bg-purple-950/20 border-purple-500/20 text-slate-300' 
-                    : 'bg-rose-950/20 border-rose-500/30 text-rose-100'
-                }`}>
-                  <div className={`flex items-center gap-1.5 font-bold text-[10px] ${
-                    activeCandidate.mindRecommendation.recommended ? 'text-purple-400' : 'text-rose-400'
-                  }`}>
-                    <Brain className="w-3.5 h-3.5" />
-                    <span>🧠 ڕاسپاردەی فەرمی Sovereign Mind (Confidence Assessment)</span>
-                  </div>
-                  <p className="text-[10px] leading-relaxed pr-5">
-                    {activeCandidate.mindRecommendation.reasoning}
-                  </p>
-                  <div className="text-[8px] text-slate-500 pr-5 font-mono">
-                    بڕیاردرا لە: {new Date(activeCandidate.mindRecommendation.timestamp).toLocaleString()} | ڕاسپاردە: {
-                      activeCandidate.mindRecommendation.recommended 
-                        ? 'Recommended (CONFIDENT)' 
-                        : 'Review Required / NOT RECOMMENDED'
-                    }
-                  </div>
-                </div>
-              )}
-
-              {/* Two-step confirmation controls */}
-              {activeCandidate.lifecycleStage === 'AWAITING_HUMAN_CONFIRMATION' && (
-                <div className="space-y-3 pt-2">
-                  <div className="bg-amber-950/20 border border-amber-500/20 p-3 rounded-lg text-[10px] text-slate-300 leading-normal">
-                    <p className="text-amber-400 font-bold flex items-center gap-1 mb-1">
-                      <ShieldAlert className="w-4 h-4" /> سیستەمی دوو-قۆناغی پشتڕاستکردنەوەی مرۆڤ (Two-Step Safety Gate)
-                    </p>
-                    پێشنیاری بڕیاردەر لە لایەن Sovereign Mind تەنها فلتەرە. بۆ خستنەکاری سەرمایەی ڕاستەقینە و چالاککردنی لەسەر ئەکاونتی REAL_LIVE، پێویستە جێبەجێکار بە شێوەیەکی دەستی ڕێگەپێدان بدات.
-                  </div>
-
-                  {activeCandidate.mindRecommendation && !activeCandidate.mindRecommendation.recommended && (
-                    <div className="p-3.5 bg-rose-950/45 border-2 border-rose-500 rounded-xl text-right space-y-2 animate-pulse" dir="rtl">
-                      <div className="flex items-center gap-2 justify-end text-rose-400 font-extrabold text-[11px]">
-                        <ShieldAlert className="w-4 h-4 text-rose-400" />
-                        <span>⚠️ ئاگاداری زۆر گرنگ: ئەم کاندیدە ڕاسپاردە نەکراوە! (NOT RECOMMENDED)</span>
-                      </div>
-                      <p className="text-[10px] text-rose-100 font-sans font-medium pr-5">
-                        {activeCandidate.mindRecommendation.reasoning}
-                      </p>
-                      <div className="text-[9.5px] text-rose-300/90 font-bold pr-5 border-t border-rose-900/40 pt-1.5">
-                        [CRITICAL WARNING] Sovereign Mind has flagged this candidate as UNSAFE or parsing has failed. Default safety protocols recommend REJECTION. Manual override will bypass this assessment and expose capital.
-                      </div>
-                    </div>
-                  )}
-
-                  {promotionMessage && (
-                    <div className="bg-slate-950 p-2 rounded border border-slate-800 text-[10px] font-mono text-center text-amber-400">
-                      {promotionMessage}
-                    </div>
-                  )}
-
-                  <div className="flex gap-2">
-                    {promotionStep !== 2 ? (
-                      <button
-                        onClick={() => handlePromoteCandidate(activeCandidate.id, 1)}
-                        disabled={isPromoting}
-                        className="flex-1 py-2 px-3 bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow"
-                      >
-                        {isPromoting ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Brain className="w-3.5 h-3.5" />}
-                        <span>دەستپێکردنی پشتڕاستکردنەوە (Step 1 of 2)</span>
-                      </button>
-                    ) : (
-                      <div className="w-full space-y-2">
-                        <button
-                          onClick={() => handlePromoteCandidate(activeCandidate.id, 2)}
-                          disabled={isPromoting}
-                          className="w-full py-2.5 px-3 bg-rose-600 hover:bg-rose-500 text-white font-black text-xs rounded-lg transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-lg animate-pulse"
-                        >
-                          {isPromoting ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Zap className="w-3.5 h-3.5" />}
-                          <span>پشتڕاستکردنەوە و گواستنەوە بۆ REAL_LIVE (Release Capital)</span>
-                        </button>
-                        <button
-                          onClick={() => {
-                            setPromotionStep(null);
-                            setPromotionMessage('');
-                          }}
-                          className="w-full py-1 text-slate-400 hover:text-slate-200 text-[10px] transition-all"
-                        >
-                          پاشگەزبوونەوە / لۆککردنەوەی سەرمایە
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {/* Already promoted indicator */}
-              {activeCandidate.lifecycleStage === 'PROMOTED_REAL_LIVE' && (
-                <div className="bg-emerald-950/30 border border-emerald-500/20 p-3 rounded-lg text-[10px] text-emerald-400 flex items-center gap-2 justify-center">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400 animate-pulse" />
-                  <span className="font-bold">ئەم مۆدێلە لە ئێستادا لەسەر ئەکاونتی ڕاستەقینە (REAL_LIVE) چالاکە و سەرمایەی لەسەرە!</span>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Action Button */}
-          <button
-            id="btn-trigger-pipeline"
-            disabled={pipelineState !== 'IDLE' && pipelineState !== 'FINISHED'}
-            onClick={handleRunPipeline}
-            className="w-full py-3 border border-purple-500 bg-purple-600 hover:bg-purple-500 text-white disabled:opacity-35 disabled:cursor-not-allowed rounded-lg font-bold text-xs flex items-center justify-center space-x-2 transition-all cursor-pointer shadow-lg shadow-purple-950/40"
-          >
-            <Play className="w-4 h-4" />
-            <span>کۆمپایلکردن و پشکنینی سانبۆکسی فەرمی</span>
-          </button>
-        </div>
-
-        {/* Right Column: Interactive Compile Stepper & Sandbox Log Terminal */}
-        <div id="compiler-stepper-and-console" className="lg:col-span-7 flex flex-col bg-slate-950 border border-slate-800 rounded-xl overflow-hidden min-h-[420px]">
-          
-          {/* Step Flow Bar */}
-          <div className="grid grid-cols-4 border-b border-slate-800 bg-slate-900/40 text-center text-[10px] font-mono text-slate-400">
-            
-            <div className={`py-3.5 border-r border-slate-800 flex flex-col items-center justify-center ${
-              pipelineState === 'STEP_1_AST' ? 'bg-purple-950/20 text-purple-400 font-bold' : ''
-            }`}>
-              <span className="block mb-0.5">STEP 1</span>
-              <span>Static AST Scan</span>
-            </div>
-
-            <div className={`py-3.5 border-r border-slate-800 flex flex-col items-center justify-center ${
-              pipelineState === 'STEP_2_COMPILE' ? 'bg-purple-950/20 text-purple-400 font-bold' : ''
-            }`}>
-              <span className="block mb-0.5">STEP 2</span>
-              <span>G++ Sandbox</span>
-            </div>
-
-            <div className={`py-3.5 border-r border-slate-800 flex flex-col items-center justify-center ${
-              pipelineState === 'STEP_3_VALGRIND' ? 'bg-purple-950/20 text-purple-400 font-bold' : ''
-            }`}>
-              <span className="block mb-0.5">STEP 3</span>
-              <span>Valgrind Leak</span>
-            </div>
-
-            <div className={`py-3.5 flex flex-col items-center justify-center ${
-              pipelineState === 'STEP_4_RELOAD' ? 'bg-purple-950/20 text-purple-400 font-bold' : ''
-            }`}>
-              <span className="block mb-0.5">STEP 4</span>
-              <span>Hot Swap Link</span>
-            </div>
-
-          </div>
-
-          {/* Log Window Terminal */}
-          <div className="flex-1 flex flex-col bg-[#030611] overflow-hidden min-h-[300px]">
-            {/* Terminal control bar */}
-            <div className="flex items-center justify-between px-4 py-2 bg-slate-950 border-b border-slate-900 text-slate-500 text-xs font-mono">
-              <div className="flex items-center space-x-2">
-                <span className="w-2.5 h-2.5 rounded-full bg-red-500/70"></span>
-                <span className="w-2.5 h-2.5 rounded-full bg-yellow-500/70"></span>
-                <span className="w-2.5 h-2.5 rounded-full bg-green-500/70"></span>
-                <span className="ml-2 text-slate-400">evolution_sandbox_stdout.log</span>
+              <div>
+                <span className="text-slate-400 font-bold block mb-1">یاسا بەهێزەکانی فلتەرکردنی AST</span>
+                <span className="font-mono text-[10px] text-slate-500 block">
+                  تەواوی نەخشە مەترسیدارەکانی وەک system(), popen(), fork() و مەلەفەکان بلۆک دەکات.
+                </span>
               </div>
-              
-              {/* Status indicators */}
-              {pipelineState !== 'IDLE' && pipelineState !== 'FINISHED' && (
-                <div className="flex items-center space-x-2 text-purple-400 animate-pulse">
-                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                  <span>EVALUATING...</span>
-                </div>
-              )}
-              {pipelineState === 'FINISHED' && pipelineSuccess === true && (
-                <div className="flex items-center space-x-1.5 text-emerald-400 font-bold">
-                  <CheckCircle2 className="w-4 h-4" />
-                  <span>PASSED</span>
-                </div>
-              )}
-              {pipelineState === 'FINISHED' && pipelineSuccess === false && (
-                <div className="flex items-center space-x-1.5 text-rose-500 font-bold">
-                  <XCircle className="w-4 h-4" />
-                  <span>SAFETY REJECTED</span>
-                </div>
-              )}
             </div>
 
-            {/* Code outputs */}
-            <div 
-              ref={termRef}
-              className="flex-1 p-5 overflow-y-auto font-mono text-xs text-slate-300 space-y-2 select-text"
-            >
-              {terminalOutput.length === 0 ? (
-                <div className="text-slate-500 italic h-full flex flex-col justify-center items-center text-center p-8">
-                  <Terminal className="w-12 h-12 text-slate-700 mb-2.5" />
-                  <p className="font-sans text-slate-400 font-bold">کۆنسۆلی سانبۆکس بێدەنگە</p>
-                  <p className="font-sans text-[10px] text-slate-500 mt-1 max-w-sm">
-                    دوگمەی "کۆمپایلکردن و پشکنینی سانبۆکس" لێبدە بۆ لێکدانەوەی لایڤ، جێبەجێکردنی نەخشەکان، و پشکنینی یادگە بە Valgrind.
+          </div>
+        </div>
+      ) : (
+        <div id="synthesis-hub-container" className="space-y-6 animate-fade-in">
+          {/* Top Level Stats Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+            <div className="p-4 bg-slate-900 border border-slate-800 rounded-xl text-right" dir="rtl">
+              <span className="text-[10px] text-slate-500 font-bold uppercase block tracking-wider">سەرجەم هەوڵەکانی پەرەپێدان</span>
+              <span className="text-2xl font-bold font-mono text-purple-400 block mt-1">{synthesisData.stats.totalAttempts}</span>
+            </div>
+            <div className="p-4 bg-slate-900 border border-slate-800 rounded-xl text-right" dir="rtl">
+              <span className="text-[10px] text-slate-500 font-bold uppercase block tracking-wider">کاندیدی سەرکەوتوو (Outperformed)</span>
+              <span className="text-2xl font-bold font-mono text-emerald-400 block mt-1">{synthesisData.stats.outperformedCount}</span>
+            </div>
+            <div className="p-4 bg-slate-900 border border-slate-800 rounded-xl text-right" dir="rtl">
+              <span className="text-[10px] text-slate-500 font-bold uppercase block tracking-wider">کاندیدی کەم-چالاک (Underperformed)</span>
+              <span className="text-2xl font-bold font-mono text-rose-400 block mt-1">{synthesisData.stats.underperformedCount}</span>
+            </div>
+            <div className="p-4 bg-slate-900 border border-slate-800 rounded-xl text-right" dir="rtl">
+              <span className="text-[10px] text-slate-500 font-bold uppercase block tracking-wider">بێکاریگەری یان نەگۆڕاو (Neutral)</span>
+              <span className="text-2xl font-bold font-mono text-slate-400 block mt-1">{synthesisData.stats.neutralCount}</span>
+            </div>
+          </div>
+
+          {/* Action trigger bar */}
+          <div className="p-5 bg-gradient-to-r from-purple-950/30 via-slate-950 to-slate-950 border border-purple-900/30 rounded-xl text-right" dir="rtl">
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+              <div className="flex items-start space-x-3 space-x-reverse">
+                <div className="p-2.5 bg-purple-950/80 border border-purple-500/20 rounded-lg text-purple-400">
+                  <Sparkles className="w-5 h-5 animate-pulse" />
+                </div>
+                <div>
+                  <h4 className="text-sm font-bold text-slate-100 uppercase tracking-wide">دەستپێکردنی گەڕی نوێی لێکدان و پەرەپێدانی بیرۆکەکان (Synthesis Layer)</h4>
+                  <p className="text-xs text-slate-400 mt-1">
+                    بە کرتەکردن لەسەر دوگمەی خوارەوە، بزوێنەری Gemini بە قووڵی لێکۆڵینەوە لە ژوورناڵی گریمانەکان و تەکنیکەکانی گیتھەب دەکات، و باشترین و تەواوکەرترین بیرۆکەکان بەیەکەوە گرێدەدات.
                   </p>
                 </div>
-              ) : (
-                terminalOutput.map((line, idx) => (
-                  <div key={idx} className="whitespace-pre-wrap leading-relaxed border-b border-slate-900/20 pb-1 text-left" dir="ltr">
-                    {line}
+              </div>
+              <button
+                onClick={handleTriggerSynthesis}
+                disabled={isSynthesizing}
+                className="px-5 py-2.5 bg-purple-600 hover:bg-purple-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold text-xs rounded-lg transition-all flex items-center gap-2"
+              >
+                {isSynthesizing ? (
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Sparkles className="w-4 h-4" />
+                )}
+                <span>دەستپێکردنی پەرەپێدان (Run Synthesis)</span>
+              </button>
+            </div>
+
+            {/* Micro console output */}
+            {(isSynthesizing || synthesisLog) && (
+              <div className="mt-4 pt-4 border-t border-slate-900">
+                <div className="flex items-center gap-2 mb-2 justify-end">
+                  <span className="text-[10px] text-slate-500 uppercase font-mono">باری بزوێنەری پەرەپێدانی بیرۆکەکان (Synthesis Engine Live Feed)</span>
+                  <span className="w-2 h-2 rounded-full bg-purple-500 animate-ping"></span>
+                </div>
+                <div className="bg-slate-950/80 border border-slate-900 rounded p-3 font-mono text-[10px] text-left text-slate-300 space-y-1 h-24 overflow-y-auto">
+                  <div className="flex gap-1">
+                    <span className="text-purple-400">&gt;&gt;</span>
+                    <span>{synthesisLog}</span>
                   </div>
-                ))
-              )}
-            </div>
+                  {synthesisResult && synthesisResult.map((res: any, idx: number) => (
+                    <div key={idx} className="flex gap-2 text-emerald-400 pl-4">
+                      <span>✓</span>
+                      <span>سەرکەوتوو: کاندیدی نوێی {res.name} دروست کرا و تاقیکرایەوە. ئەنجام: {res.outcome}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
-          {/* Safety Guardrail Summary Panel */}
-          <div className="p-4 bg-slate-900 border-t border-slate-800 grid grid-cols-2 gap-4 text-xs text-right" dir="rtl">
-            <div>
-              <span className="text-slate-400 font-bold block mb-1">سیستەمی پاراستنی GCC</span>
-              <span className="font-mono text-[10px] text-slate-500 block">
-                -O3 -Wall -Werror -fsanitize=address,undefined -shared -fPIC
-              </span>
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            {/* Left side: Attempts table / History */}
+            <div className="lg:col-span-7 bg-slate-950 border border-slate-800 rounded-xl p-5 text-right" dir="rtl">
+              <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1 flex items-center gap-1.5 justify-end">
+                <Clock className="w-4 h-4 text-purple-400" />
+                مێژووی پەرەپێدان و لێکدانەوەکان (Synthesis Registry)
+              </h3>
+              <p className="text-[11px] text-slate-500 mb-4">تەواوی هەوڵەکانی پێشوو بۆ گرێدانی لۆجیکەکان لەگەڵ دەرئەنجامەکانیان لەم بەشەدا تۆمار کراون.</p>
+
+              <div className="space-y-4 max-h-[550px] overflow-y-auto pr-1">
+                {synthesisData.attempts.length === 0 ? (
+                  <div className="text-center py-10 text-xs text-slate-600 italic">ھیچ هەوڵێکی لێکدان لە ژێرخانەکەدا جێبەجێ نەکراوە تا ئێستا.</div>
+                ) : (
+                  synthesisData.attempts.map((attempt: any) => (
+                    <div key={attempt.id} className="p-4 bg-slate-900 border border-slate-850 rounded-lg space-y-3">
+                      <div className="flex justify-between items-center">
+                        <span className={`text-[9px] px-2 py-0.5 rounded font-bold font-mono ${
+                          attempt.outcome === 'OUTPERFORMED'
+                            ? 'bg-emerald-950 text-emerald-400 border border-emerald-900'
+                            : attempt.outcome === 'UNDERPERFORMED'
+                            ? 'bg-rose-950 text-rose-400 border border-rose-900'
+                            : 'bg-slate-950 text-slate-400 border border-slate-900'
+                        }`}>
+                          {attempt.outcome}
+                        </span>
+                        <span className="text-[10px] text-slate-500 font-mono">
+                          {new Date(attempt.timestamp).toLocaleString('ku-IQ')}
+                        </span>
+                      </div>
+
+                      <div className="text-right">
+                        <span className="text-[11px] font-bold text-slate-300 block mb-1">فەلسەفەی لێکدان:</span>
+                        <p className="text-[10px] text-slate-400 leading-relaxed bg-slate-950/50 p-2 border border-slate-850 rounded">{attempt.reasoning}</p>
+                      </div>
+
+                      <div className="flex flex-wrap gap-1.5 justify-end mt-2">
+                        <span className="text-[10px] text-slate-500 font-bold self-center">بیرۆکە بەستراوەکان:</span>
+                        {JSON.parse(attempt.source_ideas || '[]').map((src: string, idx: number) => (
+                          <span key={idx} className="bg-slate-800 text-slate-300 text-[9px] px-2 py-0.5 rounded">
+                            {src}
+                          </span>
+                        ))}
+                      </div>
+
+                      <div className="text-[10px] text-slate-500 text-left font-mono bg-slate-950 p-2 rounded border border-slate-900">
+                        {attempt.validation_summary}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
             </div>
-            <div>
-              <span className="text-slate-400 font-bold block mb-1">یاسا بەهێزەکانی فلتەرکردنی AST</span>
-              <span className="font-mono text-[10px] text-slate-500 block">
-                تەواوی نەخشە مەترسیدارەکانی وەک system(), popen(), fork() و مەلەفەکان بلۆک دەکات.
-              </span>
+
+            {/* Right side: Active Hypotheses & Tech */}
+            <div className="lg:col-span-5 space-y-6">
+              {/* Hypothesis Journal card */}
+              <div className="bg-slate-950 border border-slate-800 rounded-xl p-5 text-right" dir="rtl">
+                <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1 flex items-center gap-1.5 justify-end">
+                  <Bookmark className="w-4 h-4 text-purple-400" />
+                  ژوورناڵی گریمانە چالاکەکان (Hypothesis Journal)
+                </h3>
+                <p className="text-[11px] text-slate-500 mb-4">لیستی ئەو گریمانە کوانتانەی کە لەلایەن کارەکتەر و ڕاهێنەرەکانەوە تۆمار کراون.</p>
+
+                <div className="space-y-3 max-h-[250px] overflow-y-auto pr-1">
+                  {synthesisData.hypotheses.map((hyp: any) => (
+                    <div key={hyp.id} className="p-3 bg-slate-900 border border-slate-850 rounded-lg">
+                      <div className="flex justify-between items-center mb-1.5">
+                        <span className="text-[9px] bg-purple-950/60 text-purple-400 px-1.5 py-0.5 rounded font-mono">{hyp.regime}</span>
+                        <span className="text-[10px] font-bold text-slate-200">{hyp.title}</span>
+                      </div>
+                      <p className="text-[10px] text-slate-400 leading-relaxed">{hyp.description}</p>
+                      <div className="text-left text-[9px] text-slate-500 mt-1 font-mono">Author: {hyp.author}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* GitHub Techniques card */}
+              <div className="bg-slate-950 border border-slate-800 rounded-xl p-5 text-right" dir="rtl">
+                <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-1 flex items-center gap-1.5 justify-end">
+                  <Github className="w-4 h-4 text-purple-400" />
+                  تەکنیکەکانی گیتھەب (GitHub Techniques)
+                </h3>
+                <p className="text-[11px] text-slate-500 mb-4">لیستی ئەو بابەت و مۆدیولانەی کە لە لێکۆڵینەوەکانی دەرەوە دۆزراونەتەوە.</p>
+
+                <div className="space-y-3 max-h-[250px] overflow-y-auto pr-1">
+                  {synthesisData.techniques.map((tech: any) => (
+                    <div key={tech.id} className="p-3 bg-slate-900 border border-slate-850 rounded-lg">
+                      <div className="flex justify-between items-center mb-1.5">
+                        <span className="text-[9px] bg-emerald-950 text-emerald-400 px-1.5 py-0.5 rounded font-mono">{tech.licensing}</span>
+                        <span className="text-[10px] font-bold text-slate-200">{tech.title}</span>
+                      </div>
+                      <p className="text-[10px] text-slate-400 leading-relaxed">{tech.description}</p>
+                      <div className="text-left text-[9px] text-slate-500 mt-1 font-mono">ID: {tech.id}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
-
         </div>
-      </div>
+      )}
 
       {/* AI Live Model Continuous Training Engine Panel */}
       <div id="ai-live-training-panel" className="p-5 bg-gradient-to-r from-slate-950 via-slate-950 to-purple-950/20 border border-slate-800 rounded-xl space-y-5">

@@ -62,6 +62,11 @@ export interface EvolutionCandidate {
     reasoning: string;
     timestamp: string;
   };
+  lineage?: {
+    sources: string[];
+    reasoning: string;
+    parentIds?: string[];
+  };
 }
 
 export interface ArchitectureComponent {

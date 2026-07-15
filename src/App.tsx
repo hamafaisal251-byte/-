@@ -4,7 +4,7 @@
  */
 
 import { useState, useEffect } from 'react';
-import { Cpu, Shuffle, Target, ShieldAlert, Sliders, Zap, Activity, Info, ShieldCheck, Brain, Award, BarChart3, ArrowUpDown } from 'lucide-react';
+import { Cpu, Shuffle, Target, ShieldAlert, Sliders, Zap, Activity, Info, ShieldCheck, Brain, Award, BarChart3, ArrowUpDown, GitPullRequest } from 'lucide-react';
 import ArchitectureMap from './components/ArchitectureMap';
 import RewardPlayground from './components/RewardPlayground';
 import TelemetrySimulator from './components/TelemetrySimulator';
@@ -19,9 +19,10 @@ import SafetyBackstopPanel from './components/SafetyBackstopPanel';
 import DrlEnsemblePanel from './components/DrlEnsemblePanel';
 import PortfolioRiskPanel from './components/PortfolioRiskPanel';
 import DemoLiveObservationPanel from './components/DemoLiveObservationPanel';
+import CodePipelinePanel from './components/CodePipelinePanel';
 import { EvolutionCandidate } from './types/quant';
 
-type TabId = 'architecture' | 'telemetry' | 'evolution' | 'risk-broker' | 'portfolio-risk' | 'alien-brain' | 'reward-playground' | 'backtest-arena' | 'ai-pilot-lab' | 'self-improvement-log' | 'arbitrage' | 'safety-backstop' | 'ensemble' | 'demo-live';
+type TabId = 'architecture' | 'telemetry' | 'evolution' | 'risk-broker' | 'portfolio-risk' | 'alien-brain' | 'reward-playground' | 'backtest-arena' | 'ai-pilot-lab' | 'self-improvement-log' | 'arbitrage' | 'safety-backstop' | 'ensemble' | 'demo-live' | 'code-pipeline';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<TabId>('architecture');
@@ -412,6 +413,20 @@ export default function App() {
             <span className="font-bold">11. چاودێری دیمۆ-لایڤ | Demo-Live Observation</span>
           </button>
 
+          {/* Tab 12: Gated Code Change Pipeline */}
+          <button
+            id="tab-btn-code-pipeline"
+            onClick={() => setActiveTab('code-pipeline')}
+            className={`px-4 py-2.5 rounded-lg text-xs font-semibold font-mono flex items-center space-x-2 border transition-all cursor-pointer whitespace-nowrap ${
+              activeTab === 'code-pipeline'
+                ? 'bg-slate-900 border-purple-800 text-purple-250 shadow-sm shadow-purple-950/20'
+                : 'bg-transparent border-transparent text-purple-450 hover:text-purple-300'
+            }`}
+          >
+            <GitPullRequest className="w-4 h-4 shrink-0 text-purple-400 animate-pulse" />
+            <span className="font-bold">12. بۆری گۆڕینی کۆد | Code Change Pipeline</span>
+          </button>
+
         </div>
       </nav>
 
@@ -513,6 +528,7 @@ export default function App() {
           {activeTab === 'safety-backstop' && <SafetyBackstopPanel />}
           {activeTab === 'ensemble' && <DrlEnsemblePanel />}
           {activeTab === 'demo-live' && <DemoLiveObservationPanel />}
+          {activeTab === 'code-pipeline' && <CodePipelinePanel />}
         </div>
 
       </main>
