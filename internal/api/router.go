@@ -51,6 +51,23 @@ func SetupRouter(h *Handler) *gin.Engine {
 		protected.GET("/api/strategies/config", h.GetStrategiesConfig)
 		protected.POST("/api/strategies/config", h.UpdateStrategyConfig)
 
+		// AI Orchestration: Calibration
+		protected.GET("/api/calibration/summary", h.GetCalibrationSummary)
+		protected.POST("/api/calibration/trigger", h.TriggerCalibration)
+
+		// AI Orchestration: Value Discovery
+		protected.GET("/api/value-discovery/summary", h.GetValueDiscoverySummary)
+		protected.POST("/api/value-discovery/generate", h.GenerateHypothesis)
+		protected.POST("/api/value-discovery/test", h.TestHypothesis)
+		protected.POST("/api/value-discovery/promote", h.PromoteHypothesis)
+
+		// AI Orchestration: Deep Research
+		protected.GET("/api/deep-research/sessions", h.GetDeepResearchSessions)
+		protected.POST("/api/deep-research/run", h.RunDeepResearch)
+
+		// AI Orchestration: Self-Improvement / Synthesis
+		protected.POST("/api/synthesis/run", h.RunSelfImprovement)
+
 		// Demo Live Observation Period Runs
 		protected.GET("/api/demo-live/runs", h.GetDemoLiveRuns)
 		protected.POST("/api/demo-live/runs", h.CreateDemoLiveRun)
@@ -65,6 +82,20 @@ func SetupRouter(h *Handler) *gin.Engine {
 		protected.POST("/api/v1/control/halt", h.ManualHalt)
 		protected.POST("/api/control/resume", h.ManualResume)
 		protected.POST("/api/v1/control/resume", h.ManualResume)
+
+		// STAGE 3 & 6: TRADING, FIX & ARBITRAGE SYSTEM ROUTES
+		protected.GET("/api/fix/status", h.GetFIXStatus)
+		protected.POST("/api/fix/connect", h.ConnectFIX)
+		protected.POST("/api/fix/disconnect", h.DisconnectFIX)
+
+		protected.GET("/api/arbitrage/state", h.GetArbitrageState)
+		protected.POST("/api/arbitrage/compliance", h.UpdateArbitrageCompliance)
+		protected.POST("/api/arbitrage/toggle", h.ToggleArbitrage)
+		protected.POST("/api/arbitrage/set-threshold", h.SetArbitrageThreshold)
+		protected.GET("/api/arbitrage/logs", h.GetArbitrageLogs)
+		protected.POST("/api/arbitrage/clear", h.ClearArbitrage)
+
+		protected.GET("/api/risk/portfolio", h.GetPortfolioRisk)
 	}
 
 	return r

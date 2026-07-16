@@ -18,6 +18,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/proda-nexus/sovereign-trading/internal/ai"
 	"github.com/proda-nexus/sovereign-trading/internal/api"
 	"github.com/proda-nexus/sovereign-trading/internal/config"
 	"github.com/proda-nexus/sovereign-trading/internal/crypto"
@@ -64,6 +65,29 @@ func main() {
 	// Log initial start
 	api.AddServerLog("GO-BACKPLANE", "SUCCESS", "Sovereign Go HTTP API backend foundation started successfully.")
 
+	// 7b. Launch Scheduled cadences (Self-improvement & Calibration every 3 minutes)
+	go func() {
+		ticker := time.NewTicker(3 * time.Minute)
+		defer ticker.Stop()
+
+		// Run once on startup after 10 seconds delay to let migrations and DB settle
+		select {
+		case <-time.After(10 * time.Second):
+			runOrchestrationPass(ctx, pgDB)
+		case <-ctx.Done():
+			return
+		}
+
+		for {
+			select {
+			case <-ticker.C:
+				runOrchestrationPass(ctx, pgDB)
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+
 	// 7. Configure and launch the Server asynchronously
 	serverAddr := "0.0.0.0:" + cfg.Port
 	srv := &http.Server{
@@ -105,4 +129,26 @@ func main() {
 	}
 
 	log.Println("[SYSTEM] Safe shutdown complete. Process exiting.")
+}
+
+func runOrchestrationPass(ctx context.Context, pgDB *db.DB) {
+	log.Println("[BACKGROUND-ORCHESTRATION] Executing 3-minute scheduled AI Orchestration pass...")
+	gemini, err := ai.NewGeminiClient(ctx, "")
+	if err != nil {
+		log.Printf("[BACKGROUND-ORCHESTRATION-WARN] Gemini client offline: %v. Calibration & Self-Improvement paused.", err)
+		return
+	}
+	defer gemini.Close()
+
+	// 1. Run Calibration & Parameter Tuning
+	err = ai.RunCalibrationAnalysis(ctx, pgDB, api.AddServerLog)
+	if err != nil {
+		log.Printf("[BACKGROUND-ORCHESTRATION-ERROR] Calibration loop failed: %v", err)
+	}
+
+	// 2. Run Self-Improvement Loop
+	_, err = ai.RunSelfImprovementCycle(ctx, pgDB, gemini, api.AddServerLog)
+	if err != nil {
+		log.Printf("[BACKGROUND-ORCHESTRATION-ERROR] Self-improvement loop failed: %v", err)
+	}
 }

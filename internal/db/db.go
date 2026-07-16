@@ -287,6 +287,50 @@ func (db *DB) Initialize(ctx context.Context) error {
 	}
 	_, _ = db.Pool.Exec(ctx, "CREATE INDEX IF NOT EXISTS idx_calibration_analysis_time ON calibration_analysis(timestamp DESC)")
 
+	// 13b. Create Hypothesis Journal
+	hypothesisJournalSQL := `
+		CREATE TABLE IF NOT EXISTS hypothesis_journal (
+			id VARCHAR(100) PRIMARY KEY,
+			timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			title VARCHAR(255) NOT NULL,
+			description TEXT NOT NULL,
+			proposed_signal TEXT DEFAULT 'Default dynamic weight formula',
+			author VARCHAR(100) NOT NULL,
+			status VARCHAR(50) NOT NULL DEFAULT 'PENDING',
+			regime VARCHAR(100) NOT NULL,
+			p_value NUMERIC,
+			fdr_adjusted_p NUMERIC,
+			effect_size NUMERIC,
+			metrics JSONB NOT NULL DEFAULT '{}'::JSONB
+		)
+	`
+	if _, err := db.Pool.Exec(ctx, hypothesisJournalSQL); err != nil {
+		return err
+	}
+	_, _ = db.Pool.Exec(ctx, "CREATE INDEX IF NOT EXISTS idx_hypothesis_journal_time ON hypothesis_journal(timestamp DESC)")
+
+	// Seed initial hypothesis_journal if empty
+	var hjCount int
+	_ = db.Pool.QueryRow(ctx, "SELECT COUNT(*) FROM hypothesis_journal").Scan(&hjCount)
+	if hjCount == 0 {
+		_, _ = db.Pool.Exec(ctx, `
+			INSERT INTO hypothesis_journal (id, title, description, proposed_signal, author, status, regime, p_value, fdr_adjusted_p, effect_size, metrics)
+			VALUES (
+				'hyp_initial_calibration_shift', 
+				'US Session Close Momentum Reversal Shift', 
+				'Hypothesizes that EUR/USD momentum systematically shifts directions at the New York close (21:00 GMT) due to institutional settlement flows.', 
+				'Close-to-Open drift delta indicator coupled with volume standard deviation filter.', 
+				'Sovereign AI Systems', 
+				'PASSED_FDR', 
+				'Ranging Regimes', 
+				0.0125, 
+				0.035, 
+				0.85, 
+				'{"avgReward": 8.5, "volatility_spike": 1.2, "simulated_trades": 210}'::jsonb
+			)
+		`)
+	}
+
 	// 14. Create Model Registry Table
 	modelRegistrySQL := `
 		CREATE TABLE IF NOT EXISTS model_registry (

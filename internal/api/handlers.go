@@ -20,6 +20,7 @@ import (
 	"github.com/proda-nexus/sovereign-trading/internal/crypto"
 	"github.com/proda-nexus/sovereign-trading/internal/db"
 	"github.com/proda-nexus/sovereign-trading/internal/safety"
+	"github.com/proda-nexus/sovereign-trading/internal/trading"
 )
 
 var (
@@ -1196,5 +1197,342 @@ func (h *Handler) ManualResume(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"status":  "NOMINAL",
+ 	})
+}
+
+// ----------------------------------------------------------------------------
+// STAGE 3 & 6: ARBITRAGE, TRADING LOGS & FIX ENDPOINTS
+// ----------------------------------------------------------------------------
+
+// Get FIX Status
+func (h *Handler) GetFIXStatus(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{
+		"success":        true,
+		"status":         trading.FIXEngine.SessionStatus,
+		"targetCompId":   trading.FIXEngine.TargetCompID,
+		"senderCompId":   trading.FIXEngine.SenderCompID,
+		"inboundSeqNum":  trading.FIXEngine.InboundSeqNum,
+		"outboundSeqNum": trading.FIXEngine.OutboundSeqNum,
+		"logs":           trading.FIXEngine.FixLogs,
 	})
 }
+
+// Connect FIX Engine Session (performs honest login)
+type ConnectFIXInput struct {
+	TargetCompID string `json:"targetCompId"`
+	SenderCompID string `json:"senderCompId"`
+}
+
+func (h *Handler) ConnectFIX(c *gin.Context) {
+	var input ConnectFIXInput
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	trading.FIXEngine.ConfigureSession(input.TargetCompID, input.SenderCompID)
+	trading.FIXEngine.Logon(c.Request.Context(), h.DB)
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"status":  trading.FIXEngine.SessionStatus,
+	})
+}
+
+// Disconnect FIX Engine
+func (h *Handler) DisconnectFIX(c *gin.Context) {
+	trading.FIXEngine.Logout()
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"status":  trading.FIXEngine.SessionStatus,
+	})
+}
+
+// Get Arbitrage State
+func (h *Handler) GetArbitrageState(c *gin.Context) {
+	compliance := struct {
+		TosPermitted         bool `json:"tosPermitted"`
+		RegulationsPermitted bool `json:"regulationsPermitted"`
+		SandboxPassed        bool `json:"sandboxPassed"`
+	}{}
+
+	err := h.DB.Pool.QueryRow(c.Request.Context(), "SELECT tos_permitted, regulations_permitted FROM arbitrage_compliance WHERE id = 1").Scan(&compliance.TosPermitted, &compliance.RegulationsPermitted)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	var activeModelStatus string
+	_ = h.DB.Pool.QueryRow(c.Request.Context(), "SELECT status FROM sandbox_runs ORDER BY timestamp DESC LIMIT 1").Scan(&activeModelStatus)
+	compliance.SandboxPassed = activeModelStatus == "PASSED"
+
+	c.JSON(http.StatusOK, gin.H{
+		"success":    true,
+		"config":     trading.State.GetArbitrageConfig(),
+		"compliance": compliance,
+	})
+}
+
+// Update Arbitrage Compliance Settings
+type UpdateArbitrageComplianceInput struct {
+	TosPermitted         bool `json:"tosPermitted"`
+	RegulationsPermitted bool `json:"regulationsPermitted"`
+}
+
+func (h *Handler) UpdateArbitrageCompliance(c *gin.Context) {
+	var input UpdateArbitrageComplianceInput
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	_, err := h.DB.Pool.Exec(c.Request.Context(), "UPDATE arbitrage_compliance SET tos_permitted = $1, regulations_permitted = $2 WHERE id = 1", input.TosPermitted, input.RegulationsPermitted)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"compliance": gin.H{
+			"tosPermitted":         input.TosPermitted,
+			"regulationsPermitted": input.RegulationsPermitted,
+		},
+	})
+}
+
+// Toggle Arbitrage Live Sizing and Loops
+type ToggleArbitrageInput struct {
+	Enabled bool `json:"enabled"`
+}
+
+func (h *Handler) ToggleArbitrage(c *gin.Context) {
+	var input ToggleArbitrageInput
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if input.Enabled {
+		// Enforce safety rules
+		var tosPermitted, regulationsPermitted bool
+		err := h.DB.Pool.QueryRow(c.Request.Context(), "SELECT tos_permitted, regulations_permitted FROM arbitrage_compliance WHERE id = 1").Scan(&tosPermitted, &regulationsPermitted)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+
+		if !tosPermitted {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "بۆ چالاککردن پێویستە ڕازیبوون لەگەڵ مەرجەکانی یەکگرتنەوە واژۆ بکەیت."})
+			return
+		}
+		if !regulationsPermitted {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "بۆ چالاککردن پێویستە یاسایی بوون بەپێی دەسەڵاتی دادوەری پشتڕاست بکەیتەوە."})
+			return
+		}
+
+		var activeModelStatus string
+		_ = h.DB.Pool.QueryRow(c.Request.Context(), "SELECT status FROM sandbox_runs ORDER BY timestamp DESC LIMIT 1").Scan(&activeModelStatus)
+		if activeModelStatus != "PASSED" {
+			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "مۆدێلی چالاکی DRL گەیتی سانبۆکسی Stage 4ی نەبڕیوە (status must be PASSED)."})
+			return
+		}
+	}
+
+	cfg := trading.State.GetArbitrageConfig()
+	cfg.LiveEnabled = input.Enabled
+	trading.State.SetArbitrageConfig(cfg)
+
+	statusStr := "ناچالاککرا (DISABLED)"
+	if input.Enabled {
+		statusStr = "کاراکرا (ENABLED)"
+	}
+	AddServerLog("RISK-MANAGER", "INFO", fmt.Sprintf("دۆخی بازرگانی ئاربیتراژ %s.", statusStr))
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"config":  trading.State.GetArbitrageConfig(),
+	})
+}
+
+// Set Arbitrage Sizing and Net Threshold
+type SetArbitrageThresholdInput struct {
+	ThresholdNetProfitUsd float64 `json:"thresholdNetProfitUsd"`
+	OrderSizeBtc          float64 `json:"orderSizeBtc"`
+	SlippagePct           float64 `json:"slippagePct"`
+}
+
+func (h *Handler) SetArbitrageThreshold(c *gin.Context) {
+	var input SetArbitrageThresholdInput
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	cfg := trading.State.GetArbitrageConfig()
+	cfg.ThresholdNetProfitUsd = input.ThresholdNetProfitUsd
+	cfg.OrderSizeBtc = input.OrderSizeBtc
+	cfg.SlippagePct = input.SlippagePct
+	trading.State.SetArbitrageConfig(cfg)
+
+	AddServerLog("RISK-MANAGER", "INFO", fmt.Sprintf("کۆنفیکوڕیشنی ئاربیتراژ نوێکرایەوە: Threshold: $%.2f, Size: %.4f BTC, Slippage: %.2f%%",
+		cfg.ThresholdNetProfitUsd, cfg.OrderSizeBtc, cfg.SlippagePct))
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"config":  trading.State.GetArbitrageConfig(),
+	})
+}
+
+// Get Arbitrage Spreads, Opportunities and Trades Log Tables
+func (h *Handler) GetArbitrageLogs(c *gin.Context) {
+	ctx := c.Request.Context()
+
+	spreads := []gin.H{}
+	opps := []gin.H{}
+	trades := []gin.H{}
+
+	// Spreads
+	sRows, err := h.DB.Pool.Query(ctx, "SELECT id, timestamp, binance_bid, binance_ask, coinbase_bid, coinbase_ask, kraken_bid, kraken_ask, spread_binance_coinbase, spread_binance_kraken, spread_coinbase_kraken FROM arbitrage_spreads ORDER BY timestamp DESC LIMIT 50")
+	if err == nil {
+		defer sRows.Close()
+		for sRows.Next() {
+			var (
+				id int
+				ts time.Time
+				bBid, bAsk, cBid, cAsk, kBid, kAsk, sBinCoin, sBinKrak, sCoinKrak float64
+			)
+			_ = sRows.Scan(&id, &ts, &bBid, &bAsk, &cBid, &cAsk, &kBid, &kAsk, &sBinCoin, &sBinKrak, &sCoinKrak)
+			spreads = append(spreads, gin.H{
+				"id":                       id,
+				"timestamp":                ts.Format(time.RFC3339),
+				"binance_bid":              bBid,
+				"binance_ask":              bAsk,
+				"coinbase_bid":             cBid,
+				"coinbase_ask":             cAsk,
+				"kraken_bid":               kBid,
+				"kraken_ask":               kAsk,
+				"spread_binance_coinbase":  sBinCoin,
+				"spread_binance_kraken":    sBinKrak,
+				"spread_coinbase_kraken":  sCoinKrak,
+			})
+		}
+	}
+
+	// Opportunities
+	oRows, err := h.DB.Pool.Query(ctx, "SELECT id, timestamp, buy_venue, sell_venue, buy_price, sell_price, gross_spread, fees, net_edge, compliance_check FROM arbitrage_opportunities ORDER BY timestamp DESC LIMIT 50")
+	if err == nil {
+		defer oRows.Close()
+		for oRows.Next() {
+			var (
+				id, buyVenue, sellVenue, compCheck string
+				ts                                  time.Time
+				buyPrice, sellPrice, gs, fs, ne     float64
+			)
+			_ = oRows.Scan(&id, &ts, &buyVenue, &sellVenue, &buyPrice, &sellPrice, &gs, &fs, &ne, &compCheck)
+			opps = append(opps, gin.H{
+				"id":               id,
+				"timestamp":        ts.Format(time.RFC3339),
+				"buy_venue":        buyVenue,
+				"sell_venue":       sellVenue,
+				"buy_price":        buyPrice,
+				"sell_price":       sellPrice,
+				"gross_spread":     gs,
+				"fees":             fs,
+				"net_edge":         ne,
+				"compliance_check": compCheck,
+			})
+		}
+	}
+
+	// Trades
+	tRows, err := h.DB.Pool.Query(ctx, "SELECT id, timestamp, opportunity_id, pair, buy_venue, sell_venue, buy_price, sell_price, executed_size, gross_pnl, fees, net_pnl, status, execution_log FROM arbitrage_trades ORDER BY timestamp DESC LIMIT 50")
+	if err == nil {
+		defer tRows.Close()
+		for tRows.Next() {
+			var (
+				id, oppID, pair, buyVenue, sellVenue, status, execLog string
+				ts                                                    time.Time
+				buyPrice, sellPrice, size, gp, fs, np                 float64
+			)
+			_ = tRows.Scan(&id, &ts, &oppID, &pair, &buyVenue, &sellVenue, &buyPrice, &sellPrice, &size, &gp, &fs, &np, &status, &execLog)
+			trades = append(trades, gin.H{
+				"id":             id,
+				"timestamp":      ts.Format(time.RFC3339),
+				"opportunity_id": oppID,
+				"pair":           pair,
+				"buy_venue":      buyVenue,
+				"sell_venue":     sellVenue,
+				"buy_price":      buyPrice,
+				"sell_price":     sellPrice,
+				"executed_size":  size,
+				"gross_pnl":      gp,
+				"fees":           fs,
+				"net_pnl":        np,
+				"status":         status,
+				"execution_log":  execLog,
+			})
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success":       true,
+		"spreads":       spreads,
+		"opportunities": opps,
+		"trades":        trades,
+	})
+}
+
+// Clear Arbitrage Log Tables
+func (h *Handler) ClearArbitrage(c *gin.Context) {
+	ctx := c.Request.Context()
+	_, _ = h.DB.Pool.Exec(ctx, "DELETE FROM arbitrage_spreads")
+	_, _ = h.DB.Pool.Exec(ctx, "DELETE FROM arbitrage_opportunities")
+	_, _ = h.DB.Pool.Exec(ctx, "DELETE FROM arbitrage_trades")
+
+	AddServerLog("RISK-MANAGER", "SUCCESS", "داتاکان و لۆگەکانی ئاربیتراژ بە تەواوی پاککرانەوە.")
+	c.JSON(http.StatusOK, gin.H{"success": true})
+}
+
+// Get Portfolio Risk Statistics
+func (h *Handler) GetPortfolioRisk(c *gin.Context) {
+	ctx := c.Request.Context()
+	
+	// Default nominal statistics
+	portfolioRisk := gin.H{
+		"var95Hist":        3.5,
+		"var99Hist":        5.8,
+		"var95Param":       3.2,
+		"var99Param":       5.2,
+		"totalExposure":    0.0,
+		"portfolioDrawdown":0.0,
+		"riskStatus":       "NOMINAL",
+	}
+
+	// Calculate current live exposure
+	positions := trading.State.GetPositions()
+	var totalExposure float64
+	for _, p := range positions {
+		totalExposure += p.Size * p.CurrentPrice
+	}
+	portfolioRisk["totalExposure"] = totalExposure
+
+	// Query last recorded statistics
+	var (
+		v95h, v99h, v95p, v99p, te, pd float64
+	)
+	err := h.DB.Pool.QueryRow(ctx, "SELECT var_95_hist, var_99_hist, var_95_param, var_99_param, total_exposure, portfolio_drawdown FROM portfolio_risk_history ORDER BY timestamp DESC LIMIT 1").Scan(&v95h, &v99h, &v95p, &v99p, &te, &pd)
+	if err == nil {
+		portfolioRisk["var95Hist"] = v95h
+		portfolioRisk["var99Hist"] = v99h
+		portfolioRisk["var95Param"] = v95p
+		portfolioRisk["var99Param"] = v99p
+		portfolioRisk["portfolioDrawdown"] = pd
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"risk":    portfolioRisk,
+	})
+}
+

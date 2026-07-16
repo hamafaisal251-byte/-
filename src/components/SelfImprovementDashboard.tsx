@@ -4,6 +4,7 @@ import {
   Database, Activity, ChevronRight, ChevronDown, BookOpen, Clock, AlertCircle
 } from "lucide-react";
 import SystemIntelligencePanel from "./SystemIntelligencePanel";
+import { ValueDiscoveryPanel } from "./ValueDiscoveryPanel";
 
 export interface SelfImprovementLog {
   id: string;
@@ -67,8 +68,18 @@ export default function SelfImprovementDashboard() {
   } | null>(null);
 
   // New Tab & Panel States
-  const [activeTab, setActiveTab] = useState<"audit" | "deep-research" | "dark-pool" | "calibration" | "intelligence">("audit");
+  const [activeTab, setActiveTab] = useState<"audit" | "deep-research" | "dark-pool" | "calibration" | "intelligence" | "value-discovery">("audit");
   
+  // Value Discovery States
+  const [discoverySummary, setDiscoverySummary] = useState<any>(null);
+  const [discoveryLoading, setDiscoveryLoading] = useState<boolean>(false);
+  const [generatingHypotheses, setGeneratingHypotheses] = useState<boolean>(false);
+  const [testingHypotheses, setTestingHypotheses] = useState<boolean>(false);
+  const [promotingId, setPromotingId] = useState<string | null>(null);
+  const [discoveryFilter, setDiscoveryFilter] = useState<string>("ALL");
+  const [discoverySearch, setDiscoverySearch] = useState<string>("");
+  const [discoveryError, setDiscoveryError] = useState<string | null>(null);
+
   // Calibration summary states
   const [calibrationData, setCalibrationData] = useState<{ analysis: any[]; recentLogs: any[] }>({ analysis: [], recentLogs: [] });
   const [calibrationLoading, setCalibrationLoading] = useState<boolean>(false);
@@ -93,6 +104,85 @@ export default function SelfImprovementDashboard() {
   // Calibration Filters
   const [filterInstrument, setFilterInstrument] = useState<string>("All");
   const [filterMode, setFilterMode] = useState<string>("All");
+
+  const fetchDiscoverySummary = async () => {
+    setDiscoveryLoading(true);
+    try {
+      const res = await fetch("/api/value-discovery/summary");
+      if (res.ok) {
+        const data = await res.json();
+        setDiscoverySummary(data);
+      }
+    } catch (err) {
+      console.error("Failed to fetch discovery summary:", err);
+    } finally {
+      setDiscoveryLoading(false);
+    }
+  };
+
+  const generateNewHypotheses = async () => {
+    setGeneratingHypotheses(true);
+    setDiscoveryError(null);
+    try {
+      const res = await fetch("/api/value-discovery/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" }
+      });
+      if (res.ok) {
+        await fetchDiscoverySummary();
+      } else {
+        const errData = await res.json();
+        setDiscoveryError(errData.error || "Failed to generate hypotheses.");
+      }
+    } catch (err: any) {
+      setDiscoveryError(err.message || "Failed to generate hypotheses.");
+    } finally {
+      setGeneratingHypotheses(false);
+    }
+  };
+
+  const testPendingHypotheses = async () => {
+    setTestingHypotheses(true);
+    setDiscoveryError(null);
+    try {
+      const res = await fetch("/api/value-discovery/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" }
+      });
+      if (res.ok) {
+        await fetchDiscoverySummary();
+      } else {
+        const errData = await res.json();
+        setDiscoveryError(errData.error || "Failed to test hypotheses.");
+      }
+    } catch (err: any) {
+      setDiscoveryError(err.message || "Failed to test hypotheses.");
+    } finally {
+      setTestingHypotheses(false);
+    }
+  };
+
+  const promoteHypothesis = async (id: string) => {
+    setPromotingId(id);
+    setDiscoveryError(null);
+    try {
+      const res = await fetch("/api/value-discovery/promote", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id })
+      });
+      if (res.ok) {
+        await fetchDiscoverySummary();
+      } else {
+        const errData = await res.json();
+        setDiscoveryError(errData.error || "Failed to promote hypothesis.");
+      }
+    } catch (err: any) {
+      setDiscoveryError(err.message || "Failed to promote hypothesis.");
+    } finally {
+      setPromotingId(null);
+    }
+  };
 
   const fetchCalibrationSummary = async () => {
     setCalibrationLoading(true);
@@ -258,12 +348,14 @@ export default function SelfImprovementDashboard() {
     fetchResearchSessions();
     fetchDarkPoolData();
     fetchCalibrationSummary();
+    fetchDiscoverySummary();
     const interval = setInterval(() => {
       fetchLogs();
       fetchMonitorStats();
       fetchResearchSessions();
       fetchDarkPoolData();
       fetchCalibrationSummary();
+      fetchDiscoverySummary();
     }, 15000); // Poll every 15s to keep UI updated
     return () => clearInterval(interval);
   }, []);
@@ -401,6 +493,16 @@ export default function SelfImprovementDashboard() {
           }`}
         >
           🛡️ خۆڕاگری هۆشیار (Intelligence Resilience)
+        </button>
+        <button
+          onClick={() => setActiveTab("value-discovery")}
+          className={`px-4 py-2 text-xs font-bold transition-all border-b-2 ${
+            activeTab === "value-discovery"
+              ? "border-rose-500 text-rose-400 font-extrabold bg-rose-950/20"
+              : "border-transparent text-slate-400 hover:text-slate-200"
+          }`}
+        >
+          🧪 دۆزینەوەی بەها (Value Discovery)
         </button>
       </div>
 
@@ -1345,6 +1447,24 @@ export default function SelfImprovementDashboard() {
 
           {activeTab === "intelligence" && (
             <SystemIntelligencePanel />
+          )}
+
+          {activeTab === "value-discovery" && (
+            <ValueDiscoveryPanel
+              summary={discoverySummary}
+              loading={discoveryLoading}
+              generating={generatingHypotheses}
+              testing={testingHypotheses}
+              promotingId={promotingId}
+              onGenerate={generateNewHypotheses}
+              onTest={testPendingHypotheses}
+              onPromote={promoteHypothesis}
+              error={discoveryError}
+              filter={discoveryFilter}
+              setFilter={setDiscoveryFilter}
+              search={discoverySearch}
+              setSearch={setDiscoverySearch}
+            />
           )}
         </div>
 

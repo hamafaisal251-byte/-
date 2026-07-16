@@ -6,3 +6,13 @@ coverage/
 *.log
 .env*
 !.env.example
+libtorch/
+drl_service_cpp/libtorch/
+drl_service_cpp/build/
+*.zip
+*.json
+!metadata.json
+!package.json
+!staged_pr.json
+!postgres_state.json
+!safety_state.json
