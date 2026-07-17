@@ -246,16 +246,39 @@ CRITICAL RULES:
   }
 
   if (validatorExitCode === 0) {
-    // 4. Staging changes as a simulated local Git Branch
+    // 4. Staging changes as a real local Git Branch
     console.log(`[AI-LOOP] Promoting candidate code to staged location: ${STAGED_CANDIDATE_FILE}`);
     fs.copyFileSync(TEMP_CANDIDATE_FILE, STAGED_CANDIDATE_FILE);
     
     const branchName = `feature/gemini-${goal}-${Math.floor(Date.now() / 1000).toString().slice(-4)}`;
-    console.log(`[AI-LOOP] Simulated Git operations:`);
-    console.log(`  - git checkout -b ${branchName}`);
-    console.log(`  - git add test/test_proposed.cpp`);
-    console.log(`  - git commit -m "Optimize reward matrix for ${goal} strategy via AI loop"`);
-    console.log(`  - git push origin ${branchName}`);
+    console.log(`[AI-LOOP] Executing real Git operations:`);
+    try {
+      try {
+        console.log(`  - git checkout master (or reset to master cleanly)`);
+        execSync(`git checkout master`, { stdio: 'inherit' });
+      } catch (checkoutMasterErr) {
+        console.warn(`  - [Git Alert] Note: Checkout master failed (this is fine if already on master/detached): ${checkoutMasterErr.message}`);
+      }
+      
+      console.log(`  - git checkout -b ${branchName}`);
+      execSync(`git checkout -b "${branchName}"`, { stdio: 'inherit' });
+      
+      console.log(`  - git add test/test_proposed.cpp`);
+      execSync(`git add test/test_proposed.cpp`, { stdio: 'inherit' });
+      
+      console.log(`  - git commit -m "Optimize reward matrix for ${goal} strategy via AI loop"`);
+      execSync(`git commit -m "Optimize reward matrix for ${goal} strategy via AI loop"`, { stdio: 'inherit' });
+      
+      console.log(`  - git push origin ${branchName}`);
+      try {
+        execSync(`git push origin "${branchName}"`, { stdio: 'inherit' });
+        console.log(`[AI-LOOP] Successfully pushed branch "${branchName}" to origin.`);
+      } catch (pushErr) {
+        console.warn(`[AI-LOOP] [Git Warning] Push failed (expected in local offline container environment): ${pushErr.message}`);
+      }
+    } catch (gitErr) {
+      console.error(`[AI-LOOP] [Git Error] Failed performing automated Git operations: ${gitErr.message}`);
+    }
     
     // Output JSON for the backend API
     const prDetails = {
@@ -276,6 +299,60 @@ CRITICAL RULES:
         { name: "HFT System Unit & Integration Suite", status: "PASSED", details: "All existing integration constraints and compliance tests satisfied." }
       ]
     };
+    
+    // Genuinely call the GitHub API if a GITHUB_TOKEN is found in the environment variables
+    const repo = "Proda/NEXUS";
+    const token = process.env.GITHUB_TOKEN || process.env.GH_TOKEN;
+    if (token) {
+      console.log(`[AI-LOOP] GITHUB_TOKEN or GH_TOKEN detected. Creating a real GitHub Pull Request...`);
+      const prBody = `
+## Sovereign NEXUS: Automated AI Developer Loop Proposal
+
+### Optimization Goal
+**${goal.toUpperCase()}**
+
+### Summary of Hypotheses & Techniques
+${promptReasoning}
+
+### Sandbox Verification & Validation Checks
+${prDetails.tests.map(t => `- **${t.name}**: ${t.status} - ${t.details}`).join("\n")}
+
+### Code Change Diff
+\`\`\`diff
+${prDetails.diff}
+\`\`\`
+`;
+      try {
+        const response = await fetch(`https://api.github.com/repos/${repo}/pulls`, {
+          method: "POST",
+          headers: {
+            "Accept": "application/vnd.github.v3+json",
+            "Authorization": `token ${token}`,
+            "Content-Type": "application/json",
+            "User-Agent": "Nexus-AI-Bot"
+          },
+          body: JSON.stringify({
+            title: prDetails.title,
+            head: branchName,
+            base: "master",
+            body: prBody
+          })
+        });
+        
+        const resData = await response.json();
+        if (response.ok) {
+          console.log(`[AI-LOOP] Real GitHub Pull Request created successfully! URL: ${resData.html_url}`);
+          prDetails.githubPrUrl = resData.html_url;
+          prDetails.prId = `pr-${resData.number}`;
+        } else {
+          console.error(`[AI-LOOP] GitHub API creation returned error status ${response.status}: ${resData.message}`);
+        }
+      } catch (fetchErr) {
+        console.error(`[AI-LOOP] Failed connecting to GitHub API for PR creation: ${fetchErr.message}`);
+      }
+    } else {
+      console.log(`[AI-LOOP] No GITHUB_TOKEN or GH_TOKEN detected in environment. Local staged branch created.`);
+    }
     
     fs.writeFileSync(path.join(process.cwd(), "staged_pr.json"), JSON.stringify(prDetails, null, 2), "utf8");
     console.log("[AI-LOOP] Automated CI/PR Generation complete. Open PR created successfully in dashboard.");

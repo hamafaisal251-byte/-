@@ -12,7 +12,7 @@
   "maxTotalNotionalExposure": 500000,
   "maxSingleInstrumentExposure": 300000,
   "maxCorrelatedGroupExposure": 400000,
-  "watchdogLastHeartbeat": "2026-07-16T12:10:20.112Z",
+  "watchdogLastHeartbeat": "2026-07-17T15:58:38.324Z",
   "watchdogStatus": "NOMINAL",
   "lastDrawdownPct": 0,
   "lastRollbackEvent": null,

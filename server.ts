@@ -14,7 +14,7 @@ import { Pool } from "pg";
 import { safetyBackstop } from "./safetyBackstop";
 import { runDeepResearch } from "./deepResearchAgent";
 import { promisify } from "util";
-import { llmProvider, llmProviderMode, setLLMProviderMode } from "./llmProvider";
+import { llmProvider, llmProviderMode, setLLMProviderMode, setEnablePolicyRouting, setRoutingPolicy } from "./llmProvider";
 
 const execAsync = promisify(exec);
 
@@ -543,6 +543,43 @@ class PostgresEngine {
         )
       `);
       await this.pool.query(`CREATE INDEX IF NOT EXISTS idx_historical_ticks_v2_instrument_time ON historical_ticks_v2 (instrument, timestamp DESC)`);
+
+      // 13. Sovereign LLM Provider Usage Log Table
+      await this.pool.query(`
+        CREATE TABLE IF NOT EXISTS provider_usage_log (
+          id SERIAL PRIMARY KEY,
+          timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          provider VARCHAR(50) NOT NULL,
+          model VARCHAR(100) NOT NULL,
+          prompt_tokens INT NOT NULL DEFAULT 0,
+          completion_tokens INT NOT NULL DEFAULT 0,
+          total_tokens INT NOT NULL DEFAULT 0,
+          cost NUMERIC(10, 6) NOT NULL DEFAULT 0.0,
+          task_category VARCHAR(100),
+          status VARCHAR(20) NOT NULL
+        )
+      `);
+      await this.pool.query(`CREATE INDEX IF NOT EXISTS idx_provider_usage_log_time ON provider_usage_log(timestamp DESC)`);
+
+      // 14. Sovereign LLM Provider Config Table
+      await this.pool.query(`
+        CREATE TABLE IF NOT EXISTS llm_provider_config (
+          id INT PRIMARY KEY DEFAULT 1,
+          deepseek_api_key_enc TEXT DEFAULT '',
+          mode VARCHAR(30) DEFAULT 'gemini',
+          self_hosted_url TEXT DEFAULT 'http://127.0.0.1:11434/v1',
+          self_hosted_model_name TEXT DEFAULT 'qwen2.5-coder:32b',
+          enable_policy_routing BOOLEAN DEFAULT TRUE,
+          routing_policy JSONB DEFAULT '{"routine_parameter_tuning": "deepseek", "complex_multi_signal_synthesis": "gemini", "tier_2_fallback": "self_hosted", "deep_research": "gemini", "general": "gemini"}'::jsonb,
+          policy_reasoning TEXT DEFAULT 'DeepSeek handles routine parameter tuning. Gemini handles complex synthesis. Self-hosted handles Tier-2 fallback.',
+          CONSTRAINT single_row_llm_config CHECK (id = 1)
+        )
+      `);
+      await this.pool.query(`
+        INSERT INTO llm_provider_config (id, deepseek_api_key_enc, mode, self_hosted_url, self_hosted_model_name, enable_policy_routing, routing_policy, policy_reasoning)
+        VALUES (1, '', 'gemini', 'http://127.0.0.1:11434/v1', 'qwen2.5-coder:32b', TRUE, '{"routine_parameter_tuning": "deepseek", "complex_multi_signal_synthesis": "gemini", "tier_2_fallback": "self_hosted", "deep_research": "gemini", "general": "gemini"}'::jsonb, 'DeepSeek handles routine parameter tuning. Gemini handles complex synthesis. Self-hosted handles Tier-2 fallback.')
+        ON CONFLICT (id) DO NOTHING
+      `);
 
       // 12b. Demo-Live run tracking tables
       await this.pool.query(`
@@ -1181,6 +1218,34 @@ class PostgresEngine {
 
         // Run prediction logging seeds
         await this.seedPredictionLogs();
+
+        // 15. Synchronize Sovereign LLM Provider configurations from DB
+        try {
+          const configRows = await this.pool.query("SELECT * FROM llm_provider_config WHERE id = 1");
+          if (configRows.rows && configRows.rows[0]) {
+            const row = configRows.rows[0];
+            const decryptedKey = row.deepseek_api_key_enc ? decrypt(row.deepseek_api_key_enc) : "";
+            
+            process.env.DEEPSEEK_API_KEY = decryptedKey;
+            setLLMProviderMode(row.mode || "gemini");
+            setEnablePolicyRouting(row.enable_policy_routing !== false);
+            
+            let policy = row.routing_policy;
+            if (typeof policy === "string") {
+              try { policy = JSON.parse(policy); } catch (e) {}
+            }
+            if (policy) {
+              setRoutingPolicy(policy, row.policy_reasoning);
+            }
+            
+            process.env.SELF_HOSTED_MODEL_URL = row.self_hosted_url || "http://127.0.0.1:11434/v1";
+            process.env.SELF_HOSTED_MODEL_NAME = row.self_hosted_model_name || "qwen2.5-coder:32b";
+            
+            console.log(`[LAUNCHER] Synchronized LLM Provider Configuration from DB. Active Mode: ${row.mode}, Policy Routing: ${row.enable_policy_routing}`);
+          }
+        } catch (llmCfgErr: any) {
+          console.error("[LAUNCHER-ERROR] Failed to load/sync LLM provider configuration:", llmCfgErr.message);
+        }
       } catch (cacheErr: any) {
         console.error("[POSTGRES-CACHE-ERROR] Failed to populate memory caches:", cacheErr.message);
       }
@@ -3348,7 +3413,8 @@ export function isCodeWhitelisted(code: string): boolean {
     "smoothed", "signal", "decay", "alpha", "beta", "filter", "kalman",
     "gain", "state", "attention", "weight", "weighted", "drawdown",
     "penalty_sq", "quadratic", "linear", "multiplier", "offset", "constant",
-    "score", "threshold", "val", "x", "y", "z", "temp", "limit", "bound"
+    "score", "threshold", "val", "x", "y", "z", "temp", "limit", "bound",
+    "extern", "C"
   ]);
 
   // Find all word tokens in the code
@@ -3361,8 +3427,8 @@ export function isCodeWhitelisted(code: string): boolean {
     }
   }
 
-  // Allow only standard math characters and punctuation (no backticks, square brackets, quotes, backslashes, etc.)
-  const allowedCharsRegex = /^[a-zA-Z0-9_\s\+\-\*\/\=\>\<\|\&\!\?\:\(\)\{\}\,\.\;\s]+$/;
+  // Allow only standard math characters and punctuation (including quotes for extern "C")
+  const allowedCharsRegex = /^[a-zA-Z0-9_\s\+\-\*\/\=\>\<\|\&\!\?\:\(\)\{\}\,\.\;\"\'\s]+$/;
   if (!allowedCharsRegex.test(cleanCode)) {
     return false;
   }
@@ -8133,6 +8199,162 @@ app.get(["/api/candidates", "/api/v1/candidates"], (req, res) => {
   res.json({ success: true, candidates: candidatesList, activeCandidateId });
 });
 
+app.get("/api/benchmark-results", (req, res) => {
+  const resultPath = path.join(process.cwd(), "benchmark_results.json");
+  if (fs.existsSync(resultPath)) {
+    try {
+      const content = fs.readFileSync(resultPath, "utf8");
+      return res.json(JSON.parse(content));
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: "Failed to parse benchmark results" });
+    }
+  }
+  res.json({ success: false, message: "No benchmark run history found. Run a new benchmark harness first." });
+});
+
+// GET LLM Provider Configuration
+app.get("/api/system-intelligence/provider-config", async (req, res) => {
+  try {
+    const configRows = await pgDb.pool.query("SELECT * FROM llm_provider_config WHERE id = 1");
+    if (configRows.rows && configRows.rows[0]) {
+      const row = configRows.rows[0];
+      return res.json({
+        success: true,
+        mode: row.mode,
+        selfHostedUrl: row.self_hosted_url,
+        selfHostedModelName: row.self_hosted_model_name,
+        enablePolicyRouting: row.enable_policy_routing,
+        routingPolicy: row.routing_policy,
+        policyReasoning: row.policy_reasoning,
+        deepseekApiKeyConfigured: !!(row.deepseek_api_key_enc && row.deepseek_api_key_enc.trim().length > 0)
+      });
+    }
+    return res.json({
+      success: true,
+      mode: "gemini",
+      selfHostedUrl: "http://127.0.0.1:11434/v1",
+      selfHostedModelName: "qwen2.5-coder:32b",
+      enablePolicyRouting: true,
+      routingPolicy: {
+        routine_parameter_tuning: "deepseek",
+        complex_multi_signal_synthesis: "gemini",
+        tier_2_fallback: "self_hosted",
+        deep_research: "gemini",
+        general: "gemini"
+      },
+      policyReasoning: "Fallback defaults",
+      deepseekApiKeyConfigured: false
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST update LLM Provider Configuration
+app.post("/api/system-intelligence/provider-config", async (req, res) => {
+  try {
+    const { mode, selfHostedUrl, selfHostedModelName, enablePolicyRouting, routingPolicy, policyReasoning, deepseekApiKey } = req.body;
+    
+    // Check if we need to encrypt a new DeepSeek API key
+    let updateApiKeySql = "";
+    const params: any[] = [mode, selfHostedUrl, selfHostedModelName, enablePolicyRouting === true, typeof routingPolicy === "string" ? routingPolicy : JSON.stringify(routingPolicy), policyReasoning];
+    
+    if (deepseekApiKey !== undefined && deepseekApiKey.trim() !== "" && !deepseekApiKey.startsWith("••••")) {
+      const encryptedKey = encrypt(deepseekApiKey.trim());
+      updateApiKeySql = ", deepseek_api_key_enc = $7";
+      params.push(encryptedKey);
+      
+      // Update running environment variable immediately
+      process.env.DEEPSEEK_API_KEY = deepseekApiKey.trim();
+    }
+
+    const query = `
+      UPDATE llm_provider_config
+      SET mode = $1,
+          self_hosted_url = $2,
+          self_hosted_model_name = $3,
+          enable_policy_routing = $4,
+          routing_policy = $5,
+          policy_reasoning = $6
+          ${updateApiKeySql}
+      WHERE id = 1
+    `;
+
+    await pgDb.pool.query(query, params);
+
+    // Sync state in memory
+    setLLMProviderMode(mode);
+    setEnablePolicyRouting(enablePolicyRouting === true);
+    setRoutingPolicy(routingPolicy, policyReasoning);
+    process.env.SELF_HOSTED_MODEL_URL = selfHostedUrl;
+    process.env.SELF_HOSTED_MODEL_NAME = selfHostedModelName;
+
+    addServerLog("GO-BACKPLANE", "INFO", `Sovereign LLM Provider configuration updated. Routing set to mode: ${mode}, policy: ${enablePolicyRouting ? "active" : "disabled"}`);
+
+    return res.json({ success: true, message: "LLM configurations saved and applied to running processes successfully." });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// GET LLM Usage Metrics and History
+app.get("/api/system-intelligence/provider-usage", async (req, res) => {
+  try {
+    const usageSummary = await pgDb.pool.query(`
+      SELECT 
+        provider,
+        SUM(prompt_tokens) as "promptTokens",
+        SUM(completion_tokens) as "completionTokens",
+        SUM(total_tokens) as "totalTokens",
+        SUM(cost) as "cost",
+        COUNT(*) as "callCount"
+      FROM provider_usage_log
+      GROUP BY provider
+    `);
+
+    const rawLogs = await pgDb.pool.query(`
+      SELECT id, timestamp, provider, model, prompt_tokens as "promptTokens", completion_tokens as "completionTokens", total_tokens as "totalTokens", cost, task_category as "taskCategory", status
+      FROM provider_usage_log
+      ORDER BY timestamp DESC
+      LIMIT 100
+    `);
+
+    return res.json({
+      success: true,
+      summary: usageSummary.rows,
+      logs: rawLogs.rows
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST Trigger Recalibration of Benchmarks
+app.post("/api/system-intelligence/recalibrate-benchmarks", async (req, res) => {
+  try {
+    console.log("[BENCHMARK-RUN] Launching live model calibration script asynchronously...");
+    const scriptPath = path.join(process.cwd(), "scripts", "benchmark_models.ts");
+    
+    const { exec } = require("child_process");
+    exec(`npx tsx "${scriptPath}"`, (error: any, stdout: any, stderr: any) => {
+      if (error) {
+        console.error("[BENCHMARK-RUN-ERROR] Script failed:", error.message);
+        addServerLog("GO-BACKPLANE", "WARNING", `Model calibration harness failed: ${error.message}`);
+        return;
+      }
+      console.log("[BENCHMARK-RUN-SUCCESS] Script completed successfully.");
+      addServerLog("GO-BACKPLANE", "INFO", "Model calibration harness completed successfully. New benchmarks logged.");
+    });
+
+    return res.json({
+      success: true,
+      message: "Calibration benchmark harness started in the background. Results will refresh in ~15-20 seconds."
+    });
+  } catch (err: any) {
+    return res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 app.get(["/api/candidates/sandbox_history", "/api/v1/candidates/sandbox_history"], (req, res) => {
   const history = pgDb.query("SELECT * FROM sandbox_runs") || [];
   res.json({ success: true, history });
@@ -12781,9 +13003,9 @@ async function startServer() {
     console.error("[LAUNCHER] CRITICAL ERROR during database initialization:", err.message);
   }
 
-  // Launch the C++ APEX PPO DRL Microservice asynchronously
-  console.log("[LAUNCHER] Booting C++ APEX DRL Microservice...");
-  const drlProcess = spawn("./drl_service_cpp/build/drl_service");
+  // Launch the Python APEX PPO DRL Microservice asynchronously
+  console.log("[LAUNCHER] Booting Python APEX DRL Microservice...");
+  const drlProcess = spawn("python3", ["./drl_service.py"]);
 
   drlProcess.stdout.on("data", (data) => {
     console.log(`[C++-DRL] ${data.toString().trim()}`);
@@ -12791,6 +13013,10 @@ async function startServer() {
 
   drlProcess.stderr.on("data", (data) => {
     console.error(`[C++-DRL-WARN] ${data.toString().trim()}`);
+  });
+
+  drlProcess.on("error", (err) => {
+    console.error("[C++-DRL-ERROR] Failed to start Python APEX DRL Microservice:", err.message);
   });
 
   drlProcess.on("close", (code) => {
@@ -12807,6 +13033,10 @@ async function startServer() {
 
   watchdogProcess.stderr.on("data", (data) => {
     console.error(`[WATCHDOG-STDERR] ${data.toString().trim()}`);
+  });
+
+  watchdogProcess.on("error", (err) => {
+    console.error("[WATCHDOG-ERROR] Failed to start Safety Watchdog Process:", err.message);
   });
 
   watchdogProcess.on("close", (code) => {

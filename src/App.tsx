@@ -20,9 +20,10 @@ import DrlEnsemblePanel from './components/DrlEnsemblePanel';
 import PortfolioRiskPanel from './components/PortfolioRiskPanel';
 import DemoLiveObservationPanel from './components/DemoLiveObservationPanel';
 import CodePipelinePanel from './components/CodePipelinePanel';
+import ModelBenchmark from './components/ModelBenchmark';
 import { EvolutionCandidate } from './types/quant';
 
-type TabId = 'architecture' | 'telemetry' | 'evolution' | 'risk-broker' | 'portfolio-risk' | 'alien-brain' | 'reward-playground' | 'backtest-arena' | 'ai-pilot-lab' | 'self-improvement-log' | 'arbitrage' | 'safety-backstop' | 'ensemble' | 'demo-live' | 'code-pipeline';
+type TabId = 'architecture' | 'telemetry' | 'evolution' | 'risk-broker' | 'portfolio-risk' | 'alien-brain' | 'reward-playground' | 'backtest-arena' | 'ai-pilot-lab' | 'self-improvement-log' | 'arbitrage' | 'safety-backstop' | 'ensemble' | 'demo-live' | 'code-pipeline' | 'model-benchmark';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<TabId>('architecture');
@@ -427,6 +428,20 @@ export default function App() {
             <span className="font-bold">12. بۆری گۆڕینی کۆد | Code Change Pipeline</span>
           </button>
 
+          {/* Tab 13: Model Benchmark Matrix */}
+          <button
+            id="tab-btn-model-benchmark"
+            onClick={() => setActiveTab('model-benchmark')}
+            className={`px-4 py-2.5 rounded-lg text-xs font-semibold font-mono flex items-center space-x-2 border transition-all cursor-pointer whitespace-nowrap ${
+              activeTab === 'model-benchmark'
+                ? 'bg-slate-900 border-emerald-800 text-emerald-200 shadow-sm shadow-emerald-950/20'
+                : 'bg-transparent border-transparent text-emerald-400 hover:text-emerald-350'
+            }`}
+          >
+            <Award className="w-4 h-4 shrink-0 text-emerald-400 animate-pulse" />
+            <span className="font-bold">13. بەراوردکردنی مۆدێلەکان | Model Benchmark</span>
+          </button>
+
         </div>
       </nav>
 
@@ -529,6 +544,7 @@ export default function App() {
           {activeTab === 'ensemble' && <DrlEnsemblePanel />}
           {activeTab === 'demo-live' && <DemoLiveObservationPanel />}
           {activeTab === 'code-pipeline' && <CodePipelinePanel />}
+          {activeTab === 'model-benchmark' && <ModelBenchmark />}
         </div>
 
       </main>

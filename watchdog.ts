@@ -79,7 +79,7 @@ async function monitorLoop() {
     // 2. Check DRL service status
     let drlServiceAlive = false;
     try {
-      const drlResponse = await fetch("http://127.0.0.1:8000/api/drl/telemetry", { signal: AbortSignal.timeout(1500) });
+      const drlResponse = await fetch("http://127.0.0.1:8001/api/drl/telemetry", { signal: AbortSignal.timeout(1500) });
       if (drlResponse.ok) {
         drlServiceAlive = true;
         consecutiveDrlFailures = 0;

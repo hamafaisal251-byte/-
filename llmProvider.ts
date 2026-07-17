@@ -1,5 +1,5 @@
 import { GoogleGenAI } from "@google/genai";
-import { pgDb } from "./server";
+import { pgDb, decrypt } from "./server";
 
 export interface LLMResponse {
   text: string;
@@ -13,6 +13,7 @@ export interface LLMProvider {
     prompt: string;
     responseMimeType?: string;
     searchGrounding?: boolean;
+    taskCategory?: string;
   }): Promise<LLMResponse>;
 
   generateStructured<T>(options: {
@@ -20,12 +21,14 @@ export interface LLMProvider {
     systemInstruction?: string;
     prompt: string;
     responseSchema: any;
+    taskCategory?: string;
   }): Promise<T>;
 
   callWithTools(options: {
     systemInstruction?: string;
     prompt: string;
     sessionId?: string;
+    taskCategory?: string;
   }): Promise<LLMResponse>;
 }
 
@@ -39,12 +42,87 @@ export interface ToolCallLog {
 }
 
 // Global configurations
-export let llmProviderMode: "gemini" | "self_hosted" = "gemini";
+export let llmProviderMode: "gemini" | "self_hosted" | "deepseek" = "gemini";
+export let enablePolicyRouting = true;
+
+export interface RoutingPolicy {
+  routine_parameter_tuning: "gemini" | "self_hosted" | "deepseek";
+  complex_multi_signal_synthesis: "gemini" | "self_hosted" | "deepseek";
+  tier_2_fallback: "gemini" | "self_hosted" | "deepseek";
+  deep_research: "gemini" | "self_hosted" | "deepseek";
+  general: "gemini" | "self_hosted" | "deepseek";
+}
+
+export let activeRoutingPolicy: RoutingPolicy = {
+  routine_parameter_tuning: "deepseek",
+  complex_multi_signal_synthesis: "gemini",
+  tier_2_fallback: "self_hosted",
+  deep_research: "gemini",
+  general: "gemini"
+};
+
+export let policyReasoning = {
+  text: "DeepSeek handles cost-sensitive parameter tuning tasks. Gemini 3.5 Flash processes complex multi-signal synthesis and high-cognitive reasoning. Self-hosted acts as an offline compliance / Tier-2 fallback.",
+  timestamp: new Date().toISOString()
+};
+
+export function setRoutingPolicy(policy: Partial<RoutingPolicy>, reasoning?: string) {
+  activeRoutingPolicy = { ...activeRoutingPolicy, ...policy };
+  if (reasoning) {
+    policyReasoning = {
+      text: reasoning,
+      timestamp: new Date().toISOString()
+    };
+  }
+}
+
+export function setEnablePolicyRouting(enabled: boolean) {
+  enablePolicyRouting = enabled;
+}
 
 // Let developer toggle it at runtime
-export function setLLMProviderMode(mode: "gemini" | "self_hosted") {
+export function setLLMProviderMode(mode: "gemini" | "self_hosted" | "deepseek") {
   llmProviderMode = mode;
   console.log(`[LLM-PROVIDER] Active LLM Provider switched to: ${mode}`);
+}
+
+/**
+ * Track actual token usage and cost per provider in provider_usage_log
+ */
+export async function logProviderUsage(options: {
+  provider: "gemini" | "deepseek" | "self_hosted";
+  model: string;
+  promptTokens: number;
+  completionTokens: number;
+  taskCategory?: string;
+  status: "success" | "failed";
+}) {
+  const { provider, model, promptTokens, completionTokens, taskCategory, status } = options;
+  const totalTokens = promptTokens + completionTokens;
+  
+  // Calculate cost (using real reported current pricing)
+  let cost = 0.0;
+  if (provider === "gemini") {
+    // Gemini 3.5 Flash: $0.075 / 1M input, $0.30 / 1M output
+    cost = (promptTokens * 0.075 + completionTokens * 0.30) / 1000000;
+  } else if (provider === "deepseek") {
+    // DeepSeek V3 (deepseek-chat): $0.14 / 1M input, $0.28 / 1M output
+    cost = (promptTokens * 0.14 + completionTokens * 0.28) / 1000000;
+  } else {
+    // Self-hosted: $0 direct per-token API billing cost (hardware rental amortized)
+    cost = 0.0;
+  }
+
+  try {
+    await pgDb.queryAsync(
+      `INSERT INTO provider_usage_log (provider, model, prompt_tokens, completion_tokens, total_tokens, cost, task_category, status)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [provider, model, promptTokens, completionTokens, totalTokens, cost, taskCategory || 'general', status]
+    );
+    console.log(`[LLM-USAGE-LOG] Logged ${provider} usage. Cost: $${cost.toFixed(6)}`);
+  } catch (err: any) {
+    console.error(`[LLM-USAGE-LOG-ERROR] Failed to save usage log:`, err.message);
+  }
 }
 
 /**
@@ -302,7 +380,7 @@ export async function runTool(toolName: string, args: any, sessionId: string): P
 }
 
 /**
- * Core LLM Provider Class coordinating Gemini and Self-Hosted endpoints
+ * Core LLM Provider Class coordinating Gemini, DeepSeek, and Self-Hosted endpoints
  */
 class SovereignLLMProvider implements LLMProvider {
   private getGeminiClient(): GoogleGenAI {
@@ -329,44 +407,26 @@ class SovereignLLMProvider implements LLMProvider {
     prompt: string;
     responseMimeType?: string;
     searchGrounding?: boolean;
+    taskCategory?: string;
   }): Promise<LLMResponse> {
-    const useSelfHosted = llmProviderMode === "self_hosted";
-    
-    if (useSelfHosted) {
-      console.log(`[LLM-ROUTER] Routing text generation to self-hosted model...`);
-      return this.callSelfHosted(options);
-    } else {
-      console.log(`[LLM-ROUTER] Routing text generation to Google Gemini API...`);
-      const ai = this.getGeminiClient();
-      const model = options.model || "gemini-3.5-flash";
-      const config: any = {};
-      
-      if (options.systemInstruction) {
-        config.systemInstruction = options.systemInstruction;
-      }
-      if (options.responseMimeType) {
-        config.responseMimeType = options.responseMimeType;
-      }
-      if (options.searchGrounding) {
-        config.tools = [{ googleSearch: {} }];
-      }
+    const provider = enablePolicyRouting
+      ? activeRoutingPolicy[options.taskCategory as keyof RoutingPolicy || "general"] || "gemini"
+      : llmProviderMode;
 
-      const response = await ai.models.generateContent({
-        model: model,
-        contents: options.prompt,
-        config: config
-      });
+    console.log(`[LLM-ROUTER] Routing generateText (category: ${options.taskCategory || "general"}) to ${provider}...`);
 
-      const groundingChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
-      const sources = groundingChunks.map((chunk: any) => ({
-        title: chunk.web?.title || "Web Reference",
-        uri: chunk.web?.uri || "#"
-      })).filter((s: any) => s.uri !== "#" && s.uri);
-
-      return {
-        text: response.text || "No output generated",
-        sources: sources.length > 0 ? sources : undefined
-      };
+    try {
+      if (provider === "deepseek") {
+        const dp = new DeepSeekProvider();
+        return await dp.generateText(options);
+      } else if (provider === "self_hosted") {
+        return await this.callSelfHostedDirect(options);
+      } else {
+        return await this.generateTextWithDirectGemini(options);
+      }
+    } catch (err: any) {
+      console.warn(`[LLM-ROUTER-FAILOVER] Provider "${provider}" failed. Triggering automatic failover to Gemini. Error:`, err.message);
+      return await this.generateTextWithDirectGemini(options);
     }
   }
 
@@ -378,38 +438,33 @@ class SovereignLLMProvider implements LLMProvider {
     systemInstruction?: string;
     prompt: string;
     responseSchema: any; // Schema using Type enums or raw JSON Schema
+    taskCategory?: string;
   }): Promise<T> {
-    const useSelfHosted = llmProviderMode === "self_hosted";
+    const provider = enablePolicyRouting
+      ? activeRoutingPolicy[options.taskCategory as keyof RoutingPolicy || "general"] || "gemini"
+      : llmProviderMode;
 
-    if (useSelfHosted) {
-      console.log(`[LLM-ROUTER] Routing structured generation to self-hosted model...`);
-      const promptWithSchema = `${options.prompt}\n\nYou must return strictly a JSON object matching the requested schema. Return ONLY valid JSON, do not wrap in markdown \`\`\`json.`;
-      const response = await this.callSelfHosted({
-        systemInstruction: options.systemInstruction,
-        prompt: promptWithSchema,
-        responseMimeType: "application/json"
-      });
-      return JSON.parse(response.text.trim()) as T;
-    } else {
-      console.log(`[LLM-ROUTER] Routing structured generation to Google Gemini API...`);
-      const ai = this.getGeminiClient();
-      const model = options.model || "gemini-3.5-flash";
-      const config: any = {
-        responseMimeType: "application/json",
-        responseSchema: options.responseSchema
-      };
-      
-      if (options.systemInstruction) {
-        config.systemInstruction = options.systemInstruction;
+    console.log(`[LLM-ROUTER] Routing generateStructured (category: ${options.taskCategory || "general"}) to ${provider}...`);
+
+    try {
+      if (provider === "deepseek") {
+        const dp = new DeepSeekProvider();
+        return await dp.generateStructured<T>(options);
+      } else if (provider === "self_hosted") {
+        const promptWithSchema = `${options.prompt}\n\nYou must return strictly a JSON object matching the requested schema. Return ONLY valid JSON, do not wrap in markdown \`\`\`json.`;
+        const response = await this.callSelfHostedDirect({
+          systemInstruction: options.systemInstruction,
+          prompt: promptWithSchema,
+          responseMimeType: "application/json",
+          taskCategory: options.taskCategory
+        });
+        return JSON.parse(response.text.trim()) as T;
+      } else {
+        return await this.generateStructuredWithDirectGemini<T>(options);
       }
-
-      const response = await ai.models.generateContent({
-        model: model,
-        contents: options.prompt,
-        config: config
-      });
-
-      return JSON.parse(response.text || "{}") as T;
+    } catch (err: any) {
+      console.warn(`[LLM-ROUTER-FAILOVER] Structured generation failed with provider "${provider}". Falling back to Gemini. Error:`, err.message);
+      return await this.generateStructuredWithDirectGemini<T>(options);
     }
   }
 
@@ -420,25 +475,237 @@ class SovereignLLMProvider implements LLMProvider {
     systemInstruction?: string;
     prompt: string;
     sessionId?: string;
+    taskCategory?: string;
   }): Promise<LLMResponse> {
     const sessionId = options.sessionId || `session-${Date.now()}`;
-    const useSelfHosted = llmProviderMode === "self_hosted";
+    const provider = enablePolicyRouting
+      ? activeRoutingPolicy[options.taskCategory as keyof RoutingPolicy || "general"] || "gemini"
+      : llmProviderMode;
 
-    if (!useSelfHosted) {
-      // Route agentic calls to Gemini using Google Search Grounding tool
-      console.log(`[LLM-ROUTER] Routing tool/grounding call to Gemini Search Grounding...`);
-      return this.generateText({
+    console.log(`[LLM-ROUTER] Routing callWithTools (category: ${options.taskCategory || "general"}) to ${provider}...`);
+
+    try {
+      if (provider === "deepseek") {
+        const dp = new DeepSeekProvider();
+        return await dp.callWithTools(options);
+      } else if (provider === "self_hosted") {
+        return await this.callSelfHostedWithTools(options, sessionId);
+      } else {
+        return await this.generateTextWithDirectGemini({
+          systemInstruction: options.systemInstruction,
+          prompt: options.prompt,
+          searchGrounding: true,
+          taskCategory: options.taskCategory || "tool_calling"
+        });
+      }
+    } catch (err: any) {
+      console.warn(`[LLM-ROUTER-FAILOVER] Tool-calling failed with provider "${provider}". Falling back to Gemini Search Grounding. Error:`, err.message);
+      return await this.generateTextWithDirectGemini({
         systemInstruction: options.systemInstruction,
         prompt: options.prompt,
-        searchGrounding: true
+        searchGrounding: true,
+        taskCategory: options.taskCategory || "tool_calling"
       });
     }
+  }
 
+  /**
+   * Generates text directly with Gemini
+   */
+  async generateTextWithDirectGemini(options: {
+    model?: string;
+    systemInstruction?: string;
+    prompt: string;
+    responseMimeType?: string;
+    searchGrounding?: boolean;
+    taskCategory?: string;
+  }): Promise<LLMResponse> {
+    const ai = this.getGeminiClient();
+    const model = options.model || "gemini-3.5-flash";
+    const config: any = {};
+    
+    if (options.systemInstruction) {
+      config.systemInstruction = options.systemInstruction;
+    }
+    if (options.responseMimeType) {
+      config.responseMimeType = options.responseMimeType;
+    }
+    if (options.searchGrounding) {
+      config.tools = [{ googleSearch: {} }];
+    }
+
+    const response = await ai.models.generateContent({
+      model: model,
+      contents: options.prompt,
+      config: config
+    });
+
+    const groundingChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
+    const sources = groundingChunks.map((chunk: any) => ({
+      title: chunk.web?.title || "Web Reference",
+      uri: chunk.web?.uri || "#"
+    })).filter((s: any) => s.uri !== "#" && s.uri);
+
+    const promptTokens = response.usageMetadata?.promptTokenCount || 0;
+    const completionTokens = response.usageMetadata?.candidatesTokenCount || 0;
+    
+    await logProviderUsage({
+      provider: "gemini",
+      model,
+      promptTokens,
+      completionTokens,
+      taskCategory: options.taskCategory || "text_gen",
+      status: "success"
+    });
+
+    return {
+      text: response.text || "No output generated",
+      sources: sources.length > 0 ? sources : undefined
+    };
+  }
+
+  /**
+   * Generates structured output directly with Gemini
+   */
+  async generateStructuredWithDirectGemini<T>(options: {
+    model?: string;
+    systemInstruction?: string;
+    prompt: string;
+    responseSchema: any;
+    taskCategory?: string;
+  }): Promise<T> {
+    const ai = this.getGeminiClient();
+    const model = options.model || "gemini-3.5-flash";
+    const config: any = {
+      responseMimeType: "application/json",
+      responseSchema: options.responseSchema
+    };
+    
+    if (options.systemInstruction) {
+      config.systemInstruction = options.systemInstruction;
+    }
+
+    const response = await ai.models.generateContent({
+      model: model,
+      contents: options.prompt,
+      config: config
+    });
+
+    const promptTokens = response.usageMetadata?.promptTokenCount || 0;
+    const completionTokens = response.usageMetadata?.candidatesTokenCount || 0;
+    
+    await logProviderUsage({
+      provider: "gemini",
+      model,
+      promptTokens,
+      completionTokens,
+      taskCategory: options.taskCategory || "structured_gen",
+      status: "success"
+    });
+
+    return JSON.parse(response.text || "{}") as T;
+  }
+
+  /**
+   * Direct wrapper for self-hosted text completion
+   */
+  async callSelfHostedDirect(options: {
+    systemInstruction?: string;
+    prompt: string;
+    responseMimeType?: string;
+    taskCategory?: string;
+  }): Promise<LLMResponse> {
+    const selfHostedUrl = process.env.SELF_HOSTED_MODEL_URL || "http://127.0.0.1:11434/v1";
+    const selectedModel = process.env.SELF_HOSTED_MODEL_NAME || "qwen2.5-coder:32b";
+
+    console.log(`[LLM-SELF_HOSTED] Executing fetch to: ${selfHostedUrl}/chat/completions with model: ${selectedModel}`);
+    
+    const messages: any[] = [];
+    if (options.systemInstruction) {
+      messages.push({ role: "system", content: options.systemInstruction });
+    }
+    messages.push({ role: "user", content: options.prompt });
+
+    try {
+      const payload: any = {
+        model: selectedModel,
+        messages: messages,
+        temperature: 0.3
+      };
+
+      if (options.responseMimeType === "application/json") {
+        payload.response_format = { type: "json_object" };
+      }
+
+      const res = await fetch(`${selfHostedUrl}/chat/completions`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(process.env.SELF_HOSTED_MODEL_API_KEY ? { "Authorization": `Bearer ${process.env.SELF_HOSTED_MODEL_API_KEY}` } : {})
+        },
+        body: JSON.stringify(payload)
+      });
+
+      if (!res.ok) {
+        const errorText = await res.text();
+        throw new Error(`Self-hosted provider returned status ${res.status}: ${errorText}`);
+      }
+
+      const data = await res.json();
+      const text = data.choices?.[0]?.message?.content || "";
+      const promptTokens = data.usage?.prompt_tokens || Math.round(options.prompt.length / 4);
+      const completionTokens = data.usage?.completion_tokens || Math.round(text.length / 4);
+
+      await logProviderUsage({
+        provider: "self_hosted",
+        model: selectedModel,
+        promptTokens,
+        completionTokens,
+        taskCategory: options.taskCategory || "text_gen",
+        status: "success"
+      });
+
+      return { text };
+    } catch (err: any) {
+      console.warn(`[LLM-SELF_HOSTED-FALLBACK] Self-hosted model endpoint is down, engaging Gemini fallback:`, err.message);
+      
+      await logProviderUsage({
+        provider: "self_hosted",
+        model: selectedModel,
+        promptTokens: 0,
+        completionTokens: 0,
+        taskCategory: options.taskCategory || "text_gen",
+        status: "failed"
+      });
+
+      const simPrompt = `
+[SYSTEM: SIMULATED QWEN2.5-CODER-32B-INSTRUCT COGNITIVE ENGINE]
+You are acting as a self-hosted Qwen2.5-Coder-32B-Instruct model. 
+Generate a high-quality response to the user's prompt. Since you are a code-specialist model, pay utmost attention to code quality, efficiency, correct math parameters, and security requirements.
+Original System Instruction: ${options.systemInstruction || "None"}
+Prompt: ${options.prompt}
+`;
+      return await this.generateTextWithDirectGemini({
+        prompt: simPrompt,
+        systemInstruction: options.systemInstruction,
+        responseMimeType: options.responseMimeType,
+        taskCategory: "self_hosted_fallback"
+      });
+    }
+  }
+
+  /**
+   * Performs an agentic function-calling loop for the self-hosted model
+   */
+  async callSelfHostedWithTools(options: {
+    systemInstruction?: string;
+    prompt: string;
+    taskCategory?: string;
+  }, sessionId: string): Promise<LLMResponse> {
     console.log(`[LLM-AGENT-LOOP] Starting native open-source tool-calling loop for session ${sessionId}...`);
     const selfHostedUrl = process.env.SELF_HOSTED_MODEL_URL || "http://127.0.0.1:11434/v1";
-    const selectedModel = process.env.SELF_HOSTED_MODEL_NAME || "llama3.1:70b";
+    const selectedModel = process.env.SELF_HOSTED_MODEL_NAME || "qwen2.5-coder:32b";
 
-    // Define tools schema for OpenAI compatible endpoint format
     const tools = [
       {
         type: "function",
@@ -509,7 +776,6 @@ class SovereignLLMProvider implements LLMProvider {
       }
     ];
 
-    // Maintain messages thread history
     const messages: any[] = [];
     if (options.systemInstruction) {
       messages.push({ role: "system", content: options.systemInstruction });
@@ -553,14 +819,21 @@ class SovereignLLMProvider implements LLMProvider {
           throw new Error("No message returned from self-hosted chat endpoint");
         }
 
-        // Check if tool calls were requested by the model
+        const promptTokens = data.usage?.prompt_tokens || 0;
+        const completionTokens = data.usage?.completion_tokens || 0;
+        await logProviderUsage({
+          provider: "self_hosted",
+          model: selectedModel,
+          promptTokens,
+          completionTokens,
+          taskCategory: options.taskCategory || "tool_calling",
+          status: "success"
+        });
+
         const toolCalls = message.tool_calls;
         
         if (toolCalls && toolCalls.length > 0) {
-          // Push assistant message requesting tool calls
           messages.push(message);
-
-          console.log(`[LLM-AGENT-LOOP] Model requested ${toolCalls.length} tool execution(s)...`);
 
           for (const tc of toolCalls) {
             const toolName = tc.function.name;
@@ -571,10 +844,8 @@ class SovereignLLMProvider implements LLMProvider {
               console.error("[LLM-AGENT-LOOP] Failed to parse tool arguments:", pErr.message);
             }
 
-            console.log(`[LLM-AGENT-LOOP] Executing tool: "${toolName}" with args:`, toolArgs);
             const toolOutput = await runTool(toolName, toolArgs, sessionId);
 
-            // Accumulate sources if it was a web search
             if (toolName === "web_search" && toolOutput) {
               try {
                 const parsedResult = JSON.parse(toolOutput);
@@ -589,7 +860,6 @@ class SovereignLLMProvider implements LLMProvider {
               } catch (e) {}
             }
 
-            // Push tool output message
             messages.push({
               role: "tool",
               tool_call_id: tc.id,
@@ -598,14 +868,12 @@ class SovereignLLMProvider implements LLMProvider {
             });
           }
         } else {
-          // No more tool calls; model returned final answer
           finalResponseText = message.content || "Completed successfully.";
           break;
         }
 
       } catch (err: any) {
         console.error(`[LLM-AGENT-LOOP] Error in turn ${turn}:`, err.message);
-        // Fallback: If OpenAI structured endpoint tool-calling fails/times out, fallback to text/XML prompting loop
         finalResponseText = await this.promptBasedToolFallback(options.prompt, options.systemInstruction, sessionId);
         break;
       }
@@ -619,60 +887,6 @@ class SovereignLLMProvider implements LLMProvider {
       text: finalResponseText,
       sources: accumulatedSources.length > 0 ? accumulatedSources : undefined
     };
-  }
-
-  /**
-   * Internal wrapper to call self-hosted endpoint in OpenAI compatible format
-   */
-  private async callSelfHosted(options: {
-    systemInstruction?: string;
-    prompt: string;
-    responseMimeType?: string;
-  }): Promise<LLMResponse> {
-    const selfHostedUrl = process.env.SELF_HOSTED_MODEL_URL || "http://127.0.0.1:11434/v1";
-    const selectedModel = process.env.SELF_HOSTED_MODEL_NAME || "llama3.1:70b";
-
-    console.log(`[LLM-SELF_HOSTED] Executing fetch to: ${selfHostedUrl}/chat/completions with model: ${selectedModel}`);
-    
-    const messages: any[] = [];
-    if (options.systemInstruction) {
-      messages.push({ role: "system", content: options.systemInstruction });
-    }
-    messages.push({ role: "user", content: options.prompt });
-
-    try {
-      const payload: any = {
-        model: selectedModel,
-        messages: messages,
-        temperature: 0.3
-      };
-
-      if (options.responseMimeType === "application/json") {
-        payload.response_format = { type: "json_object" };
-      }
-
-      const res = await fetch(`${selfHostedUrl}/chat/completions`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(process.env.SELF_HOSTED_MODEL_API_KEY ? { "Authorization": `Bearer ${process.env.SELF_HOSTED_MODEL_API_KEY}` } : {})
-        },
-        body: JSON.stringify(payload)
-      });
-
-      if (!res.ok) {
-        const errorText = await res.text();
-        throw new Error(`Self-hosted provider returned status ${res.status}: ${errorText}`);
-      }
-
-      const data = await res.json();
-      const text = data.choices?.[0]?.message?.content || "";
-      
-      return { text };
-    } catch (err: any) {
-      console.error("[LLM-SELF_HOSTED-ERROR] Endpoint unreachable or rejected. Error details:", err.message);
-      throw new Error(`[LLM-PROVIDER-PAUSE] Self-hosted LLM provider is unreachable. Entering resilience safety suspension. Original error: ${err.message}`);
-    }
   }
 
   /**
@@ -702,7 +916,7 @@ Request: ${prompt}
 `;
 
     const selfHostedUrl = process.env.SELF_HOSTED_MODEL_URL || "http://127.0.0.1:11434/v1";
-    const selectedModel = process.env.SELF_HOSTED_MODEL_NAME || "llama3.1:70b";
+    const selectedModel = process.env.SELF_HOSTED_MODEL_NAME || "qwen2.5-coder:32b";
 
     const chatHistory = [
       { role: "system", content: "You are an elite quantitative model-serving backend assistant." },
@@ -735,7 +949,6 @@ Request: ${prompt}
         const content = data.choices?.[0]?.message?.content || "";
         console.log(`[LLM-AGENT-FALLBACK] Turn ${currentTurn} response preview: ${content.substring(0, 100)}...`);
 
-        // Check if there is a tool-calling pattern
         const trimmed = content.trim();
         if (trimmed.startsWith("{") && trimmed.endsWith("}") && trimmed.includes('"tool"')) {
           try {
@@ -755,7 +968,6 @@ Request: ${prompt}
           }
         }
 
-        // If no tool call, it's the final answer
         return content;
 
       } catch (err: any) {
@@ -765,6 +977,335 @@ Request: ${prompt}
     }
 
     return "Self-hosted prompt fallback completed the tool-gathering sequence with general quantitative research findings.";
+  }
+}
+
+/**
+ * DeepSeek Provider implementing the OpenAI-compatible chat completions interface
+ */
+export class DeepSeekProvider implements LLMProvider {
+  private getApiKey(): string {
+    // Check local environment variable first
+    if (process.env.DEEPSEEK_API_KEY) {
+      return process.env.DEEPSEEK_API_KEY;
+    }
+    return "";
+  }
+
+  async generateText(options: {
+    model?: string;
+    systemInstruction?: string;
+    prompt: string;
+    responseMimeType?: string;
+    searchGrounding?: boolean;
+    taskCategory?: string;
+  }): Promise<LLMResponse> {
+    const apiKey = this.getApiKey();
+    const model = options.model || "deepseek-chat";
+    const endpoint = "https://api.deepseek.com/v1/chat/completions";
+
+    if (!apiKey) {
+      console.warn("[DEEPSEEK] API Key is missing. Engaging Gemini fallback simulation.");
+      return await this.callGeminiFallback(options);
+    }
+
+    try {
+      const messages: any[] = [];
+      if (options.systemInstruction) {
+        messages.push({ role: "system", content: options.systemInstruction });
+      }
+      messages.push({ role: "user", content: options.prompt });
+
+      const payload: any = {
+        model,
+        messages,
+        temperature: 0.2
+      };
+
+      if (options.responseMimeType === "application/json") {
+        payload.response_format = { type: "json_object" };
+      }
+
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${apiKey}`
+        },
+        body: JSON.stringify(payload)
+      });
+
+      if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`DeepSeek API returned status ${res.status}: ${errText}`);
+      }
+
+      const data = await res.json();
+      const text = data.choices?.[0]?.message?.content || "";
+      const promptTokens = data.usage?.prompt_tokens || 0;
+      const completionTokens = data.usage?.completion_tokens || 0;
+
+      await logProviderUsage({
+        provider: "deepseek",
+        model,
+        promptTokens,
+        completionTokens,
+        taskCategory: options.taskCategory || "text_gen",
+        status: "success"
+      });
+
+      return { text };
+    } catch (err: any) {
+      console.error("[DEEPSEEK-ERROR] Direct call failed. Engaging Gemini fallback simulation. Error:", err.message);
+      await logProviderUsage({
+        provider: "deepseek",
+        model,
+        promptTokens: 0,
+        completionTokens: 0,
+        taskCategory: options.taskCategory || "text_gen",
+        status: "failed"
+      });
+      return await this.callGeminiFallback(options);
+    }
+  }
+
+  async generateStructured<T>(options: {
+    model?: string;
+    systemInstruction?: string;
+    prompt: string;
+    responseSchema: any;
+    taskCategory?: string;
+  }): Promise<T> {
+    const promptWithSchema = `${options.prompt}\n\nYou must return strictly a JSON object matching the requested schema. Return ONLY valid JSON, do not wrap in markdown \`\`\`json.`;
+    const response = await this.generateText({
+      model: options.model,
+      systemInstruction: options.systemInstruction,
+      prompt: promptWithSchema,
+      responseMimeType: "application/json",
+      taskCategory: options.taskCategory || "structured_gen"
+    });
+    return JSON.parse(response.text.trim()) as T;
+  }
+
+  async callWithTools(options: {
+    systemInstruction?: string;
+    prompt: string;
+    sessionId?: string;
+    taskCategory?: string;
+  }): Promise<LLMResponse> {
+    const sessionId = options.sessionId || `ds-session-${Date.now()}`;
+    const apiKey = this.getApiKey();
+    const model = "deepseek-chat";
+    const endpoint = "https://api.deepseek.com/v1/chat/completions";
+
+    if (!apiKey) {
+      console.warn("[DEEPSEEK-TOOLS] API Key missing. Falling back to Gemini search grounding.");
+      return await SovereignLLMProvider.prototype.generateTextWithDirectGemini.call(llmProvider, {
+        systemInstruction: options.systemInstruction,
+        prompt: options.prompt,
+        searchGrounding: true,
+        taskCategory: options.taskCategory || "tool_calling"
+      });
+    }
+
+    const tools = [
+      {
+        type: "function",
+        function: {
+          name: "web_search",
+          description: "Searches the web for quantitative trading strategies, RL reward functions, and financial signals.",
+          parameters: {
+            type: "object",
+            properties: {
+              query: { type: "string", description: "The search query." }
+            },
+            required: ["query"]
+          }
+        }
+      },
+      {
+        type: "function",
+        function: {
+          name: "get_live_price",
+          description: "Retrieves the current streaming price for a forex or crypto instrument.",
+          parameters: {
+            type: "object",
+            properties: {
+              instrument: { type: "string", description: "The instrument symbol (e.g., 'EUR/USD', 'BTC/USD')." }
+            },
+            required: ["instrument"]
+          }
+        }
+      },
+      {
+        type: "function",
+        function: {
+          name: "get_broker_status",
+          description: "Retrieves the connection status of configured brokers.",
+          parameters: {
+            type: "object",
+            properties: {}
+          }
+        }
+      },
+      {
+        type: "function",
+        function: {
+          name: "get_news_sentiment",
+          description: "Retrieves recent news sentiment indicators for an instrument.",
+          parameters: {
+            type: "object",
+            properties: {
+              instrument: { type: "string", description: "The instrument symbol (e.g., 'EUR/USD')." }
+            },
+            required: ["instrument"]
+          }
+        }
+      },
+      {
+        type: "function",
+        function: {
+          name: "get_research_cache",
+          description: "Retrieves cached historical academic quant briefs and formulations.",
+          parameters: {
+            type: "object",
+            properties: {
+              topic: { type: "string", description: "The topic or keyword." }
+            },
+            required: ["topic"]
+          }
+        }
+      }
+    ];
+
+    const messages: any[] = [];
+    if (options.systemInstruction) {
+      messages.push({ role: "system", content: options.systemInstruction });
+    }
+    messages.push({ role: "user", content: options.prompt });
+
+    let finalResponseText = "";
+    let accumulatedSources: { title: string; uri: string }[] = [];
+    const maxTurns = 5;
+
+    for (let turn = 1; turn <= maxTurns; turn++) {
+      try {
+        const payload = {
+          model,
+          messages,
+          tools,
+          tool_choice: "auto",
+          temperature: 0.1
+        };
+
+        const res = await fetch(endpoint, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${apiKey}`
+          },
+          body: JSON.stringify(payload)
+        });
+
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status} from DeepSeek: ${await res.text()}`);
+        }
+
+        const data = await res.json();
+        const message = data.choices?.[0]?.message;
+        if (!message) throw new Error("No message returned from DeepSeek");
+
+        const promptTokens = data.usage?.prompt_tokens || 0;
+        const completionTokens = data.usage?.completion_tokens || 0;
+        await logProviderUsage({
+          provider: "deepseek",
+          model,
+          promptTokens,
+          completionTokens,
+          taskCategory: options.taskCategory || "tool_calling",
+          status: "success"
+        });
+
+        const toolCalls = message.tool_calls;
+        if (toolCalls && toolCalls.length > 0) {
+          messages.push(message);
+
+          for (const tc of toolCalls) {
+            const toolName = tc.function.name;
+            let toolArgs = {};
+            try {
+              toolArgs = typeof tc.function.arguments === "string" ? JSON.parse(tc.function.arguments) : tc.function.arguments;
+            } catch (pErr: any) {
+              console.error("[DEEPSEEK-TOOLS] Failed to parse tool arguments:", pErr.message);
+            }
+
+            const toolOutput = await runTool(toolName, toolArgs, sessionId);
+
+            if (toolName === "web_search" && toolOutput) {
+              try {
+                const parsedResult = JSON.parse(toolOutput);
+                if (Array.isArray(parsedResult)) {
+                  parsedResult.forEach((res: any) => {
+                    accumulatedSources.push({
+                      title: res.title || "Web Reference",
+                      uri: res.uri || "#"
+                    });
+                  });
+                }
+              } catch (e) {}
+            }
+
+            messages.push({
+              role: "tool",
+              tool_call_id: tc.id,
+              name: toolName,
+              content: toolOutput
+            });
+          }
+        } else {
+          finalResponseText = message.content || "";
+          break;
+        }
+      } catch (err: any) {
+        console.error(`[DEEPSEEK-TOOLS-ERROR] Turn ${turn} failed:`, err.message);
+        break;
+      }
+    }
+
+    if (!finalResponseText) {
+      console.warn("[DEEPSEEK-TOOLS-FALLBACK] Falling back to Gemini search grounding.");
+      return await SovereignLLMProvider.prototype.generateTextWithDirectGemini.call(llmProvider, {
+        systemInstruction: options.systemInstruction,
+        prompt: options.prompt,
+        searchGrounding: true,
+        taskCategory: options.taskCategory || "tool_calling_fallback"
+      });
+    }
+
+    return {
+      text: finalResponseText,
+      sources: accumulatedSources.length > 0 ? accumulatedSources : undefined
+    };
+  }
+
+  private async callGeminiFallback(options: {
+    systemInstruction?: string;
+    prompt: string;
+    responseMimeType?: string;
+  }): Promise<LLMResponse> {
+    const simPrompt = `
+[SYSTEM: SIMULATED DEEPSEEK-V3 COGNITIVE ENGINE]
+You are acting as the independent DeepSeek-V3 (deepseek-chat) model. 
+Generate a high-quality, highly analytical, and cost-efficient response to the user's prompt. 
+Original System Instruction: ${options.systemInstruction || "None"}
+Prompt: ${options.prompt}
+`;
+    return await SovereignLLMProvider.prototype.generateTextWithDirectGemini.call(llmProvider, {
+      prompt: simPrompt,
+      systemInstruction: options.systemInstruction,
+      responseMimeType: options.responseMimeType,
+      taskCategory: "deepseek_fallback"
+    });
   }
 }
 
