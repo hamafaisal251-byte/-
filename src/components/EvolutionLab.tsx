@@ -25,11 +25,18 @@ export default function EvolutionLab({ candidates, setCandidates, selectedId, se
     stats: { totalAttempts: 0, outperformedCount: 0, underperformedCount: 0, neutralCount: 0 },
     hypotheses: [],
     techniques: [],
-    attempts: []
+    attempts: [],
+    evolutionLogs: []
   });
   const [isSynthesizing, setIsSynthesizing] = useState<boolean>(false);
   const [synthesisLog, setSynthesisLog] = useState<string>('');
   const [synthesisResult, setSynthesisResult] = useState<any>(null);
+
+  // Self-Debugging Code Evolution states
+  const [isEvolving, setIsEvolving] = useState<boolean>(false);
+  const [evolutionQuery, setEvolutionQuery] = useState<string>('moving average crossover');
+  const [evolutionWeakness, setEvolutionWeakness] = useState<string>('high latency and excessive slippage during news events');
+  const [evolutionResultMsg, setEvolutionResultMsg] = useState<string>('');
 
   const fetchSynthesisData = async () => {
     try {
@@ -70,6 +77,34 @@ export default function EvolutionLab({ candidates, setCandidates, selectedId, se
       setSynthesisLog('خەتای تۆر: پەیوەندی پچڕا.');
     } finally {
       setIsSynthesizing(false);
+    }
+  };
+
+  const handleTriggerCodeEvolution = async () => {
+    setIsEvolving(true);
+    setEvolutionResultMsg('گەڕان لە لۆجیکەکانی گیتھەب و پشکنینی مۆڵەتنامەکان...');
+    try {
+      const res = await fetch('/api/value-discovery/github-evolution', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: evolutionQuery, weakness: evolutionWeakness })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setEvolutionResultMsg(`پرۆسەی خۆباشکردنی گۆڕینی کۆد بە سەرکەوتوویی تەواو بوو! کاندیدەکان تۆمارکران.`);
+        fetchSynthesisData();
+        const candRes = await fetch('/api/candidates');
+        if (candRes.ok) {
+          const candData = await candRes.json();
+          setCandidates(candData.candidates);
+        }
+      } else {
+        setEvolutionResultMsg(`خەتایەک لە کاتی پرۆسەکەدا ڕوویدا: ${data.error || 'هەڵە لە پرۆسەدا'}`);
+      }
+    } catch (err) {
+      setEvolutionResultMsg('خەتای تۆر: پەیوەندی پچڕا.');
+    } finally {
+      setIsEvolving(false);
     }
   };
 
@@ -1152,6 +1187,157 @@ export default function EvolutionLab({ candidates, setCandidates, selectedId, se
             <div className="p-4 bg-slate-900 border border-slate-800 rounded-xl text-right" dir="rtl">
               <span className="text-[10px] text-slate-500 font-bold uppercase block tracking-wider">بێکاریگەری یان نەگۆڕاو (Neutral)</span>
               <span className="text-2xl font-bold font-mono text-slate-400 block mt-1">{synthesisData.stats.neutralCount}</span>
+            </div>
+          </div>
+
+          {/* New Section: Self-Debugging Code Evolution Loop */}
+          <div className="p-6 bg-slate-900 border border-slate-800 rounded-xl text-right space-y-5" dir="rtl">
+            <div className="flex items-start space-x-3 space-x-reverse border-b border-slate-800 pb-4">
+              <div className="p-2.5 bg-rose-950/60 border border-rose-500/30 rounded-lg text-rose-400">
+                <Github className="w-6 h-6 animate-pulse" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-slate-100 uppercase tracking-wide flex items-center gap-2 justify-start">
+                  بزوێنەری خۆباشکردنی گۆڕینی کۆد لە گیتھەب (Self-Debugging Code Evolution Loop)
+                </h3>
+                <p className="text-xs text-slate-400 mt-1">
+                  ئەم مۆدیولە بە شێوەیەکی خۆکار لە گیتھەب دەگەڕێت بۆ دۆزینەوەی لۆجیکی بازرگانی، تەنها مۆڵەتنامە ڕێگەپێدراوەکان (Permissive Licenses) قبوڵ دەکات، و پاشان لۆپێکی چاککردنی کۆد (تا ٥ هەوڵ) ئەنجام دەدات لە حاڵەتی بوونی کێشەی کۆمپایل یان یادگە.
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <label className="text-[11px] font-mono text-slate-400 block">گوزارەی گەڕان لە گیتھەب (GitHub Search Query)</label>
+                <input
+                  type="text"
+                  value={evolutionQuery}
+                  onChange={(e) => setEvolutionQuery(e.target.value)}
+                  placeholder="بۆ نموونە: moving average crossover, bollinger, mean reversion"
+                  className="w-full bg-slate-950 border border-slate-850 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-rose-500 transition-all text-right"
+                  dir="rtl"
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-[11px] font-mono text-slate-400 block">لاوازی نێو بازاڕ بۆ چارەسەرکردن (Market Weakness to Address)</label>
+                <input
+                  type="text"
+                  value={evolutionWeakness}
+                  onChange={(e) => setEvolutionWeakness(e.target.value)}
+                  placeholder="بۆ نموونە: high latency, slippage, volatility spikes"
+                  className="w-full bg-slate-950 border border-slate-850 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-rose-500 transition-all text-right"
+                  dir="rtl"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-between items-center gap-4 pt-2">
+              <button
+                onClick={handleTriggerCodeEvolution}
+                disabled={isEvolving || !evolutionQuery.trim() || !evolutionWeakness.trim()}
+                className="px-5 py-2.5 bg-rose-600 hover:bg-rose-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold text-xs rounded-lg transition-all flex items-center gap-2"
+              >
+                {isEvolving ? (
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Github className="w-4 h-4" />
+                )}
+                <span>دەستپێکردنی لۆپی پەرەپێدان (Run Evolution Loop)</span>
+              </button>
+
+              {evolutionResultMsg && (
+                <span className="text-xs text-rose-400 font-bold bg-rose-950/20 px-3 py-1.5 border border-rose-900/30 rounded-lg">
+                  {evolutionResultMsg}
+                </span>
+              )}
+            </div>
+
+            {/* Code Evolution Log Timeline */}
+            <div className="border-t border-slate-800 pt-4">
+              <h4 className="text-xs font-bold text-slate-300 mb-3 flex items-center gap-2 justify-start">
+                <Clock className="w-4 h-4 text-rose-400" />
+                مێژووی کارکردنی بزوێنەری کۆد (Evolution Log Timeline)
+              </h4>
+
+              <div className="space-y-4 max-h-[350px] overflow-y-auto pr-1">
+                {!synthesisData.evolutionLogs || synthesisData.evolutionLogs.length === 0 ? (
+                  <div className="text-center py-8 text-xs text-slate-600 italic">هیچ تۆمارێکی کارکردنی بزوێنەر لە ئێستادا بەردەست نییە. بۆ دەستپێکردن دوگمەی سەرەوە دابگرە.</div>
+                ) : (
+                  synthesisData.evolutionLogs.map((log: any) => {
+                    const isBlocked = log.final_status === "BLOCKED";
+                    const isPassed = log.final_status === "PASSED";
+                    let cycleLogs = [];
+                    try {
+                      cycleLogs = typeof log.verification_cycle_logs === 'string' 
+                        ? JSON.parse(log.verification_cycle_logs) 
+                        : (log.verification_cycle_logs || []);
+                    } catch (e) {}
+
+                    return (
+                      <div key={log.id} className="p-4 bg-slate-950 border border-slate-850 rounded-lg space-y-3">
+                        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+                          <div className="flex items-center gap-2">
+                            <span className={`text-[9px] px-2.5 py-0.5 rounded-full font-bold ${
+                              isPassed 
+                                ? 'bg-emerald-950 text-emerald-400 border border-emerald-900/60' 
+                                : isBlocked 
+                                ? 'bg-amber-950 text-amber-400 border border-amber-900/60' 
+                                : 'bg-rose-950 text-rose-400 border border-rose-900/60'
+                            }`}>
+                              STATUS: {log.final_status}
+                            </span>
+                            <span className="text-[10px] text-slate-400 font-bold font-mono">
+                              {log.candidate_name || "N/A"}
+                            </span>
+                          </div>
+                          <span className="text-[9px] text-slate-500 font-mono">
+                            {new Date(log.timestamp).toLocaleString()}
+                          </span>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs bg-slate-900/40 p-2.5 rounded border border-slate-850">
+                          <div>
+                            <span className="text-[9px] text-slate-500 block">مەخزەنی سەرچاوە (Source Repo)</span>
+                            <a href={log.source_repo} target="_blank" rel="noopener noreferrer" className="text-rose-400 hover:underline font-mono text-[10px]">
+                              {log.source_repo || "N/A"}
+                            </a>
+                          </div>
+                          <div>
+                            <span className="text-[9px] text-slate-500 block">مۆڵەتنامە و ڕێگەدان (Licensing Check)</span>
+                            <span className={`font-bold text-[10px] ${log.license_status === "ALLOWED" ? "text-emerald-400" : "text-amber-400"}`}>
+                              {log.license || "None"} ({log.license_status || "UNKNOWN"})
+                            </span>
+                          </div>
+                        </div>
+
+                        {cycleLogs.length > 0 && (
+                          <div className="space-y-2">
+                            <span className="text-[10px] text-slate-400 font-bold block">لۆپی خۆباشکردن و ڕاستکردنەوە (Self-Debugging Cycles):</span>
+                            <div className="space-y-2 border-r-2 border-slate-800 pr-3 mr-1">
+                              {cycleLogs.map((cycle: any, cidx: number) => (
+                                <div key={cidx} className="space-y-1">
+                                  <div className="flex items-center gap-2 justify-start text-[10px]">
+                                    <span className={`w-1.5 h-1.5 rounded-full ${cycle.status === "SUCCESS" ? "bg-emerald-400" : "bg-rose-400 animate-pulse"}`}></span>
+                                    <span className="font-bold text-slate-300">گەڕی #{cycle.retry} - </span>
+                                    <span className={cycle.status === "SUCCESS" ? "text-emerald-400 font-bold" : "text-rose-400"}>
+                                      {cycle.status === "SUCCESS" ? "پەسەندکرا (Passed Sandbox)" : "ڕەتکرایەوە (Failed Sandbox)"}
+                                    </span>
+                                  </div>
+                                  {cycle.error && (
+                                    <pre className="bg-slate-900 border border-slate-850 p-2 rounded text-[9px] font-mono text-rose-300 text-left overflow-x-auto max-h-24 leading-relaxed" dir="ltr">
+                                      {cycle.error}
+                                    </pre>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })
+                )}
+              </div>
             </div>
           </div>
 

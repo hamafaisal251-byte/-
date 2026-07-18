@@ -55,21 +55,14 @@ echo -e "${GREEN}[STATIC AUDIT] Step 1 passed: Code is verified free of unsafe s
 
 # ----------------------------------------------------------------------------
 # STEP 2: STATIC CODE ANALYSIS (CPPCHECK)
-# Add a real static analysis step using cppcheck before compilation.
+# Run a real static analysis step using cppcheck before compilation.
 # ----------------------------------------------------------------------------
 echo -e "\n${BOLD}${YELLOW}[STEP 2] EXECUTING CPPCHECK STATIC ANALYSIS...${RESET}"
 echo -e "[CPPCHECK] Running static analyzer on: ${CANDIDATE_FILE}"
 
-# Run cppcheck with all enabled checks except missing system includes if installed.
-# If any static analysis issues are found, cppcheck exits with code 101.
 set +e
-if command -v cppcheck >/dev/null 2>&1; then
-    cppcheck --enable=all --suppress=missingIncludeSystem --error-exitcode=101 "${CANDIDATE_FILE}"
-    cppcheck_exit=$?
-else
-    echo -e "${YELLOW}[CPPCHECK WARNING] cppcheck is not installed in the host. Skipping static analysis check.${RESET}"
-    cppcheck_exit=0
-fi
+cppcheck --enable=all --suppress=missingIncludeSystem --error-exitcode=101 "${CANDIDATE_FILE}"
+cppcheck_exit=$?
 set -e
 
 if [ "${cppcheck_exit}" -ne 0 ]; then
@@ -80,37 +73,27 @@ fi
 echo -e "${GREEN}[CPPCHECK] Step 2 passed: Static analysis verified code conforms to high-quality standards.${RESET}"
 
 # ----------------------------------------------------------------------------
-# STEP 3: SANITIZED COMPILATION
-# Compile candidate module to verify standard compliance and catch address safety.
+# STEP 3: SANITIZED COMPILATION WITH ASAN & UBSAN
+# Compile candidate module to verify standard compliance and catch address/undefined safety issues.
 # ----------------------------------------------------------------------------
 echo -e "\n${BOLD}${YELLOW}[STEP 3] COMPILING CANDIDATE WITH ADDRESS/UNDEFINED SANITIZERS...${RESET}"
 echo -e "[COMPILER] GCC parameters: g++ -Wall -Werror -O3 -fsanitize=address,undefined -shared -fPIC"
 
-# Run compiler
-if ! command -v g++ >/dev/null 2>&1; then
-    echo -e "${YELLOW}[COMPILER WARNING] g++ is not installed in the host environment.${RESET}"
-    echo -e "${YELLOW}[COMPILER WARNING] Simulating successful compilation and safety validations inside sandbox...${RESET}"
-    echo -e "${GREEN}[COMPILER] Step 3 passed (Simulated): Module compiles perfectly with zero warnings.${RESET}"
-    echo -e "${GREEN}[DYNAMIC AUDIT] Step 4 passed (Simulated): 500,000 tick currency playback simulated with zero leaks.${RESET}"
-    echo -e "${BOLD}${GREEN}[SUCCESS] (Simulated) AI CANDIDATE MODULE FULLY APPROVED AND LIVE ON HIGH-FREQUENCY STACK!${RESET}"
-    exit 0
-fi
-
 if ! g++ -Wall -Werror -O3 -fsanitize=address,undefined -shared -fPIC -o "${SANDBOX_DIR}/${OUTPUT_BIN}" "${CANDIDATE_FILE}"; then
-    echo -e "${RED}[COMPILER] CRITICAL ERROR: Code failed to compile under strict ANSI-C++ guidelines.${RESET}" >&2
+    echo -e "${RED}[COMPILER] CRITICAL ERROR: Code failed to compile under strict C++ guidelines with Address/Undefined Sanitizers.${RESET}" >&2
     exit 102
 fi
 
 echo -e "${GREEN}[COMPILER] Step 3 passed: Module compiled with zero warnings and address-safety instrumentation.${RESET}"
 
 # ----------------------------------------------------------------------------
-# STEP 4: DYNAMIC SIMULATION & VALGRIND / ASAN AUDIT
-# Execute dynamic tests under Valgrind/ASan against a real test harness.
+# STEP 4: DYNAMIC SIMULATION & MEMORY AUDIT (VALGRIND OR ASAN/LSAN)
+# Execute dynamic tests against a real 500,000 tick test harness.
 # ----------------------------------------------------------------------------
 echo -e "\n${BOLD}${YELLOW}[STEP 4] BOOTSTRAPPING DYNAMIC RUNTIME MEMORY ANALYSIS...${RESET}"
-echo -e "[VALGRIND] Creating test harness and playing back 500,000 tick currency updates..."
+echo -e "[DYNAMIC-AUDIT] Creating test harness and playing back 500,000 tick currency updates..."
 
-# Write real C++ test harness main() to a separate source file in the sandbox directory
+# Write real C++ test harness main()
 cat << 'EOF' > "${SANDBOX_DIR}/harness.cpp"
 #include <iostream>
 #include <random>
@@ -145,49 +128,53 @@ int main() {
 }
 EOF
 
-# Compile the candidate and the test harness into a real executable for Valgrind.
-# Note: we do NOT compile this specific Valgrind executable with address sanitizers, as ASan and Valgrind are mutually exclusive.
-if ! g++ -Wall -Werror -O3 -o "${SANDBOX_DIR}/harness_binary" "${CANDIDATE_FILE}" "${SANDBOX_DIR}/harness.cpp"; then
-    echo -e "${RED}[VALGRIND AUDIT] CRITICAL ERROR: Failed to compile the test harness binary.${RESET}" >&2
-    exit 104
-fi
-
-# Check if Valgrind actually works in this environment (some sandboxed/Docker/gVisor environments block Valgrind on startup)
+# Check if Valgrind actually works in this host environment
 set +e
 valgrind --error-exitcode=99 /bin/true >/dev/null 2>&1
 valgrind_functional=$?
 set -e
 
 if [ "${valgrind_functional}" -eq 139 ] || [ "${valgrind_functional}" -eq 11 ] || [ "${valgrind_functional}" -ne 0 ]; then
-    echo -e "${YELLOW}[VALGRIND WARNING] Host environment (gVisor/sandbox container) is incompatible with Valgrind (Exit: ${valgrind_functional}).${RESET}"
-    echo -e "${YELLOW}[VALGRIND WARNING] Elevating security: compiling dynamic test harness with AddressSanitizer and UndefinedBehaviorSanitizer...${RESET}"
-    
+    echo -e "${YELLOW}[VALGRIND WARNING] Host environment is incompatible with Valgrind (Exit: ${valgrind_functional}).${RESET}"
+    echo -e "${YELLOW}[VALGRIND WARNING] Utilizing AddressSanitizer and LeakSanitizer for genuine memory & leak tracking.${RESET}"
+
+    # Compile the candidate and the test harness into an executable with AddressSanitizer, LeakSanitizer, and UndefinedBehaviorSanitizer.
     if ! g++ -Wall -Werror -O3 -fsanitize=address,undefined -o "${SANDBOX_DIR}/harness_sanitized" "${CANDIDATE_FILE}" "${SANDBOX_DIR}/harness.cpp"; then
         echo -e "${RED}[DYNAMIC AUDIT] CRITICAL ERROR: Failed to compile the sanitized test harness binary.${RESET}" >&2
         exit 104
     fi
-    
-    echo -e "[DYNAMIC AUDIT] Sanitized harness built successfully. Executing 500,000 tick dynamic simulation..."
+
+    echo -e "[DYNAMIC AUDIT] Executing 500,000 tick dynamic simulation under ASan/LSan/UBSan inside network-isolated namespace..."
     
     set +e
-    "${SANDBOX_DIR}/harness_sanitized" > "${SANDBOX_DIR}/harness_sanitized.log" 2>&1
+    unshare -n sh -c "timeout 45 ${SANDBOX_DIR}/harness_sanitized" > "${SANDBOX_DIR}/asan.log" 2>&1
     harness_exit=$?
     set -e
-    
-    if [ "${harness_exit}" -ne 0 ]; then
+
+    # Parse ASan / LSan error or leaks
+    detected_leaks=$(grep -E "detected memory leaks|AddressSanitizer:|LeakSanitizer:|ERROR:|undefined-behavior|Sanitizer:" "${SANDBOX_DIR}/asan.log" || echo "")
+
+    if [ "${harness_exit}" -ne 0 ] || [ -n "${detected_leaks}" ]; then
         echo -e "${RED}[DYNAMIC AUDIT] CRITICAL REJECTION: Memory safety violation or leak detected in candidate module!${RESET}" >&2
-        cat "${SANDBOX_DIR}/harness_sanitized.log" >&2
+        cat "${SANDBOX_DIR}/asan.log" >&2
         exit 103
     fi
-    
+
     echo -e "${GREEN}[DYNAMIC AUDIT] Sanitized dynamic simulation passed with zero errors, zero leaks, and zero bounds violations.${RESET}"
     echo -e "${GREEN}[DYNAMIC AUDIT] Step 4 passed: Dynamic safety check successfully validated.${RESET}"
+
 else
-    echo -e "[VALGRIND] Harness binary built successfully. Running Memcheck..."
+    echo -e "[VALGRIND] Running under full Memcheck inside network-isolated namespace..."
+
+    # Compile the candidate and the test harness into a standard executable for Valgrind.
+    if ! g++ -Wall -Werror -O3 -o "${SANDBOX_DIR}/harness_binary" "${CANDIDATE_FILE}" "${SANDBOX_DIR}/harness.cpp"; then
+        echo -e "${RED}[VALGRIND AUDIT] CRITICAL ERROR: Failed to compile the test harness binary.${RESET}" >&2
+        exit 104
+    fi
 
     # Execute real harness binary under real Valgrind Memcheck
     set +e
-    valgrind --tool=memcheck --leak-check=full --show-leak-kinds=all --error-exitcode=99 "${SANDBOX_DIR}/harness_binary" > "${SANDBOX_DIR}/valgrind.log" 2>&1
+    unshare -n sh -c "timeout 45 valgrind --tool=memcheck --leak-check=full --show-leak-kinds=all --error-exitcode=99 ${SANDBOX_DIR}/harness_binary" > "${SANDBOX_DIR}/valgrind.log" 2>&1
     valgrind_sim_exit=$?
     set -e
 
@@ -207,7 +194,7 @@ else
     echo -e "  - Error Count:     ${error_count}"
 
     if [ "${valgrind_sim_exit}" -ne 0 ] || [ "${definitely_lost}" -ne 0 ] || [ "${indirectly_lost}" -ne 0 ] || [ "${error_count}" -ne 0 ]; then
-        echo -e "${RED}[VALGRIND AUDIT] CRITICAL REJECTION: Heap leakage or invalid pointers found inside AI module!${RESET}" >&2
+        echo -e "${RED}[VALGRIND AUDIT] CRITICAL REJECTION: Heap leakage, memory error or invalid pointer found inside AI module!${RESET}" >&2
         cat "${SANDBOX_DIR}/valgrind.log" >&2
         exit 103
     fi
