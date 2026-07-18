@@ -4165,9 +4165,93 @@ class LiveIngestionPipeline {
 
         // Sample last 10 ticks for online gradient descent
         const sampleTicks = liveTicksBuffer.slice(-10);
+
+        // Helper to find the closest real action and position details for a given tick timestamp
+        const findRealActionAndPnLForTick = (t: any) => {
+          const tickTime = t.timestamp;
+          const toleranceMs = 15000; // 15 seconds window
+
+          let closestPred: any = null;
+          let minDiff = Infinity;
+
+          const predLogs = pgDb.cache.prediction_log || [];
+          for (const pred of predLogs) {
+            const predTime = new Date(pred.timestamp || Date.now()).getTime();
+            const diff = Math.abs(predTime - tickTime);
+            if (diff <= toleranceMs && diff < minDiff) {
+              minDiff = diff;
+              closestPred = pred;
+            }
+          }
+
+          let action = 2; // Default to HOLD
+          let pnl_pips = 0.0;
+
+          if (closestPred) {
+            const dir = (closestPred.predictedDirection || closestPred.predicted_direction || "").toUpperCase();
+            if (dir.includes("BUY")) action = 0;
+            else if (dir.includes("SELL")) action = 1;
+            else if (dir.includes("HOLD")) action = 2;
+          } else {
+            // Fallback to strategy_audit_logs if prediction_log doesn't have it
+            let closestAudit: any = null;
+            let minAuditDiff = Infinity;
+            const auditLogs = pgDb.cache.strategy_audit_logs || [];
+            for (const audit of auditLogs) {
+              const auditTime = new Date(audit.timestamp || Date.now()).getTime();
+              const diff = Math.abs(auditTime - tickTime);
+              if (diff <= toleranceMs && diff < minAuditDiff) {
+                minAuditDiff = diff;
+                closestAudit = audit;
+              }
+            }
+            if (closestAudit) {
+              const actionText = (closestAudit.actionTaken || closestAudit.action_taken || "").toUpperCase();
+              if (actionText.includes("BUY") || actionText.includes("LONG")) action = 0;
+              else if (actionText.includes("SELL") || actionText.includes("SHORT")) action = 1;
+              else if (actionText.includes("HOLD")) action = 2;
+            }
+          }
+
+          // Calculate PnL if we took a BUY/SELL action
+          if (action !== 2) {
+            const positionId = closestPred?.positionId || closestPred?.position_id;
+            const matchedPosition = positionId ? demoLivePositions.find(p => p.id === positionId) : null;
+
+            if (matchedPosition) {
+              // Position is STILL OPEN! Use unrealized PnL/pips based on the last tick's current price vs entry price
+              const currentPrice = liveTicksBuffer[liveTicksBuffer.length - 1].price;
+              const entryPrice = parseFloat(matchedPosition.entryPrice);
+              const diff = matchedPosition.type === "BUY" ? (currentPrice - entryPrice) : (entryPrice - currentPrice);
+              pnl_pips = matchedPosition.symbol === "BTC/USD" ? diff : (diff * 10000);
+            } else if (closestPred && closestPred.pnlPips !== null && closestPred.pnlPips !== undefined) {
+              // Position is already closed, use realized pips from prediction log
+              pnl_pips = parseFloat(closestPred.pnlPips);
+            } else {
+              // No explicit open position, let's compute PnL using the tick's price (at time of action) vs the latest price in liveTicksBuffer
+              const entryPrice = t.price;
+              const currentPrice = liveTicksBuffer[liveTicksBuffer.length - 1].price;
+              const diff = action === 0 ? (currentPrice - entryPrice) : (entryPrice - currentPrice);
+              pnl_pips = diff; // Default to raw difference for BTC/USD
+            }
+          }
+
+          return { action, pnl_pips };
+        };
+
+        // First resolve actions for the sampled ticks to apply sanity checks
+        const batchResults = sampleTicks.map(t => findRealActionAndPnLForTick(t));
+        const nonHoldCount = batchResults.filter(r => r.action !== 2).length;
+
+        if (nonHoldCount < 1) {
+          console.log("[LIVE-PIPELINE] Insufficient real action history for this training step. Skipping training cycle.");
+          addServerLog("EVOLUTION-LAB", "INFO", "Insufficient real action history for this training step (0 non-HOLD actions in batch). Skipping DRL training cycle.");
+          return;
+        }
+
         for (let i = 0; i < sampleTicks.length; i++) {
           const t = sampleTicks[i];
-          const pnl_pips = (Math.random() - 0.45) * 1.5;
+          const { action, pnl_pips } = batchResults[i];
           const latency = avgLoopLatencyNs;
           const slippage = t.spread * 10;
           const volatility = systemStatus === "THROTTLED" ? 4.5 : 0.8;
@@ -4196,7 +4280,7 @@ class LiveIngestionPipeline {
 
           const state = [pnl_pips, latency, slippage, volatility, size, whale_signal, news_sentiment, spread, leverage, shock_absorber, regimeTrendVsRange, regimeVolatilityBucket, marketSession, timeToNextHighImpactEvent, darkPoolVolumeWeekly, ensembleCalibrationScore];
           states.push(state);
-          actions.push(Math.floor(Math.random() * 3)); // BUY/SELL/HOLD
+          actions.push(action);
           pnlPipsList.push(pnl_pips);
           latencyList.push(latency);
           slippageList.push(slippage);
@@ -4254,7 +4338,13 @@ class LiveIngestionPipeline {
           ppoLoss = metrics.ppo_loss !== undefined ? metrics.ppo_loss : ppoLoss;
           ppoAvgReward = metrics.avg_reward !== undefined ? metrics.avg_reward : ppoAvgReward;
 
-          addServerLog("EVOLUTION-LAB", "SUCCESS", `ئۆنلاین-ڕاهێنان سەرکەوتوو بوو. چاخی نوێ: ${ppoEpisodes} | زیان: ${ppoLoss.toFixed(5)}`);
+          console.log(`[LIVE-PIPELINE] DRL retrained successfully on ${states.length} ticks.`);
+          const logSampleLimit = Math.min(5, states.length);
+          for (let j = 0; j < logSampleLimit; j++) {
+            console.log(`  [Batch Entry ${j + 1}] Action: ${actions[j] === 0 ? "BUY" : actions[j] === 1 ? "SELL" : "HOLD"} | Real PnL Pips: ${pnlPipsList[j].toFixed(2)} | Latency: ${latencyList[j]}ns | Slippage: ${slippageList[j].toFixed(2)} | Whale: ${whaleSignalList[j]} | Sentiment: ${sentimentList[j]}`);
+          }
+
+          addServerLog("EVOLUTION-LAB", "SUCCESS", `ئۆنلاین-ڕاهێنان سەرکەوتوو بوو لەسەر ${states.length} لایڤ تیک. چاخی نوێ: ${ppoEpisodes} | زیان: ${ppoLoss.toFixed(5)}`);
         }
       } catch (err: any) {
         addServerLog("EVOLUTION-LAB", "WARNING", `⚠️ [LIVE-PIPELINE-TRAINER] Python backend trainer offline: ${err.message}`);
