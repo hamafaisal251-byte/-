@@ -474,15 +474,20 @@ export default function SafetyBackstopPanel() {
               {testLogs.length === 0 ? (
                 <span className="text-slate-600 italic">No tests executed in this session. Click run below to verify safety backstop.</span>
               ) : (
-                testLogs.map((log, idx) => (
-                  <div key={idx} className={
-                    log.startsWith("[FAIL]") ? "text-rose-400" : 
-                    log.startsWith("[PASS]") ? "text-emerald-400" : 
-                    log.startsWith("✅") ? "text-emerald-300 font-bold" : "text-slate-400"
-                  }>
-                    {log}
-                  </div>
-                ))
+                testLogs.map((log, idx) => {
+                  const isFail = log?.startsWith?.("[FAIL]");
+                  const isPass = log?.startsWith?.("[PASS]");
+                  const isCheck = log?.startsWith?.("✅");
+                  return (
+                    <div key={idx} className={
+                      isFail ? "text-rose-400" : 
+                      isPass ? "text-emerald-400" : 
+                      isCheck ? "text-emerald-300 font-bold" : "text-slate-400"
+                    }>
+                      {log}
+                    </div>
+                  );
+                })
               )}
             </div>
           </div>

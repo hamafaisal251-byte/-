@@ -718,7 +718,8 @@ export default function RiskBrokerManager() {
     setTestResponseOutput('');
 
     // Check for WS, FIX or other unsupported APIs
-    if (customBaseUrl.startsWith('ws://') || customBaseUrl.startsWith('wss://') || customBaseUrl.includes('fix://')) {
+    const baseUrlSafe = customBaseUrl || '';
+    if (baseUrlSafe.startsWith('ws://') || baseUrlSafe.startsWith('wss://') || baseUrlSafe.includes('fix://')) {
       setTestCustomError('ئەم شێوازە پشتگیری ناکرێت: پڕۆتۆکۆلەکانی FIX یان WebSockets پێویستیان بە کۆدی تایبەت هەیە.');
       setIsTestingCustom(false);
       return;

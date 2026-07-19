@@ -283,11 +283,15 @@ export default function CodePipelinePanel() {
                   <span>ACTIVE LOOP</span>
                 </div>
                 <div className="bg-slate-950 border border-slate-850 p-3 rounded-lg font-mono text-[9px] text-slate-400 max-h-[140px] overflow-y-auto space-y-1 scrollbar-none">
-                  {proposeLogs.map((log, i) => (
-                    <div key={i} className={log.startsWith("[SUCCESS]") ? "text-emerald-400" : log.startsWith("[ERROR]") ? "text-rose-400" : "text-slate-300"}>
-                      {log}
-                    </div>
-                  ))}
+                  {proposeLogs.map((log, i) => {
+                    const isSuccess = log?.startsWith?.("[SUCCESS]");
+                    const isError = log?.startsWith?.("[ERROR]");
+                    return (
+                      <div key={i} className={isSuccess ? "text-emerald-400" : isError ? "text-rose-400" : "text-slate-300"}>
+                        {log}
+                      </div>
+                    );
+                  })}
                   <div ref={proposeConsoleEndRef} />
                 </div>
               </div>
@@ -411,13 +415,13 @@ export default function CodePipelinePanel() {
                     <span className="text-emerald-400 font-bold">ASan Verified</span>
                   </div>
                   <pre className="p-4 overflow-x-auto text-slate-400 leading-relaxed text-[11px]">
-                    {activePr.diff.split('\n').map((line, idx) => {
+                    {(activePr.diff || "").split('\n').map((line, idx) => {
                       let bgColor = "transparent";
                       let textColor = "text-slate-400";
-                      if (line.startsWith('+')) {
+                      if (line?.startsWith?.('+')) {
                         bgColor = "bg-emerald-950/30";
                         textColor = "text-emerald-400 font-semibold";
-                      } else if (line.startsWith('-')) {
+                      } else if (line?.startsWith?.('-')) {
                         bgColor = "bg-rose-950/30";
                         textColor = "text-rose-400 font-semibold";
                       }
@@ -482,11 +486,15 @@ export default function CodePipelinePanel() {
                     </div>
                     
                     <div className="bg-slate-900/60 border border-slate-850 p-3.5 rounded-lg font-mono text-[10px] text-slate-400 max-h-[180px] overflow-y-auto space-y-1.5 scrollbar-none">
-                      {mergeLogs.map((log, i) => (
-                        <div key={i} className={log.startsWith("[SUCCESS]") ? "text-emerald-400 font-bold" : log.startsWith("[ERROR]") ? "text-rose-400" : "text-slate-300"}>
-                          {log}
-                        </div>
-                      ))}
+                      {mergeLogs.map((log, i) => {
+                        const isSuccess = log?.startsWith?.("[SUCCESS]");
+                        const isError = log?.startsWith?.("[ERROR]");
+                        return (
+                          <div key={i} className={isSuccess ? "text-emerald-400 font-bold" : isError ? "text-rose-400" : "text-slate-300"}>
+                            {log}
+                          </div>
+                        );
+                      })}
                       <div ref={consoleEndRef} />
                     </div>
                   </div>
