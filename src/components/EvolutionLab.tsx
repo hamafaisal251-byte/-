@@ -260,165 +260,196 @@ export default function EvolutionLab({ candidates, setCandidates, selectedId, se
   useEffect(() => {
     if (!isTraining) return;
 
-    let epoch = 0;
     let tempLoss: number[] = [];
     let tempReward: number[] = [];
 
-    setTrainingLogs([
+    setTrainingLogs(prev => [
+      ...prev,
       `🚀 [RL-TRAIN] دەستپێکردنی بزوێنەری ڕاهێنانی بەردەوامی پۆلیسی زیرەک (PPO Strategy Optimization)...`,
       `⚙️ هێما: ${trainingAsset} | Learning Rate: ${learningRate} | Epochs: ${totalEpochs} | Batch Size: ${batchSize}`,
       `⚙️ تیکەری بازاڕ پەیوەست کرا بە داتای ڕاستەوخۆ...`
     ]);
 
-    const interval = setInterval(() => {
-      epoch += 5;
-      if (epoch > totalEpochs) {
-        clearInterval(interval);
-        setIsTraining(false);
-        setSaveTrainedReady(true);
-        setTrainingLogs(prev => [
-          ...prev,
-          `🎉 [TRAINING SUCCESS] مۆدێل بە سەرکەوتوویی لەسەر داتای لایڤ ڕاهێنرا!`,
-          `🎉 [METRICS] Average Reward Convergence: 94.6%`,
-          `🎉 [METRICS] Final Loss (Mean Squared Error): ${tempLoss[tempLoss.length - 1]?.toFixed(5) || '0.00124'}`,
-          `مۆدێلی C++ ئامادەیە بۆ ڕاوانەکردن و پاشەکەوتکردن.`
-        ]);
+    const fetchTelemetry = async () => {
+      try {
+        const res = await fetch('/api/telemetry');
+        if (res.ok) {
+          const data = await res.json();
+          
+          if (data.drlTelemetry) {
+            const loss = data.drlTelemetry.loss || 0.015;
+            const avgReward = data.drlTelemetry.avgReward || 15.2;
+            const episodes = data.drlTelemetry.episodes || 0;
+            
+            tempLoss.push(loss);
+            if (tempLoss.length > 40) tempLoss.shift();
+            setTrainingLoss([...tempLoss]);
 
-        if (autoTrainingMode) {
-          const autoId = `trained-auto-${Date.now()}`;
-          const autoName = `★ Auto-Evo Strategy: ${trainingAsset} [PPO Gen ${Math.floor(Math.random()*800+200)}]`;
-          const autoCode = `double calculateReward(double pnl_pips, double execution_latency_ns, double slippage_ticks, double volatility_spike, double position_lots) {
-    // مۆدێلی خۆکاری گەشەسەندوو (Sovereign Autonomous Agent)
-    double reward_weight = pnl_pips * position_lots * ${(15 + Math.random()*5).toFixed(2)};
-    double slippage_penalty = std::pow(std::abs(slippage_ticks), 1.4) * 2.2;
-    double protective_multiplier = volatility_spike > 2.8 ? 0.4 : 1.0;
-    return (reward_weight - slippage_penalty) * protective_multiplier;
-}`;
-          const autoCandidate: EvolutionCandidate = {
-            id: autoId,
-            name: autoName,
-            creator: 'AGENT_GEN_V3_PATCH',
-            status: 'PASSED',
-            code: autoCode,
-            metrics: {
-              avgReward: parseFloat((52 + Math.random() * 25).toFixed(1)),
-              maxDrawdown: parseFloat((0.4 + Math.random() * 0.6).toFixed(1)),
-              avgLatencyNs: Math.floor(130 + Math.random() * 30),
-              leaksBytes: 0,
-              astWarningsCount: 0
-            }
-          };
-          setCandidates(prev => {
-            const filtered = prev.filter(c => !c.name.includes('Sovereign Auto-Kernel') || Math.random() > 0.3);
-            return [autoCandidate, ...filtered];
-          });
-          setSelectedId(autoId);
-          setTrainingLogs(prev => [...prev, `💾 [AUTO-SAVE] ستراتیژی نوێ بە شێوەیەکی خۆکار پاشەکەوت کرا و ڕاوانە کرا!`]);
+            tempReward.push(avgReward);
+            if (tempReward.length > 40) tempReward.shift();
+            setRewardConvergence([...tempReward]);
+
+            setCurrentEpoch(episodes % totalEpochs || 1);
+
+            const stepMsg = `[EPOCH ${episodes}/${totalEpochs}] Loss: ${loss.toFixed(5)} | Average Reward: ${avgReward.toFixed(2)} | Active Model: ${data.drlTelemetry.activeModel || 'PPO-v2'}`;
+            setTrainingLogs(prev => {
+              if (prev.includes(stepMsg)) return prev;
+              return [...prev, stepMsg];
+            });
+          }
+
+          if (data.logs) {
+            const filtered = data.logs
+              .filter((log: any) => log.source === "EVOLUTION-LAB" || log.source === "GO-BACKPLANE")
+              .map((log: any) => `[${log.timestamp}] [${log.level}] ${log.message}`);
+            
+            setTrainingLogs(prev => {
+              const combined = [...prev];
+              filtered.forEach((fLog: string) => {
+                if (!combined.includes(fLog)) {
+                  combined.push(fLog);
+                }
+              });
+              return combined.slice(-100);
+            });
+          }
         }
-        return;
-      }
+      } catch (err) {}
+    };
 
-      setCurrentEpoch(epoch);
-
-      // Generate a descending loss value
-      const currentLoss = parseFloat((1.2 / (1 + epoch * 0.1) + Math.random() * 0.05).toFixed(5));
-      tempLoss.push(currentLoss);
-      setTrainingLoss([...tempLoss]);
-
-      // Generate ascending reward convergence rate
-      const currentReward = parseFloat((30 + (epoch / totalEpochs) * 60 + Math.random() * 4).toFixed(1));
-      tempReward.push(currentReward);
-      setRewardConvergence([...tempReward]);
-
-      // Add training-specific log messages
-      const stepMsg = `[EPOCH ${epoch}/${totalEpochs}] Loss: ${currentLoss} | Converge: ${currentReward}% | Optimizer: Adam | Alpha: ${learningRate}`;
-      setTrainingLogs(prev => [...prev, stepMsg]);
-
-      // Add deep model logs sporadically
-      if (Math.random() > 0.5) {
-        setTrainingLogs(prev => [
-          ...prev,
-          `[REINFORCEMENT LEARNING] Actor-Critic networks updated. Advantage estimate: ${(0.1 + Math.random() * 0.4).toFixed(4)}`,
-          `[DOCKER-TRAIN] Policy gradient optimized. Shifting agent weights towards high reward...`
-        ]);
-      }
-
-    }, 1000);
-
+    fetchTelemetry();
+    const interval = setInterval(fetchTelemetry, 3000);
     return () => clearInterval(interval);
-  }, [isTraining, autoTrainingMode, trainingAsset, learningRate, totalEpochs, batchSize]);
+  }, [isTraining, trainingAsset, learningRate, totalEpochs, batchSize]);
 
-  // Autopilot training trigger loop
+  // Autopilot training trigger loop (runs genuine server self-improvement runs)
   useEffect(() => {
     if (!autoTrainingMode) return;
 
-    const interval = setInterval(() => {
+    const interval = setInterval(async () => {
       if (!isTraining) {
-        const assets = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'EURUSD', 'GBPUSD'];
-        const chosenAsset = assets[Math.floor(Math.random() * assets.length)];
-        setTrainingAsset(chosenAsset);
-        setLearningRate(parseFloat((0.0005 + Math.random() * 0.002).toFixed(4)));
-        setSaveTrainedReady(false);
-        setSaveTrainedStatus(false);
-        setCurrentEpoch(0);
-        setTrainingLoss([]);
-        setRewardConvergence([]);
-        setIsTraining(true);
+        setTrainingLogs(prev => [...prev, `🤖 [AUTOPILOT] Triggering scheduled continuous self-improvement run...`]);
+        try {
+          const res = await fetch('/api/self-improvement/run', { method: 'POST' });
+          if (res.ok) {
+            const data = await res.json();
+            if (data.success) {
+              setTrainingLogs(prev => [...prev, `✅ [AUTOPILOT] Scheduled optimization cycle successfully completed on backend.`]);
+              const cRes = await fetch('/api/candidates');
+              if (cRes.ok) {
+                const cData = await cRes.json();
+                setCandidates(cData.candidates);
+              }
+            }
+          }
+        } catch (e) {}
       }
-    }, 25000); // Trigger training runs every 25 seconds
+    }, 45000); // Trigger a real self-improvement cycle every 45 seconds if autopilot is on
 
     return () => clearInterval(interval);
   }, [autoTrainingMode, isTraining]);
 
   // Handle start/stop training
-  const handleToggleTraining = () => {
-    if (isTraining) {
-      setIsTraining(false);
-    } else {
-      setSaveTrainedReady(false);
-      setSaveTrainedStatus(false);
-      setCurrentEpoch(0);
-      setTrainingLoss([]);
-      setRewardConvergence([]);
-      setIsTraining(true);
+  const handleToggleTraining = async () => {
+    const nextState = !isTraining;
+    setIsTraining(nextState);
+
+    setTrainingLogs(prev => [
+      ...prev,
+      nextState 
+        ? `🚀 [RL-TRAIN] Sending request to enable continuous live training...` 
+        : `🛑 [RL-TRAIN] Sending request to disable continuous live training...`
+    ]);
+
+    try {
+      const res = await fetch('/api/live-training/toggle', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isLiveTrainingEnabled: nextState })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && data.status) {
+          setBackendTrainingStatus(data.status);
+          setIsTraining(data.status.isLiveTrainingEnabled);
+          setTrainingLogs(prev => [
+            ...prev,
+            nextState 
+              ? `✅ [RL-TRAIN] Continuous live training successfully enabled on backend.` 
+              : `🛑 [RL-TRAIN] Continuous live training successfully stopped.`
+          ]);
+          setSaveTrainedReady(nextState);
+        }
+      }
+    } catch (err: any) {
+      setTrainingLogs(prev => [...prev, `❌ [RL-TRAIN] Failed to toggle training: ${err.message}`]);
+    }
+
+    if (nextState) {
+      // Trigger synthesis/self-improvement cycle immediately on the backend
+      setTrainingLogs(prev => [...prev, `🧠 [RL-TRAIN] Triggering real-time Self-Improvement/Synthesis run...`]);
+      try {
+        const res = await fetch('/api/self-improvement/run', { method: 'POST' });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.success) {
+            setTrainingLogs(prev => [...prev, `🎉 [RL-TRAIN] Self-improvement run finished on server! Fetching new candidates...`]);
+            const candRes = await fetch('/api/candidates');
+            if (candRes.ok) {
+              const candData = await candRes.json();
+              setCandidates(candData.candidates);
+            }
+          }
+        }
+      } catch (err) {}
     }
   };
 
-  // Save the trained candidate to candidates list
-  const handleSaveTrainedCandidate = () => {
-    const id = `trained-${Date.now()}`;
-    const name = `AI Trained Sovereign: ${trainingAsset} Optimizer [LR ${learningRate}]`;
-    const newCode = `double calculateReward(double pnl_pips, double execution_latency_ns, double slippage_ticks, double volatility_spike, double position_lots) {
+  // Save the trained candidate to candidates list (using real backend sandbox)
+  const handleSaveTrainedCandidate = async () => {
+    setSaveTrainedStatus(true);
+    const name = `AI Trained Sovereign: ${trainingAsset} [LR ${learningRate}]`;
+    const code = `double calculateReward(double pnl_pips, double execution_latency_ns, double slippage_ticks, double volatility_spike, double position_lots) {
     // مۆدێلی نوێی فێرکراو بە شێوازی فێربوونی بەردەوام (PPO Agent)
     double reward_weight = pnl_pips * position_lots * 18.5;
     double volatility_guard = volatility_spike > 3.0 ? 0.45 : 1.0;
     double execution_penalty = execution_latency_ns * 0.08;
-    
     return (reward_weight - execution_penalty) * volatility_guard;
 }`;
 
-    const newCandidate: EvolutionCandidate = {
-      id,
-      name,
-      creator: 'AGENT_GEN_V3_PATCH',
-      status: 'IDLE',
-      code: newCode,
-      metrics: {
-        avgReward: parseFloat((48 + Math.random() * 30).toFixed(1)),
-        maxDrawdown: parseFloat((0.4 + Math.random() * 0.8).toFixed(1)),
-        avgLatencyNs: Math.floor(120 + Math.random() * 40),
-        leaksBytes: 0,
-        astWarningsCount: 0
+    try {
+      const res = await fetch('/api/candidates/adopt', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name,
+          code,
+          creator: 'AGENT_GEN_V3_PATCH'
+        })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        // Refresh candidates from server
+        const cRes = await fetch('/api/candidates');
+        if (cRes.ok) {
+          const cData = await cRes.json();
+          setCandidates(cData.candidates);
+          if (data.candidate) {
+            setSelectedId(data.candidate.id);
+          }
+        }
+        setTrainingLogs(prev => [...prev, `🎉 [ADOPT-SUCCESS] Candidate approved by Sandbox and adopted!`]);
+      } else {
+        setTrainingLogs(prev => [...prev, `❌ [ADOPT-REJECTED] Candidate rejected by Sandbox: ${data.rejectionReason || data.error}`]);
       }
-    };
-
-    setCandidates(prev => [newCandidate, ...prev]);
-    setSelectedId(id);
-    setSaveTrainedStatus(true);
-    setTimeout(() => {
-      setSaveTrainedStatus(false);
-      setSaveTrainedReady(false);
-    }, 2000);
+    } catch (err: any) {
+      setTrainingLogs(prev => [...prev, `❌ [ADOPT-ERROR] Failed to save candidate: ${err.message}`]);
+    } finally {
+      setTimeout(() => {
+        setSaveTrainedStatus(false);
+        setSaveTrainedReady(false);
+      }, 3000);
+    }
   };
 
   const writeLog = (msg: string) => {
@@ -505,13 +536,7 @@ export default function EvolutionLab({ candidates, setCandidates, selectedId, se
           creator: 'HUMAN_OPERATOR',
           status: 'IDLE',
           code: finalCode,
-          metrics: failureReason ? undefined : {
-            avgReward: parseFloat((45 + Math.random() * 30).toFixed(1)),
-            maxDrawdown: parseFloat((0.4 + Math.random() * 1.2).toFixed(1)),
-            avgLatencyNs: Math.floor(140 + Math.random() * 50),
-            leaksBytes: 0,
-            astWarningsCount: 0
-          },
+          metrics: undefined,
           failureReason,
           researchSources: researchSources,
           groundedText: groundedDescription
@@ -644,8 +669,43 @@ export default function EvolutionLab({ candidates, setCandidates, selectedId, se
             writeLog('[HOT-RELOAD] Pointer swap complete! System re-engaged with new AI module.');
             writeLog('🎉 [EVOLUTION-PIPELINE] SUCCESS: Reward function hot-swapped smoothly. Live Gen counter bumped.');
 
-            setPipelineState('FINISHED');
-            setPipelineSuccess(true);
+             // Adopt/Validate the candidate on the real backend sandbox!
+             fetch('/api/candidates/adopt', {
+               method: 'POST',
+               headers: { 'Content-Type': 'application/json' },
+               body: JSON.stringify({
+                 name: candidate.name,
+                 code: candidate.code,
+                 creator: candidate.creator
+               })
+             }).then(async (res) => {
+               if (res.ok) {
+                 const data = await res.json();
+                 if (data.success && data.candidate) {
+                   // Update candidates list from backend
+                   const cRes = await fetch('/api/candidates');
+                   if (cRes.ok) {
+                     const cData = await cRes.json();
+                     setCandidates(cData.candidates);
+                     // Select the newly adopted/validated candidate ID
+                     setSelectedId(data.candidate.id);
+                   }
+                   writeLog('\n✅ [HOT-RELOAD] Dynamic backend validation passed! Candidate adopted and live.');
+                 } else {
+                   writeLog(`\n❌ [HOT-RELOAD] Backend sandbox rejection: ${data.rejectionReason || data.error}`);
+                   setPipelineSuccess(false);
+                 }
+               } else {
+                 const errData = await res.json().catch(() => ({ error: 'Unknown validation failure.' }));
+                 writeLog(`\n❌ [HOT-RELOAD] Backend sandbox validation failed: ${errData.rejectionReason || errData.error || 'Check code syntax.'}`);
+                 setPipelineSuccess(false);
+               }
+             }).catch(err => {
+               writeLog(`\n❌ [HOT-RELOAD] Connection failed to backend sandbox: ${err.message}`);
+               setPipelineSuccess(false);
+             }).finally(() => {
+               setPipelineState('FINISHED');
+             });
           }, 1500);
 
         }, 1500);
