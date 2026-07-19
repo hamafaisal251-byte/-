@@ -3,9 +3,9 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "go run main.go",
-    "build": "vite build && (command -v go >/dev/null && go build -o dist/server main.go || echo 'Go compiler not found, proceeding with static build.')",
-    "start": "./dist/server",
+    "dev": "tsx server.ts",
+    "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
+    "start": "node dist/server.cjs",
     "lint": "tsc --noEmit"
   },
   "dependencies": {
