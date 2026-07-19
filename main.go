@@ -58,6 +58,10 @@ func main() {
 	// Initialize Safety Backstop
 	safety.Init("safety_state.json")
 
+	// 5b. Start News/Calendar and Clock Sync Background Pollers
+	api.StartNewsScheduler(ctx, pgDB)
+	api.StartClockSyncScheduler(ctx, pgDB)
+
 	// 6. Set up Gin Handlers and Router
 	handler := api.NewHandler(pgDB, cfg)
 	router := api.SetupRouter(handler)

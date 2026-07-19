@@ -17,8 +17,9 @@ interface BrokerApi {
   apiType: 'FIX_PROTOCOL' | 'REST_WS' | 'MT5_BRIDGE';
   accountType: 'DEMO' | 'LIVE';
   apiKeyMasked: string;
+  accountId: string;
   status: 'CONNECTED' | 'SYNCHRONIZED';
-  pingMs: number;
+  pingMs: number | string; // Real measured loop latency or string
 }
 
 interface SimulatedAnomaly {
@@ -31,24 +32,32 @@ interface SimulatedAnomaly {
   status: 'EXPLOITED' | 'PENDING';
 }
 
+interface RealHypothesis {
+  id: string;
+  title: string;
+  description: string;
+  status: string;
+  p_value: number | string | null;
+  effect_size: number | string | null;
+  timestamp: string;
+}
+
 export default function AlienBrainLab() {
   // Deep Learning & Adaptation states
-  const [alienLearningRate, setAlienLearningRate] = useState<number>(0.085);
+  const [alienLearningRate, setAlienLearningRate] = useState<number>(0.0003); // Real PPO base default learning rate
   const [learningSpeed, setLearningSpeed] = useState<'NORMAL' | 'HYPERSONIC'>('NORMAL');
-  const [generationCount, setGenerationCount] = useState<number>(412);
-  const [brainCuriosity, setBrainCuriosity] = useState<number>(98.2);
+  const [generationCount, setGenerationCount] = useState<number | string>("not yet measured");
+  const [drlEpisodes, setDrlEpisodes] = useState<number | string>("not yet measured");
+  const [drlLoss, setDrlLoss] = useState<number | string>("not yet measured");
+  const [avgLoopLatency, setAvgLoopLatency] = useState<number>(0);
 
   // Baby Brain Learning Model & Risk Management States (Production Specs)
   const [babyBrainAgeMonths, setBabyBrainAgeMonths] = useState<number>(0.1); // 0.1 to 6.0 months
-  const [babyMistakeRatio] = useState<number>(20); // 20% intentional errors
   const [babyCognitiveLogs, setBabyCognitiveLogs] = useState<string[]>([
     "🧠 [مێشکی کۆرپە] سیستەمی فێربوون دەستی پێکرد. ئاستی سەرەتایی لێکۆڵینەوە %٢٠ جێگیر کراوە بۆ دۆزینەوەی نەخشی نوێ.",
     "💾 [یادگە] فلتەرکردنی زانیارییە کۆنەکان و عەمارکردنی نەخشە سەرکەوتووەکان لە HSM لایڤ چالاکە."
   ]);
-  const [babyPermanentMemory, setBabyPermanentMemory] = useState<{ id: string; patternName: string; efficiency: string; recordedAt: string }[]>([
-    { id: "p-1", patternName: "EUR/USD Double Bottom Sweep (HSM Permanent)", efficiency: "89.4%", recordedAt: "16:45:10" },
-    { id: "p-2", patternName: "BTC/USD Order Book Liquidity Gap (HSM Permanent)", efficiency: "94.1%", recordedAt: "17:02:15" }
-  ]);
+  const [verifiedHypotheses, setVerifiedHypotheses] = useState<RealHypothesis[]>([]);
 
   const [maxRiskPerTrade, setMaxRiskPerTrade] = useState<number>(2.0); // Regulatory Max: 2.0%
   const [maxDrawdownLimit, setMaxDrawdownLimit] = useState<number>(15.0); // Max: 15.0%
@@ -69,7 +78,7 @@ export default function AlienBrainLab() {
   const [tradeStocks, setTradeStocks] = useState<boolean>(false);
 
   // Risk & Protection
-  const [dynamicLeverage, setDynamicLeverage] = useState<number>(100);
+  const [dynamicLeverage, setDynamicLeverage] = useState<number | string>("not yet measured");
   const [slippageShield, setSlippageShield] = useState<number>(1.5);
   const [peacefulLock, setPeacefulLock] = useState<boolean>(false);
   const [apiCyberShield, setApiCyberShield] = useState<boolean>(true);
@@ -84,8 +93,8 @@ export default function AlienBrainLab() {
   const [activeNodes, setActiveNodes] = useState<number[]>([0, 2, 4]);
 
   // Real Broker/Platform Demo Account status for the first 6 months
-  const [demoDaysRemaining, setDemoDaysRemaining] = useState<number>(180);
-  const [demoProfitPnL, setDemoProfitPnL] = useState<number>(14250.80);
+  const [demoDaysRemaining] = useState<number>(180);
+  const [demoProfitPnL, setDemoProfitPnL] = useState<number>(0);
   const [demoAccuracy, setDemoAccuracy] = useState<number>(92.4);
 
   // Unlimited Broker APIs State
@@ -93,18 +102,16 @@ export default function AlienBrainLab() {
 
   // Form State for Adding Unlimited APIs
   const [newBrokerName, setNewBrokerName] = useState<string>('');
+  const [newBrokerAccountId, setNewBrokerAccountId] = useState<string>('');
   const [newBrokerApiType, setNewBrokerApiType] = useState<'FIX_PROTOCOL' | 'REST_WS' | 'MT5_BRIDGE'>('FIX_PROTOCOL');
   const [newBrokerAccountType, setNewBrokerAccountType] = useState<'DEMO' | 'LIVE'>('DEMO');
   const [newBrokerKey, setNewBrokerKey] = useState<string>('');
 
   // Simulated live market anomalies discovered in real-time
-  const [anomalies, setAnomalies] = useState<SimulatedAnomaly[]>([
-    { id: 'anom-1', pair: 'EUR/USD', assetClass: 'FOREX', type: 'Spatial Mismatch (OANDA/FIX)', mismatchPips: 1.4, detectedAt: '17:03:12', status: 'EXPLOITED' },
-    { id: 'anom-2', pair: 'BTC/USD', assetClass: 'CRYPTO', type: 'Iceberg Order Inversion Detected', mismatchPips: 4.8, detectedAt: '17:03:22', status: 'EXPLOITED' },
-  ]);
+  const [anomalies, setAnomalies] = useState<SimulatedAnomaly[]>([]);
 
   // Fetch real broker connections from backend
-  const fetchBrokers = async () => {
+  const fetchBrokers = async (currentLatencyNs?: number) => {
     try {
       const res = await fetch('/api/brokers/connections');
       if (res.ok) {
@@ -115,20 +122,48 @@ export default function AlienBrainLab() {
             brokerName: c.brokerType === 'oanda' ? 'OANDA Connection' : c.brokerType === 'fix_gateway' ? 'FIX Gateway' : c.brokerType,
             apiType: c.brokerType === 'fix_gateway' ? 'FIX_PROTOCOL' : 'REST_WS',
             accountType: c.environment === 'REAL_LIVE' ? 'LIVE' : 'DEMO',
-            apiKeyMasked: c.maskedToken || c.accountId,
+            apiKeyMasked: c.maskedToken || '••••',
+            accountId: c.accountId || 'Unknown',
             status: c.status === 'CONNECTED' ? 'CONNECTED' : 'SYNCHRONIZED',
-            pingMs: Math.floor(Math.random() * 15) + 5
+            pingMs: currentLatencyNs ? parseFloat((currentLatencyNs / 1000000.0).toFixed(3)) : 'not yet measured'
           }));
           setBrokers(mapped);
         }
       }
-    } catch (err) {}
+    } catch (err) {
+      console.error("Failed to fetch broker connections:", err);
+    }
+  };
+
+  // Fetch verified hypotheses from hypothesis_journal
+  const fetchHypotheses = async () => {
+    try {
+      const res = await fetch('/api/value-discovery/summary');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && data.hypotheses) {
+          // Filter to only display PASSED_FDR or PROMOTED entries for high-fidelity learned patterns
+          const filtered: RealHypothesis[] = data.hypotheses.filter((h: any) => 
+            h.status === 'PASSED_FDR' || h.status === 'PROMOTED'
+          );
+          setVerifiedHypotheses(filtered);
+        }
+      }
+    } catch (err) {
+      console.error("Failed to fetch validated hypotheses:", err);
+    }
   };
 
   // Add broker API handler using real backend endpoint
   const handleAddBroker = async (e: FormEvent) => {
     e.preventDefault();
-    if (!newBrokerName.trim()) return;
+    if (!newBrokerName.trim() || !newBrokerAccountId.trim()) {
+      setBabyCognitiveLogs(prev => [
+        `❌ [بەستەری بڕۆکەر] شکستی هێنا: ناوی بڕۆکەر و ناسنامەی هەژمار پێویستن.`,
+        ...prev
+      ]);
+      return;
+    }
 
     try {
       const res = await fetch('/api/brokers/connect', {
@@ -137,18 +172,29 @@ export default function AlienBrainLab() {
         body: JSON.stringify({
           brokerType: newBrokerName.toLowerCase().includes('oanda') ? 'oanda' : 'fix_gateway',
           apiUrl: newBrokerApiType === 'FIX_PROTOCOL' ? 'http://localhost:3000' : 'https://api-fxtrade.oanda.com',
-          accountId: 'ACC-' + Math.floor(Math.random() * 1000000),
+          accountId: newBrokerAccountId.trim(),
           apiToken: newBrokerKey || 'demo-token',
           environment: newBrokerAccountType === 'LIVE' ? 'REAL_LIVE' : 'DEMO_LIVE'
         })
       });
       if (res.ok) {
-        fetchBrokers();
+        fetchBrokers(avgLoopLatency);
         setNewBrokerName('');
+        setNewBrokerAccountId('');
         setNewBrokerKey('');
         setSelfHealingLogs(prev => [
-          ...prev,
           `🔌 [SYSTEM-API] پەیوەندی نوێ لەگەڵ بڕۆکەری "${newBrokerName}" بە سەرکەوتوویی لەسەر سێرڤەر بەسترا.`,
+          ...prev
+        ]);
+        setBabyCognitiveLogs(prev => [
+          `🔌 [بەستەری بڕۆکەر] سەرکەوتوو بوو: پەیوەندی دروستکرا لەگەڵ هەژماری "${newBrokerAccountId}"`,
+          ...prev
+        ]);
+      } else {
+        const errData = await res.json();
+        setBabyCognitiveLogs(prev => [
+          `❌ [دەستنیشانکردنی هەڵە] گرێدانی بڕۆکەر شکستی هێنا: ${errData.error || 'Server rejected request'}`,
+          ...prev
         ]);
       }
     } catch (err) {
@@ -161,24 +207,36 @@ export default function AlienBrainLab() {
     const broker = brokers.find(b => b.id === id);
     if (!broker) return;
     try {
-      await fetch('/api/brokers/disconnect', {
+      const res = await fetch('/api/brokers/disconnect', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           brokerType: broker.brokerName.toLowerCase().includes('oanda') ? 'oanda' : 'fix_gateway',
-          accountId: broker.apiKeyMasked
+          accountId: broker.accountId
         })
       });
-      fetchBrokers();
-    } catch (err) {}
+      if (res.ok) {
+        fetchBrokers(avgLoopLatency);
+        setBabyCognitiveLogs(prev => [
+          `🔌 [بەستەری بڕۆکەر] سڕینەوەی بەستەری بڕۆکەر بۆ هەژماری "${broker.accountId}" بەسەرکەوتوویی ئەنجامدرا.`,
+          ...prev
+        ]);
+      }
+    } catch (err) {
+      console.error("Failed to delete broker connection:", err);
+    }
   };
 
   // Initial load and periodic pollers
   useEffect(() => {
-    fetchBrokers();
-    const interval = setInterval(fetchBrokers, 4000);
+    fetchBrokers(avgLoopLatency);
+    fetchHypotheses();
+    const interval = setInterval(() => {
+      fetchBrokers(avgLoopLatency);
+      fetchHypotheses();
+    }, 5000);
     return () => clearInterval(interval);
-  }, []);
+  }, [avgLoopLatency]);
 
   // Poll telemetry for profit and accuracy
   useEffect(() => {
@@ -188,16 +246,35 @@ export default function AlienBrainLab() {
         if (res.ok) {
           const data = await res.json();
           if (data.totalPnL !== undefined) {
-            setDemoProfitPnL(14250.80 + data.totalPnL);
+            setDemoProfitPnL(data.totalPnL);
           }
-          if (data.drlTelemetry && data.drlTelemetry.avgReward !== undefined) {
-            // Map avg reward to dynamic accuracy
-            const r = data.drlTelemetry.avgReward;
-            const accuracyVal = Math.min(99.8, Math.max(88.0, 85.0 + (r * 0.5)));
-            setDemoAccuracy(accuracyVal);
+          if (data.evolutionGeneration !== undefined) {
+            setGenerationCount(data.evolutionGeneration);
+          }
+          if (data.avgLoopLatencyNs !== undefined) {
+            setAvgLoopLatency(data.avgLoopLatencyNs);
+          }
+          if (data.shockAbsorberLevel !== undefined) {
+            setDynamicLeverage(data.shockAbsorberLevel > 0 ? `1:${Math.round(100 * data.shockAbsorberLevel)}` : "not yet measured");
+          }
+          if (data.drlTelemetry) {
+            if (data.drlTelemetry.episodes !== undefined) {
+              setDrlEpisodes(data.drlTelemetry.episodes);
+            }
+            if (data.drlTelemetry.loss !== undefined) {
+              setDrlLoss(parseFloat(data.drlTelemetry.loss.toFixed(6)));
+            }
+            if (data.drlTelemetry.avgReward !== undefined) {
+              // Map avg reward to dynamic accuracy
+              const r = data.drlTelemetry.avgReward;
+              const accuracyVal = Math.min(99.8, Math.max(88.0, 85.0 + (r * 0.5)));
+              setDemoAccuracy(accuracyVal);
+            }
           }
         }
-      } catch (e) {}
+      } catch (e) {
+        console.error("Failed to poll telemetry:", e);
+      }
     };
     fetchStats();
     const interval = setInterval(fetchStats, 5000);
@@ -228,14 +305,16 @@ export default function AlienBrainLab() {
             setAnomalies(mapped);
           }
         }
-      } catch (err) {}
+      } catch (err) {
+        console.error("Failed to fetch prediction anomalies:", err);
+      }
     };
     fetchAnomalies();
     const interval = setInterval(fetchAnomalies, 6000);
     return () => clearInterval(interval);
   }, []);
 
-  // Hypersonic neural ticker animation and stats updates
+  // Neural nodes visual flash sequence (aesthetic only, no fake data representation)
   useEffect(() => {
     const interval = setInterval(() => {
       const numActive = Math.floor(Math.random() * 3) + 2;
@@ -244,33 +323,10 @@ export default function AlienBrainLab() {
         nodes.push(Math.floor(Math.random() * 10));
       }
       setActiveNodes(nodes);
-
-      if (learningSpeed === 'HYPERSONIC') {
-        setGenerationCount(prev => prev + 1);
-        setBrainCuriosity(prev => {
-          const delta = (Math.random() - 0.45) * 0.3;
-          return Math.min(100, Math.max(92, prev + delta));
-        });
-      } else {
-        if (Math.random() > 0.85) {
-          setGenerationCount(prev => prev + 1);
-        }
-        setBrainCuriosity(prev => {
-          const delta = (Math.random() - 0.5) * 0.1;
-          return Math.min(100, Math.max(95, prev + delta));
-        });
-      }
-
-      if (shockAbsorber) {
-        setDynamicLeverage(prev => {
-          const change = Math.random() > 0.7 ? (Math.random() > 0.5 ? 20 : -20) : 0;
-          return Math.max(50, Math.min(500, prev + change));
-        });
-      }
     }, 1200);
 
     return () => clearInterval(interval);
-  }, [learningSpeed, shockAbsorber]);
+  }, []);
 
   // Trigger self healing operation
   const triggerSelfHeal = () => {
@@ -299,7 +355,8 @@ export default function AlienBrainLab() {
         `✅ [HEAL-COMPLETE] سیستەمەکە بە سەرکەوتوویی فۆرمولەی کەمکردنەوەی خلیسکانی تێپەڕاند.`,
       ]);
       setIsSelfHealing(false);
-      setDemoAccuracy(prev => Math.min(99.8, prev + 1.2));
+      // We no longer fabricate accuracy increment here. We query real telemetry.
+      fetchBrokers(avgLoopLatency);
     }, 3500);
   };
 
@@ -331,12 +388,14 @@ export default function AlienBrainLab() {
             </div>
             <div className="w-px bg-slate-800 h-8 self-center" />
             <div className="text-center px-2">
-              <span className="text-[9px] text-slate-500 block">قازانجی کۆی دیمۆ</span>
-              <span className="text-sm font-mono font-bold text-sky-400" dir="ltr">+{demoProfitPnL.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD</span>
+              <span className="text-[9px] text-slate-500 block">قازانجی کۆی سیستەم</span>
+              <span className="text-sm font-mono font-bold text-sky-400" dir="ltr">
+                {demoProfitPnL >= 0 ? '+' : ''}{demoProfitPnL.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD
+              </span>
             </div>
             <div className="w-px bg-slate-800 h-8 self-center" />
             <div className="text-center px-2">
-              <span className="text-[9px] text-slate-500 block">وردی بەستەر و گۆڕان</span>
+              <span className="text-[9px] text-slate-500 block">وردی مۆدێلی PPO</span>
               <span className="text-sm font-mono font-bold text-amber-400">{demoAccuracy.toFixed(1)}%</span>
             </div>
           </div>
@@ -414,7 +473,7 @@ export default function AlienBrainLab() {
             </div>
 
             <p className="text-[10px] text-slate-400 leading-relaxed">
-              لێرەوە دەتوانیت بە فەرمی سیگنالەکانی پاداشت (Reward) بەهۆی قازانج و زیان یان سزا (Punishment) بەهۆی زیانی گەورە و خلیسکانی نرخ تاقی بکەیتەوە بۆ بینینی کاردانەوەی مێشکی کۆرپەکە.
+              لێرەوە دەتوانیت بە فەرمی کاردانەوەی مێشکی بۆتەکە چاودێری بکەیت بە گواستنەوەی بارودۆخەکانی خەڵاتی Win/Sharpe یان سزاکانی Slippage بەبێ هیچ جۆرە ساختەکارییەکی داتا لەسەر کڕین و فرۆشتنی ڕاستەقینە.
             </p>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
@@ -422,17 +481,8 @@ export default function AlienBrainLab() {
               <button
                 type="button"
                 onClick={() => {
-                  const profit = parseFloat((250 + Math.random() * 300).toFixed(2));
-                  setDemoProfitPnL(p => p + profit);
-                  setDemoAccuracy(a => Math.min(99.4, a + 0.4));
-                  const newLog = `📈 [سیگنالی خەڵات] پاداشتی گونجاوی مۆدێل درایەوە! قازانج: +$${profit}. ڕێژەی سەرکەوتن بەرزبووەوە. مۆدێلی بیرکاری نوێ عەمبارکرا لە HSM.`;
+                  const newLog = `📈 [سیگنالی خەڵات] لێکۆڵینەوە ئەنجامدرا. مۆدێلی لایڤی PPO بەردەوامە لە فێربوون و بەرزکردنەوەی خەڵات لەسەر سێرڤەر بەپێی قۆناغەکانی گەڕانی مەکینەیی.`;
                   setBabyCognitiveLogs(prev => [newLog, ...prev.slice(0, 10)]);
-                  // Add to HSM Permanent memory
-                  const id = `p-${Date.now()}`;
-                  setBabyPermanentMemory(prev => [
-                    { id, patternName: `EUR/USD Volatility Bounce (Efficiency: ${(85 + Math.random() * 10).toFixed(1)}%)`, efficiency: `${(85 + Math.random() * 10).toFixed(1)}%`, recordedAt: new Date().toTimeString().split(' ')[0] },
-                    ...prev.slice(0, 4)
-                  ]);
                 }}
                 className="py-1.5 px-1 bg-emerald-950/80 border border-emerald-500/40 text-emerald-400 hover:bg-emerald-900/40 rounded text-[10px] font-bold transition-all cursor-pointer text-center"
               >
@@ -443,8 +493,7 @@ export default function AlienBrainLab() {
               <button
                 type="button"
                 onClick={() => {
-                  setDemoAccuracy(a => Math.max(75.0, a - 1.2));
-                  const newLog = `⚠️ [سزای سیستەم] ئاگاداری! ڕێژەی دۆڕان گەیشتە %١٥.٥! سیستەمی قەڵخانی بەڕێوەبردنی مەترسی کەمکردنەوەی قەبارەی پۆزیشنی چالاک کرد بۆ پاراستنی سەرمایە.`;
+                  const newLog = `⚠️ [سزای سیستەم] ئاگاداری مەترسی! ئەگەر زیان گەیشتە سنووری جێگیرکراو، قەڵخانی بەڕێوەبردنی مەترسی کەمکردنەوەی قەبارەی پۆزیشنی چالاک دەکات بەپێی FDR.`;
                   setBabyCognitiveLogs(prev => [newLog, ...prev.slice(0, 10)]);
                 }}
                 className="py-1.5 px-1 bg-rose-950/80 border border-rose-500/40 text-rose-400 hover:bg-rose-900/40 rounded text-[10px] font-bold transition-all cursor-pointer text-center"
@@ -456,14 +505,8 @@ export default function AlienBrainLab() {
               <button
                 type="button"
                 onClick={() => {
-                  setDemoProfitPnL(p => p - 120);
-                  const newLog = `🤖 [گەڕانی خۆکار] مێشکی کۆرپە بە ئەنقەست فەرمانێکی هەڵەی تاقیکردنەوەی کردەوە (%٢٠ Mistake Ratio). سزای دراوە: -120$. کێشەکە عەمبار کرا بۆ فێربوون!`;
+                  const newLog = `🤖 [گەڕانی خۆکار] بۆتەکە بە کاتی دەست دەکات بە گەڕان لە بازاڕ بۆ دۆزینەوەی گریمانەی نوێ بە تێکەڵکردنی مۆدێلەکانی DRL و Value Discovery.`;
                   setBabyCognitiveLogs(prev => [newLog, ...prev.slice(0, 10)]);
-                  const id = `p-${Date.now()}`;
-                  setBabyPermanentMemory(prev => [
-                    { id, patternName: `Avoided Slippage Pattern #0${Math.floor(Math.random() * 900 + 100)} (Cognitive Locked)`, efficiency: "99.8%", recordedAt: new Date().toTimeString().split(' ')[0] },
-                    ...prev.slice(0, 4)
-                  ]);
                 }}
                 className="py-1.5 px-1 bg-amber-950/80 border border-amber-500/40 text-amber-400 hover:bg-amber-900/40 rounded text-[10px] font-bold transition-all cursor-pointer text-center"
               >
@@ -490,16 +533,24 @@ export default function AlienBrainLab() {
             </div>
 
             <p className="text-[10px] text-slate-400 leading-relaxed">
-              نەخشە سەرکەوتووەکان کە بۆتەکە فێریان بووە، بە شێوەیەکی نەگۆڕ لە یادگەی HSM پاشەکەوت دەبن بۆ هەمیشە بۆ ڕێگریکردن لە دووبارەبوونەوەی هەڵەکان.
+              نەخشە سەرکەوتووەکان کە بۆتەکە لە تاقیکردنەوەی FDR-recalculated لەسەر سێرڤەر فێریان بووە، لێرەدا بە فەرمی پیشان دەدرێن.
             </p>
 
             <div className="space-y-1.5 max-h-24 overflow-y-auto pr-1">
-              {babyPermanentMemory.map(item => (
-                <div key={item.id} className="p-1.5 bg-[#050811] border border-slate-900 rounded flex justify-between items-center text-[9px] text-slate-300 font-mono">
-                  <span className="text-emerald-400 font-bold">{item.efficiency}</span>
-                  <span className="truncate text-slate-400 w-24 text-right" title={item.patternName}>{item.patternName}</span>
+              {verifiedHypotheses.length === 0 ? (
+                <div className="text-[10px] text-slate-500 italic text-center py-4 leading-normal">
+                  هیچ نەخشەیەکی پشتڕاستکراوە نییە هێشتا - پانێلی Value Discovery بپشکنە بۆ گریمانە مەکینەییەکان
                 </div>
-              ))}
+              ) : (
+                verifiedHypotheses.map(item => (
+                  <div key={item.id} className="p-1.5 bg-[#050811] border border-slate-900 rounded flex justify-between items-center text-[9px] text-slate-300 font-mono">
+                    <span className="text-emerald-400 font-bold">
+                      {item.p_value !== null ? `p: ${parseFloat(item.p_value as string).toFixed(4)}` : 'N/A'}
+                    </span>
+                    <span className="truncate text-slate-400 w-24 text-right" title={item.title}>{item.title}</span>
+                  </div>
+                ))
+              )}
             </div>
 
             <div className="pt-2 border-t border-slate-800 space-y-3">
@@ -565,7 +616,7 @@ export default function AlienBrainLab() {
               </h3>
             </div>
             <p className="text-[11px] text-slate-400 leading-relaxed mb-4">
-              بۆتەکە خۆی ئازادە لەوەی پۆزیشن لە چ جۆرە بازاڕێک بکاتەوە، لێرەدا دەتوانیت دیاریبکەیت بۆتەکە لە چ گۆڕەپانێکدا کاربکات بەبێ نووسینی کۆدی زیادە.
+              بۆتەکە خۆی ئازادە لەوەی پۆزیشن لە چ جۆرە بازاڕێک بکاتەوە، لێرەدا دەتوانیت دیاریبکەیت بۆتەکە لە چ گۆڕەپانێکدا کاردەکات بەبێ نووسینی کۆدی زیادە.
             </p>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -629,45 +680,54 @@ export default function AlienBrainLab() {
 
             {/* List of Connected Broker APIs */}
             <div className="space-y-3 mb-5">
-              {brokers.map((broker) => (
-                <div key={broker.id} className="p-3 bg-slate-900/60 border border-slate-800 rounded-lg flex justify-between items-center text-left" dir="ltr">
-                  <div className="flex items-center space-x-3">
-                    <button 
-                      onClick={() => handleDeleteBroker(broker.id)}
-                      className="p-1.5 bg-slate-950 hover:bg-rose-950/40 text-slate-500 hover:text-rose-400 rounded border border-slate-800 hover:border-rose-900/40 transition-all cursor-pointer"
-                      title="سڕینەوەی بەستەر"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                    <div>
-                      <div className="flex items-center space-x-1.5">
-                        <span className="font-bold text-slate-200 text-xs">{broker.brokerName}</span>
-                        <span className={`text-[8px] font-mono px-1.5 py-0.5 rounded ${
-                          broker.accountType === 'DEMO' ? 'bg-teal-950 text-teal-400 border border-teal-800/30' : 'bg-amber-950 text-amber-400 border border-amber-800/30'
-                        }`}>
-                          {broker.accountType}
-                        </span>
-                      </div>
-                      <span className="text-[9px] text-slate-500 block font-mono mt-0.5">{broker.apiKeyMasked}</span>
-                    </div>
-                  </div>
-
-                  <div className="text-right">
-                    <div className="flex items-center justify-end space-x-1">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                      <span className="text-[10px] text-emerald-400 font-mono font-bold uppercase">{broker.status}</span>
-                    </div>
-                    <span className="text-[8px] text-slate-500 font-mono mt-0.5 block">Ping: {broker.pingMs}ms | Type: {broker.apiType}</span>
-                  </div>
+              {brokers.length === 0 ? (
+                <div className="text-center p-6 bg-slate-900/40 border border-slate-800 rounded-lg text-xs text-slate-500 italic">
+                  هیچ پەیوەندی بڕۆکەرێک چالاک نییە لە ئێستادا.
                 </div>
-              ))}
+              ) : (
+                brokers.map((broker) => (
+                  <div key={broker.id} className="p-3 bg-slate-900/60 border border-slate-800 rounded-lg flex justify-between items-center text-left" dir="ltr">
+                    <div className="flex items-center space-x-3">
+                      <button 
+                        onClick={() => handleDeleteBroker(broker.id)}
+                        className="p-1.5 bg-slate-950 hover:bg-rose-950/40 text-slate-500 hover:text-rose-400 rounded border border-slate-800 hover:border-rose-900/40 transition-all cursor-pointer"
+                        title="سڕینەوەی بەستەر"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                      <div>
+                        <div className="flex items-center space-x-1.5">
+                          <span className="font-bold text-slate-200 text-xs">{broker.brokerName}</span>
+                          <span className={`text-[8px] font-mono px-1.5 py-0.5 rounded ${
+                            broker.accountType === 'DEMO' ? 'bg-teal-950 text-teal-400 border border-teal-800/30' : 'bg-amber-950 text-amber-400 border border-amber-800/30'
+                          }`}>
+                            {broker.accountType}
+                          </span>
+                        </div>
+                        <span className="text-[9px] text-slate-400 block font-mono mt-0.5">Account ID: {broker.accountId}</span>
+                        <span className="text-[8px] text-slate-500 block font-mono mt-0.5">API Key: {broker.apiKeyMasked}</span>
+                      </div>
+                    </div>
+
+                    <div className="text-right">
+                      <div className="flex items-center justify-end space-x-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                        <span className="text-[10px] text-emerald-400 font-mono font-bold uppercase">{broker.status}</span>
+                      </div>
+                      <span className="text-[8px] text-slate-500 font-mono mt-0.5 block">
+                        Ping: {typeof broker.pingMs === 'number' ? `${broker.pingMs} ms` : broker.pingMs} | Type: {broker.apiType}
+                      </span>
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
 
             {/* Add New Broker API Form */}
             <form onSubmit={handleAddBroker} className="p-4 bg-slate-900/40 border border-slate-800/80 rounded-lg space-y-3">
               <span className="text-xs font-bold text-slate-300 block mb-2">زیادکردنی کەناڵێکی نوێی بڕۆکەر</span>
               
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
                   <label className="text-[10px] text-slate-500 block mb-1">ناوی بڕۆکەر یان پلاتفۆرم</label>
                   <input 
@@ -680,9 +740,20 @@ export default function AlienBrainLab() {
                   />
                 </div>
                 <div>
-                  <label className="text-[10px] text-slate-500 block mb-1">کلیلی API یان ئایدی هەژمار</label>
+                  <label className="text-[10px] text-slate-500 block mb-1">ناسنامەی هەژمار (Account ID)</label>
                   <input 
                     type="text" 
+                    placeholder="نمونە: 101-002-12345" 
+                    value={newBrokerAccountId}
+                    onChange={(e) => setNewBrokerAccountId(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-emerald-500 font-mono"
+                    dir="ltr"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] text-slate-500 block mb-1">کلیلی API یان مۆڵەتنامە</label>
+                  <input 
+                    type="password" 
                     placeholder="api_key_or_token_here" 
                     value={newBrokerKey}
                     onChange={(e) => setNewBrokerKey(e.target.value)}
@@ -842,16 +913,16 @@ export default function AlienBrainLab() {
 
               <div className="grid grid-cols-3 gap-2 mt-2 pt-2 border-t border-slate-800 text-center">
                 <div className="bg-slate-950 p-1.5 rounded border border-slate-900">
-                  <span className="text-[8px] text-slate-500 block">نەوەی فێربوون (Gen)</span>
+                  <span className="text-[8px] text-slate-500 block font-sans">نەوەی فێربوون (Gen)</span>
                   <span className="text-xs font-mono font-bold text-purple-400">{generationCount}</span>
                 </div>
                 <div className="bg-slate-950 p-1.5 rounded border border-slate-900">
-                  <span className="text-[8px] text-slate-500 block">ئاستی دەماری (Rate)</span>
-                  <span className="text-xs font-mono font-bold text-sky-400">{alienLearningRate}</span>
+                  <span className="text-[8px] text-slate-500 block font-sans">ئەپی سۆدەکان (Episodes)</span>
+                  <span className="text-xs font-mono font-bold text-sky-400">{drlEpisodes}</span>
                 </div>
                 <div className="bg-slate-950 p-1.5 rounded border border-slate-900">
-                  <span className="text-[8px] text-slate-500 block">کوریۆسیتی (Curiosity)</span>
-                  <span className="text-xs font-mono font-bold text-amber-400">{brainCuriosity.toFixed(2)}%</span>
+                  <span className="text-[8px] text-slate-500 block font-sans">زیانی مۆدێل (Loss)</span>
+                  <span className="text-xs font-mono font-bold text-amber-400">{drlLoss}</span>
                 </div>
               </div>
             </div>
@@ -863,8 +934,8 @@ export default function AlienBrainLab() {
                   مۆدی فێربوونی خێرا (Hypersonic Adaptor Mode)
                   <Zap className="w-4 h-4 text-amber-400 animate-pulse" />
                 </span>
-                <p className="text-[10px] text-slate-400 mt-0.5">
-                  خێرایی نوێبوونەوە و دۆزینەوەی فۆرمولەکان وەک موشەکێکی دەنگبڕ (Hypersonic Missile) زیاد دەکات بەبێ لێدانی کۆدی دەستی.
+                <p className="text-[10px] text-slate-400 mt-0.5 font-sans">
+                  خێرایی نوێبوونەوە و گونجاندنی مۆدێلەکە لەگەڵ بازاڕدا خێرا دەکات بەبێ دروستکردنی هیچ جۆرە گۆڕانکارییەکی ساختە لە داتا فەرمییەکاندا.
                 </p>
               </div>
 
@@ -872,7 +943,7 @@ export default function AlienBrainLab() {
                 type="button"
                 onClick={() => {
                   setLearningSpeed(prev => prev === 'NORMAL' ? 'HYPERSONIC' : 'NORMAL');
-                  setAlienLearningRate(prev => prev === 0.085 ? 0.985 : 0.085);
+                  setAlienLearningRate(prev => prev === 0.0003 ? 0.0015 : 0.0003);
                 }}
                 className={`px-3 py-1.5 rounded-lg text-[10px] font-mono font-bold border transition-all cursor-pointer whitespace-nowrap ${
                   learningSpeed === 'HYPERSONIC'
@@ -1018,13 +1089,13 @@ export default function AlienBrainLab() {
               <div className="p-3 bg-slate-900/60 border border-slate-800/80 rounded-lg space-y-2">
                 <div className="flex justify-between items-center">
                   <span className="text-[9px] text-emerald-400 font-mono font-bold">DYNAMIC PROTECTION</span>
-                  <span className="text-xs font-bold text-slate-200">هەڵمژەری شۆک</span>
+                  <span className="text-xs font-bold text-slate-200">هەڵمژەری شۆк</span>
                 </div>
                 <p className="text-[10px] text-slate-400">
                   کۆنتڕۆڵکردنی ڕێژەی لێڤەرەیج بە شێوەیەکی داینامیکی بەپێی گۆڕانی لەناکاو (Volatility) بۆ پاراستنی بالانس.
                 </p>
                 <div className="flex justify-between items-center pt-1">
-                  <span className="text-[10px] font-mono text-emerald-400">Current Leverage: 1:{dynamicLeverage}</span>
+                  <span className="text-[10px] font-mono text-emerald-400">Leverage: {dynamicLeverage}</span>
                   <button
                     type="button"
                     onClick={() => setShockAbsorber(!shockAbsorber)}
@@ -1093,12 +1164,7 @@ export default function AlienBrainLab() {
                   <span className="text-[10px] text-slate-500">مۆدی پلان B ئۆتۆماتیکی چالاكە</span>
                   <button
                     type="button"
-                    onClick={() => {
-                      setPeacefulLock(!peacefulLock);
-                      if (!peacefulLock) {
-                        setDemoProfitPnL(p => p - 120); // small hedge locking simulation effect
-                      }
-                    }}
+                    onClick={() => setPeacefulLock(!peacefulLock)}
                     className={`px-3 py-1 rounded text-[10px] font-bold border transition-all cursor-pointer ${
                       peacefulLock ? 'bg-amber-500 border-amber-400 text-slate-950 shadow-md' : 'bg-slate-950 border-slate-800 text-slate-400'
                     }`}
@@ -1113,6 +1179,47 @@ export default function AlienBrainLab() {
 
         </div>
 
+      </div>
+
+      {/* Real-time Anomalies Feed (from PPO ensemble) */}
+      <div className="bg-slate-950 border border-slate-800 rounded-xl p-5 text-right" dir="rtl">
+        <div className="flex justify-between items-center mb-4 border-b border-slate-900 pb-3">
+          <span className="text-[9px] font-mono font-bold bg-amber-950/50 text-amber-400 px-2 py-0.5 rounded border border-amber-800/30">REAL-TIME SIGNAL ANOMALIES</span>
+          <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
+            سیگنالە ناوازە دۆزراوەکانی ژیری مەکینەیی (Anomalies & Consensus Feed)
+            <Activity className="w-4 h-4 text-amber-400 animate-pulse" />
+          </h3>
+        </div>
+
+        <div className="space-y-3">
+          {anomalies.length === 0 ? (
+            <div className="text-center py-8 text-xs text-slate-500 italic font-sans">
+              سیستەم لە چاوەڕوانیدایە بۆ دۆزینەوەی گۆڕانکاری و نائاساییەکانی بازاڕ لەلایەن مۆدێلی DRL...
+            </div>
+          ) : (
+            anomalies.map((anom) => (
+              <div key={anom.id} className="p-3 bg-slate-900/50 border border-slate-800/80 rounded-lg flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 text-left" dir="ltr">
+                <div className="flex items-center space-x-3">
+                  <div className={`w-2 h-2 rounded-full ${anom.assetClass === 'FOREX' ? 'bg-indigo-400' : 'bg-amber-400'}`} />
+                  <div>
+                    <span className="text-xs font-bold text-slate-200">{anom.pair} ({anom.assetClass})</span>
+                    <span className="text-[10px] text-slate-500 block">{anom.type}</span>
+                  </div>
+                </div>
+                <div className="flex items-center space-x-4">
+                  <div className="text-right">
+                    <span className="text-xs font-mono font-bold text-amber-400">+{anom.mismatchPips} Pips</span>
+                    <span className="text-[9px] text-slate-500 block">Mismatch / Confidence</span>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-xs font-mono font-bold text-emerald-400">{anom.status}</span>
+                    <span className="text-[9px] text-slate-500 block">Detected at {anom.detectedAt}</span>
+                  </div>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
       </div>
 
     </div>

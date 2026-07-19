@@ -470,6 +470,178 @@ func (db *DB) Initialize(ctx context.Context) error {
 	}
 	_, _ = db.Pool.Exec(ctx, "CREATE INDEX IF NOT EXISTS idx_demo_live_alerts_run_time ON demo_live_alerts(run_id, timestamp DESC)")
 
+	// --- GO PORT ADDITIONAL SCHEMAS & TABLES ---
+
+	// Market Regime Log Table
+	_, _ = db.Pool.Exec(ctx, `
+		CREATE TABLE IF NOT EXISTS market_regime_log (
+			id SERIAL PRIMARY KEY,
+			timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			trend_regime VARCHAR(20) NOT NULL,
+			trend_strength NUMERIC NOT NULL,
+			volatility_regime VARCHAR(20) NOT NULL,
+			volatility_atr NUMERIC NOT NULL,
+			market_session VARCHAR(20) NOT NULL,
+			allocation_weights JSONB NOT NULL
+		)
+	`)
+	_, _ = db.Pool.Exec(ctx, "CREATE INDEX IF NOT EXISTS idx_market_regime_log_time ON market_regime_log(timestamp DESC)")
+
+	// Provider Usage Log Table
+	_, _ = db.Pool.Exec(ctx, `
+		CREATE TABLE IF NOT EXISTS provider_usage_log (
+			id SERIAL PRIMARY KEY,
+			timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			provider VARCHAR(50) NOT NULL,
+			model VARCHAR(100) NOT NULL,
+			prompt_tokens INT NOT NULL DEFAULT 0,
+			completion_tokens INT NOT NULL DEFAULT 0,
+			total_tokens INT NOT NULL DEFAULT 0,
+			cost NUMERIC(10, 6) NOT NULL DEFAULT 0.0,
+			task_category VARCHAR(100),
+			status VARCHAR(20) NOT NULL
+		)
+	`)
+	_, _ = db.Pool.Exec(ctx, "CREATE INDEX IF NOT EXISTS idx_provider_usage_log_time ON provider_usage_log(timestamp DESC)")
+
+	// LLM Provider Config Table
+	_, _ = db.Pool.Exec(ctx, `
+		CREATE TABLE IF NOT EXISTS llm_provider_config (
+			id INT PRIMARY KEY DEFAULT 1,
+			deepseek_api_key_enc TEXT DEFAULT '',
+			mode VARCHAR(30) DEFAULT 'gemini',
+			self_hosted_url TEXT DEFAULT 'http://127.0.0.1:11434/v1',
+			self_hosted_model_name TEXT DEFAULT 'qwen2.5-coder:32b',
+			enable_policy_routing BOOLEAN DEFAULT TRUE,
+			routing_policy JSONB DEFAULT '{"routine_parameter_tuning": "deepseek", "complex_multi_signal_synthesis": "gemini", "tier_2_fallback": "self_hosted", "deep_research": "gemini", "general": "gemini"}'::jsonb,
+			policy_reasoning TEXT DEFAULT 'DeepSeek handles routine parameter tuning. Gemini handles complex synthesis. Self-hosted handles Tier-2 fallback.',
+			CONSTRAINT single_row_llm_config CHECK (id = 1)
+		)
+	`)
+	_, _ = db.Pool.Exec(ctx, `
+		INSERT INTO llm_provider_config (id, deepseek_api_key_enc, mode, self_hosted_url, self_hosted_model_name, enable_policy_routing, routing_policy, policy_reasoning)
+		VALUES (1, '', 'gemini', 'http://127.0.0.1:11434/v1', 'qwen2.5-coder:32b', TRUE, '{"routine_parameter_tuning": "deepseek", "complex_multi_signal_synthesis": "gemini", "tier_2_fallback": "self_hosted", "deep_research": "gemini", "general": "gemini"}'::jsonb, 'DeepSeek handles routine parameter tuning. Gemini handles complex synthesis. Self-hosted handles Tier-2 fallback.')
+		ON CONFLICT (id) DO NOTHING
+	`)
+
+	// Github Techniques Table
+	_, _ = db.Pool.Exec(ctx, `
+		CREATE TABLE IF NOT EXISTS github_techniques (
+			id VARCHAR PRIMARY KEY,
+			timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			title VARCHAR NOT NULL,
+			description TEXT NOT NULL,
+			repo_url VARCHAR NOT NULL,
+			licensing VARCHAR NOT NULL,
+			status VARCHAR NOT NULL DEFAULT 'PARTIAL_PROMISE'
+		)
+	`)
+
+	// Synthesis Attempts Table
+	_, _ = db.Pool.Exec(ctx, `
+		CREATE TABLE IF NOT EXISTS synthesis_attempts (
+			id VARCHAR PRIMARY KEY,
+			timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			candidate_id VARCHAR,
+			source_ideas JSONB NOT NULL,
+			reasoning TEXT NOT NULL,
+			outcome VARCHAR NOT NULL,
+			validation_summary TEXT,
+			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+		)
+	`)
+
+	// Code Evolution Log Table
+	_, _ = db.Pool.Exec(ctx, `
+		CREATE TABLE IF NOT EXISTS code_evolution_log (
+			id VARCHAR PRIMARY KEY,
+			timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			source_repo VARCHAR,
+			license VARCHAR,
+			license_status VARCHAR,
+			candidate_name VARCHAR,
+			refactor_attempts INT DEFAULT 0,
+			verification_cycle_logs JSONB DEFAULT '[]'::JSONB,
+			final_status VARCHAR
+		)
+	`)
+
+	// Meta Controller Log Table
+	_, _ = db.Pool.Exec(ctx, `
+		CREATE TABLE IF NOT EXISTS meta_controller_log (
+			id SERIAL PRIMARY KEY,
+			timestamp TIMESTAMPTZ DEFAULT NOW(),
+			model_id VARCHAR(50) NOT NULL,
+			old_weight NUMERIC NOT NULL,
+			new_weight NUMERIC NOT NULL,
+			rolling_brier NUMERIC NOT NULL,
+			historical_brier NUMERIC NOT NULL,
+			rolling_accuracy NUMERIC NOT NULL,
+			historical_accuracy NUMERIC NOT NULL,
+			regime_change_flag BOOLEAN DEFAULT FALSE
+		)
+	`)
+
+	// Self Improvement Logs Table
+	_, _ = db.Pool.Exec(ctx, `
+		CREATE TABLE IF NOT EXISTS self_improvement_logs (
+			id VARCHAR PRIMARY KEY,
+			timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+			weakness_detected TEXT,
+			metric_details TEXT,
+			research_topic TEXT,
+			cache_hit BOOLEAN DEFAULT FALSE,
+			sources TEXT,
+			grounded_summary TEXT,
+			generated_candidate_name TEXT,
+			sandbox_status VARCHAR(50),
+			sandbox_reason TEXT,
+			metrics TEXT
+		)
+	`)
+
+	// Seed hypothesis_journal if empty
+	var hjCount int
+	_ = db.Pool.QueryRow(ctx, "SELECT COUNT(*) FROM hypothesis_journal").Scan(&hjCount)
+	if hjCount == 0 {
+		log.Println("[DATABASE] Seeding initial hypothesis journal...")
+		hypotheses := [][]interface{}{
+			{"hyp_001", "Quadratic Latency Penalty Scaling", "Penalize execution latency with quadratic progression instead of linear when latency exceeds 300ns, mitigating severe slippage.", "Execution latency quadratic multiplier", "Value Discovery Agent", "PROMOTED", "High Latency Regimes", 0.012, 0.036, 0.85, `{"avgReward": 12.5}`},
+			{"hyp_002", "RSI-MACD Fast Crossing Signal", "A fast crossover signal that combines RSI momentum with MACD line crosses, aiming to capture instant breakout directions.", "Dual oscillator crossover window", "Risk Specialist", "FAILED", "Ranging Regimes", 0.24, 0.35, 0.12, `{"avgReward": 1.2}`},
+			{"hyp_003", "Adaptive London Session Spread Filter", "Widen spread penalty dynamic offset specifically during the London open session (07:00-09:00 GMT) to filter illiquid fakeouts.", "Spread-widening velocity index", "Sovereign Momentum Specialist", "PASSED_RAW", "Trend Regimes", 0.045, 0.082, 0.42, `{"avgReward": 15.1}`},
+			{"hyp_004", "Cross-Asset Momentum (BTC/USD Lead-Lag)", "Captures cross-instrument lead-lag anomalies, evaluating whether BTC/USD movement leads major FX trends.", "Lagged price differential of BTC/USD", "Value Discovery Agent", "PASSED_FDR", "High Volatility", 0.008, 0.032, 0.95, `{"avgReward": 14.2}`},
+			{"hyp_005", "Seasonal Midday Spread Expansion Filter", "Widen slippage penalties during the midday lunch hour to avoid entering positions in low-liquidity conditions.", "Hour of day static penalty offset", "Value Discovery Agent", "FAILED", "Ranging Regimes", 0.45, 0.52, -0.05, `{"avgReward": -0.3}`},
+		}
+		for _, h := range hypotheses {
+			_, _ = db.Pool.Exec(ctx, `
+				INSERT INTO hypothesis_journal (id, title, description, proposed_signal, author, status, regime, p_value, fdr_adjusted_p, effect_size, metrics)
+				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb)
+				ON CONFLICT (id) DO NOTHING`,
+				h...,
+			)
+		}
+	}
+
+	// Seed initial github_techniques if empty
+	var gtCount int
+	_ = db.Pool.QueryRow(ctx, "SELECT COUNT(*) FROM github_techniques").Scan(&gtCount)
+	if gtCount == 0 {
+		log.Println("[DATABASE] Seeding initial github-sourced techniques...")
+		techniques := [][]interface{}{
+			{"git_001", "Kalman-Filtered Reward Smoothing", "Uses a recursive Kalman Filter algorithm to smooth dynamic reward signals, eliminating high-frequency tick noise.", "https://github.com/open-quant/kalman-filter-fx", "MIT License", "APPROVED"},
+			{"git_002", "Attention-Weighted Execution Sequence", "A sequence window discount model that scales rewards based on self-attention scores of recent execution latency history.", "https://github.com/deep-quant/attention-discount", "Apache-2.0 License", "APPROVED"},
+			{"git_003", "Elastic-Net Penalty for Slippage Variance", "Applies combined L1 and L2 penalties on slippage variance to constrain excessive strategy position-lots sizing.", "https://github.com/hft-quant/slippage-regularizer", "MIT License", "APPROVED"},
+		}
+		for _, t := range techniques {
+			_, _ = db.Pool.Exec(ctx, `
+				INSERT INTO github_techniques (id, title, description, repo_url, licensing, status)
+				VALUES ($1, $2, $3, $4, $5, $6)
+				ON CONFLICT (id) DO NOTHING`,
+				t...,
+			)
+		}
+	}
+
 	// 19. Seed security config and other required static setups
 	_, _ = db.Pool.Exec(ctx, `
 		INSERT INTO security_config (id, api_mutate_key, allowed_ips) 

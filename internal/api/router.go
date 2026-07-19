@@ -3,6 +3,9 @@ package api
 import (
 	"log"
 	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -22,7 +25,7 @@ func SetupRouter(h *Handler) *gin.Engine {
 	r.Use(CORSMiddleware())
 	r.Use(TrackActiveRequests())
 
-		// Public Health endpoints
+	// Public Health endpoints
 	r.GET("/api/health", h.HealthCheck)
 	r.GET("/api/v1/health", h.HealthCheck)
 	r.GET("/api/ready", h.ReadyCheck)
@@ -96,7 +99,66 @@ func SetupRouter(h *Handler) *gin.Engine {
 		protected.POST("/api/arbitrage/clear", h.ClearArbitrage)
 
 		protected.GET("/api/risk/portfolio", h.GetPortfolioRisk)
+
+		// --- NEW PORTED GO BACKEND ENDPOINTS ---
+
+		// News & Economic Calendar
+		protected.POST("/api/news/test-connection", h.TestNewsConnection)
+		protected.POST("/api/news/config", h.ConfigNews)
+		protected.GET("/api/news/config", h.GetNewsConfig)
+		protected.GET("/api/news/platforms", h.GetNewsPlatforms)
+		protected.POST("/api/news/disconnect", h.DisconnectNews)
+		protected.GET("/api/news/feed", h.GetNewsFeed)
+
+		// Generic Connector Framework
+		protected.GET("/api/custom-connectors", h.GetCustomConnectors)
+		protected.POST("/api/custom-connectors", h.CreateCustomConnector)
+		protected.POST("/api/custom-connectors/test", h.TestCustomConnector)
+		protected.DELETE("/api/custom-connectors/:id", h.DeleteCustomConnector)
+
+		// DRL Ensemble
+		protected.GET("/api/drl/ensemble", h.GetDrlEnsemble)
+		protected.GET("/api/drl/telemetry", h.GetDrlTelemetry)
+
+		// Chrony Clock Sync Status
+		protected.GET("/api/time-sync/status", h.GetTimeSyncStatus)
+
+		// Code Pipeline
+		protected.GET("/api/pipeline/prs", h.GetPipelinePRs)
+		protected.GET("/api/pipeline/history", h.GetPipelineHistory)
+		protected.POST("/api/pipeline/propose", h.ProposePipelineCode)
+		protected.POST("/api/pipeline/merge", h.MergePipelinePR)
+
+		// System Intelligence status & resilience layer
+		protected.GET("/api/system-intelligence/status", h.GetSystemIntelligenceStatus)
+		protected.POST("/api/system-intelligence/simulate-outage", h.SimulateOutage)
+		protected.GET("/api/system-intelligence/availability-log", h.GetAvailabilityLog)
+		protected.GET("/api/system-intelligence/provider-config", h.GetLLMProviderConfig)
+		protected.POST("/api/system-intelligence/provider-config", h.UpdateLLMProviderConfig)
+		protected.GET("/api/system-intelligence/provider-usage", h.GetLLMProviderUsage)
+		protected.POST("/api/system-intelligence/recalibrate-benchmarks", h.RecalibrateBenchmarks)
+		protected.GET("/api/system-intelligence/tool-logs", h.GetToolLogs)
+		protected.GET("/api/benchmark-results", h.GetBenchmarkResults)
 	}
+
+	// Serve React Static assets with SPA fallback for non-API routes
+	r.NoRoute(func(c *gin.Context) {
+		path := c.Request.URL.Path
+		if strings.HasPrefix(path, "/api") {
+			c.JSON(http.StatusNotFound, gin.H{"error": "API route not found"})
+			return
+		}
+
+		// Serve static assets from dist/
+		filePath := filepath.Join("dist", path)
+		if _, err := os.Stat(filePath); err == nil && !strings.HasSuffix(filePath, "/") {
+			c.File(filePath)
+			return
+		}
+
+		// Default SPA fallback
+		c.File(filepath.Join("dist", "index.html"))
+	})
 
 	return r
 }

@@ -3,9 +3,9 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "tsx server.ts",
-    "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
-    "start": "node dist/server.cjs",
+    "dev": "go run main.go",
+    "build": "vite build && (command -v go >/dev/null && go build -o dist/server main.go || echo 'Go compiler not found, proceeding with static build.')",
+    "start": "./dist/server",
     "lint": "tsc --noEmit"
   },
   "dependencies": {
@@ -27,12 +27,14 @@
     "@tailwindcss/vite": "^4.3.3",
     "@types/express": "^4.17.21",
     "@types/node": "^20.14.2",
+    "@types/node-fetch": "^2.6.13",
     "@types/pg": "^8.20.0",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
     "@types/ws": "^8.18.1",
     "@vitejs/plugin-react": "^4.3.0",
     "esbuild": "^0.21.4",
+    "node-fetch": "^3.3.2",
     "tailwindcss": "^4.3.3",
     "tsx": "^4.11.0",
     "typescript": "^5.4.5",
