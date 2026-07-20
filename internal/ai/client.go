@@ -172,22 +172,94 @@ func (g *GeminiClient) generateTextHTTP(ctx context.Context, model string, promp
 		return nil, err
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Content-Type", "application/json")
+	var bodyBytes []byte
+	var resp *http.Response
+	maxRetries := 5
+	backoff := 2 * time.Second
 
-	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
+	for i := 0; i < maxRetries; i++ {
+		req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Content-Type", "application/json")
 
-	if resp.StatusCode != http.StatusOK {
-		bodyBytes, _ := io.ReadAll(resp.Body)
+		client := &http.Client{Timeout: 45 * time.Second}
+		resp, err = client.Do(req)
+		if err != nil {
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
+			log.Printf("[GEMINI-CLIENT-RETRY] Connection error on attempt %d: %v. Retrying in %v...", i+1, err, backoff)
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(backoff):
+			}
+			backoff *= 2
+			continue
+		}
+
+		bodyBytes, err = io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			log.Printf("[GEMINI-CLIENT-RETRY] Error reading response body on attempt %d: %v. Retrying...", i+1, err)
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(backoff):
+			}
+			backoff *= 2
+			continue
+		}
+
+		if resp.StatusCode == http.StatusOK {
+			break
+		}
+
+		if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode == 429 {
+			log.Printf("[GEMINI-CLIENT-RETRY] Received 429 (Too Many Requests) on attempt %d. Quota exceeded or rate limited. Retrying in %v...", i+1, backoff)
+			bodyStr := string(bodyBytes)
+			if strings.Contains(bodyStr, "Please retry in ") {
+				parts := strings.Split(bodyStr, "Please retry in ")
+				if len(parts) > 1 {
+					secStr := strings.Split(parts[1], "s")[0]
+					var sleepSecs float64
+					if _, err := fmt.Sscanf(secStr, "%f", &sleepSecs); err == nil && sleepSecs > 0 {
+						additionalSleep := time.Duration((sleepSecs + 0.5) * float64(time.Second))
+						if additionalSleep > backoff {
+							log.Printf("[GEMINI-CLIENT-RETRY] Gemini suggested waiting %v. Adjusting backoff to %v.", secStr+"s", additionalSleep)
+							backoff = additionalSleep
+						}
+					}
+				}
+			}
+
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(backoff):
+			}
+			backoff *= 2
+			continue
+		}
+
+		if resp.StatusCode >= 500 {
+			log.Printf("[GEMINI-CLIENT-RETRY] Received server error %d on attempt %d. Retrying...", resp.StatusCode, i+1)
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(backoff):
+			}
+			backoff *= 2
+			continue
+		}
+
 		return nil, fmt.Errorf("gemini http error (status %d): %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	if resp == nil || resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("gemini http error (status %d after %d retries): %s", resp.StatusCode, maxRetries, string(bodyBytes))
 	}
 
 	var geminiResponse struct {
@@ -208,7 +280,7 @@ func (g *GeminiClient) generateTextHTTP(ctx context.Context, model string, promp
 		} `json:"candidates"`
 	}
 
-	if err := json.NewDecoder(resp.Body).Decode(&geminiResponse); err != nil {
+	if err := json.Unmarshal(bodyBytes, &geminiResponse); err != nil {
 		return nil, err
 	}
 
