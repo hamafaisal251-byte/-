@@ -429,12 +429,12 @@ func RunSelfImprovementCycle(ctx context.Context, database *db.DB, gemini *Gemin
 
 	// Setup unique personas
 	personas := []PersonaConfig{
-		{ID: "risk_averse", Name: "Risk-Averse Quant", Description: "Prioritizes minimizing drawdown and tail risk.", searchQuery: "drawdown control reward"},
-		{ID: "momentum", Name: "Momentum/Speed Specialist", Description: "Prioritizes execution speed and short momentum bursts.", searchQuery: "speed sniper bonus"},
-		{ID: "mean_reversion", Name: "Mean-Reversion Analyst", Description: "Focuses on mean reverting bands.", searchQuery: "mean reversion reward"},
-		{ID: "volatility_regime", Name: "Volatility Regime Specialist", Description: "Adapts specific parameters dynamically.", searchQuery: "volatility adaptive reward"},
-		{ID: "low_liquidity", Name: "Low-Liquidity Specialist", Description: "Spread and slippage mitigation.", searchQuery: "slippage spread penalty"},
-		{ID: "adversarial_skeptic", Name: "Adversarial Skeptic", Description: "Probes active strategy edge to exploit flaws.", searchQuery: "adversarial reward shaping"},
+		{ID: "risk_averse", Name: "Risk-Averse Quant", Description: "Prioritizes minimizing drawdown and tail risk.", SearchQuery: "drawdown control reward"},
+		{ID: "momentum", Name: "Momentum/Speed Specialist", Description: "Prioritizes execution speed and short momentum bursts.", SearchQuery: "speed sniper bonus"},
+		{ID: "mean_reversion", Name: "Mean-Reversion Analyst", Description: "Focuses on mean reverting bands.", SearchQuery: "mean reversion reward"},
+		{ID: "volatility_regime", Name: "Volatility Regime Specialist", Description: "Adapts specific parameters dynamically.", SearchQuery: "volatility adaptive reward"},
+		{ID: "low_liquidity", Name: "Low-Liquidity Specialist", Description: "Spread and slippage mitigation.", SearchQuery: "slippage spread penalty"},
+		{ID: "adversarial_skeptic", Name: "Adversarial Skeptic", Description: "Probes active strategy edge to exploit flaws.", SearchQuery: "adversarial reward shaping"},
 	}
 
 	log.Printf("[SELF-IMPROVEMENT] Selected Weakness: \"%s\"", selected.Topic)

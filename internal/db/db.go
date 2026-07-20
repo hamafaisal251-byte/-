@@ -601,7 +601,6 @@ func (db *DB) Initialize(ctx context.Context) error {
 	`)
 
 	// Seed hypothesis_journal if empty
-	var hjCount int
 	_ = db.Pool.QueryRow(ctx, "SELECT COUNT(*) FROM hypothesis_journal").Scan(&hjCount)
 	if hjCount == 0 {
 		log.Println("[DATABASE] Seeding initial hypothesis journal...")

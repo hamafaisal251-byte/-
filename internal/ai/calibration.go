@@ -7,7 +7,6 @@ import (
 	"log"
 	"math"
 	"strings"
-	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/proda-nexus/sovereign-trading/internal/db"

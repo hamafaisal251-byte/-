@@ -2,7 +2,6 @@ package trading
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
 	"math"

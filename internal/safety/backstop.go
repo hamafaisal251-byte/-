@@ -507,3 +507,20 @@ func CheckDrawdown(currentEquity float64) bool {
 
 	return false
 }
+
+type LiveAccountStats struct {
+	Balance     float64 `json:"balance"`
+	Equity      float64 `json:"equity"`
+	FreeMargin  float64 `json:"freeMargin"`
+	UsedMargin  float64 `json:"usedMargin"`
+	MarginLevel float64 `json:"marginLevel"`
+	TodayPnL    float64 `json:"todayPnL"`
+}
+
+type LiveTradingState struct {
+	LivePositions        []interface{}    `json:"livePositions"`
+	DemoLivePositions    []interface{}    `json:"demoLivePositions"`
+	LiveAccountStats     LiveAccountStats `json:"liveAccountStats"`
+	DemoLiveAccountStats LiveAccountStats `json:"demoLiveAccountStats"`
+}
+

@@ -14,7 +14,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -159,10 +158,8 @@ func main() {
 		})
 
 		// 3. Check DRL service status
-		drlAlive := false
 		drlResp, drlErr := client.Get("http://127.0.0.1:8000/api/drl/telemetry")
 		if drlErr == nil && drlResp.StatusCode == http.StatusOK {
-			drlAlive = true
 			consecutiveDrlFailures = 0
 			drlResp.Body.Close()
 		} else {

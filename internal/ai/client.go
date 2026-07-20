@@ -63,7 +63,9 @@ type Source struct {
 
 // GenerateText queries Gemini for text, optionally enabling Google Search grounding.
 func (g *GeminiClient) GenerateText(ctx context.Context, prompt string, systemInstruction string, searchGrounding bool) (*LLMResponse, error) {
-	if g.sdkClient == nil {
+	// For search grounding or if SDK is nil, we route to the robust HTTP implementation 
+	// to avoid type incompatibilities with older versions of the official SDK.
+	if g.sdkClient == nil || searchGrounding {
 		return g.generateTextHTTP(ctx, "gemini-2.5-flash", prompt, systemInstruction, searchGrounding, nil)
 	}
 
@@ -73,12 +75,6 @@ func (g *GeminiClient) GenerateText(ctx context.Context, prompt string, systemIn
 
 	if systemInstruction != "" {
 		model.SystemInstruction = genai.NewUserContent(genai.Text(systemInstruction))
-	}
-
-	if searchGrounding {
-		model.Tools = []*genai.Tool{
-			{GoogleSearchRetrieval: &genai.GoogleSearchRetrieval{}},
-		}
 	}
 
 	resp, err := model.GenerateContent(ctx, genai.Text(prompt))
@@ -99,24 +95,8 @@ func (g *GeminiClient) GenerateText(ctx context.Context, prompt string, systemIn
 		}
 	}
 
-	// Extract search grounding metadata sources if present
-	var sources []Source
-	for _, cand := range resp.Candidates {
-		if cand.GroundingMetadata != nil && cand.GroundingMetadata.GroundingChunks != nil {
-			for _, chunk := range cand.GroundingMetadata.GroundingChunks {
-				if chunk.Web != nil {
-					sources = append(sources, Source{
-						Title: chunk.Web.Title,
-						URI:   chunk.Web.URI,
-					})
-				}
-			}
-		}
-	}
-
 	return &LLMResponse{
 		Text:    textBuilder.String(),
-		Sources: sources,
 	}, nil
 }
 
