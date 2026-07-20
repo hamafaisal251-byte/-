@@ -13,6 +13,8 @@ drl_service_cpp/build/
 *.json
 !metadata.json
 !package.json
+!package-lock.json
+!tsconfig.json
 !staged_pr.json
 !postgres_state.json
 !safety_state.json
