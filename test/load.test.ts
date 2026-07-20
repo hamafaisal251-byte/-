@@ -127,10 +127,22 @@ describe("Sovereign FX Trading Bot - High-Throughput Load Test Suite", () => {
         ensembleDetails: {}
       };
 
-      // Perform synchronous pgDb query (which runs async on fallback thread without blocking)
-      pgDb.query(
-        "INSERT INTO prediction_log",
-        [mockPred]
+      // Perform non-blocking, fire-and-forget prediction logging using the correct API method
+      pgDb.logPrediction(
+        mockPred.instrument,
+        mockPred.mode,
+        mockPred.predictedDirection,
+        mockPred.confidenceScore,
+        mockPred.price,
+        mockPred.volatility,
+        mockPred.whaleSignal,
+        mockPred.newsSentiment,
+        mockPred.outcome,
+        mockPred.pnlPips,
+        mockPred.positionId,
+        mockPred.modelId,
+        mockPred.agreementScore,
+        mockPred.ensembleDetails
       );
     }
     const durationB = Date.now() - startB;

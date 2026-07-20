@@ -2917,7 +2917,7 @@ class PostgresEngine {
         return res.rows;
       }
 
-      if (sql.includes("INSERT INTO broker_connections") || sql.includes("UPDATE broker_connections")) {
+      if ((sql.includes("INSERT INTO broker_connections") || sql.includes("UPDATE broker_connections")) && params.length === 12) {
         // params structure: [id, brokerType, apiUrl, accountId, apiTokenEnc, secretKeyEnc, passphraseEnc, targetCompId, senderCompId, status, lastTestedTime, errorMsg]
         const res = await this.pool.query(
           `INSERT INTO broker_connections (id, broker_type, api_url, account_id, api_token_encrypted, secret_key_encrypted, passphrase_encrypted, target_comp_id, sender_comp_id, status, last_tested_time, error_message)
@@ -3126,6 +3126,11 @@ class PostgresEngine {
             JSON.stringify(record.metrics || {})
           ]
         );
+        this.cache.sandbox_runs = this.cache.sandbox_runs || [];
+        this.cache.sandbox_runs.unshift(record);
+        if (this.cache.sandbox_runs.length > 100) {
+          this.cache.sandbox_runs = this.cache.sandbox_runs.slice(0, 100);
+        }
         return record;
       }
 

@@ -28,7 +28,8 @@
     "llmProvider.ts",
     "safetyBackstop.ts",
     "deepResearchAgent.ts",
-    "watchdog.ts"
+    "watchdog.ts",
+    "test/**/*.ts"
   ],
   "exclude": [
     "node_modules",
