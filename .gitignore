@@ -11,6 +11,7 @@ drl_service_cpp/libtorch/
 drl_service_cpp/build/
 *.zip
 *.json
+get-pip.py
 !metadata.json
 !package.json
 !package-lock.json
