@@ -161,6 +161,15 @@ if [ "${valgrind_functional}" -eq 139 ] || [ "${valgrind_functional}" -eq 11 ] |
     harness_exit=$?
     set -e
 
+    # Check if unshare failed specifically due to permission or capability issues
+    if [ "${harness_exit}" -ne 0 ] && grep -q -E "unshare failed|Operation not permitted|permission" "${SANDBOX_DIR}/asan.log"; then
+        echo -e "${YELLOW}[WARNING] Network namespace isolation unavailable in this environment (unshare not permitted) - falling back to running ASan without network isolation.${RESET}"
+        set +e
+        timeout 45 "${SANDBOX_DIR}/harness_sanitized" > "${SANDBOX_DIR}/asan.log" 2>&1
+        harness_exit=$?
+        set -e
+    fi
+
     # Parse ASan / LSan error or leaks
     detected_leaks=$(grep -E "detected memory leaks|AddressSanitizer:|LeakSanitizer:|ERROR:|undefined-behavior|Sanitizer:" "${SANDBOX_DIR}/asan.log" || echo "")
 
@@ -187,6 +196,15 @@ else
     unshare -n sh -c "timeout 45 valgrind --tool=memcheck --leak-check=full --show-leak-kinds=all --error-exitcode=99 ${SANDBOX_DIR}/harness_binary" > "${SANDBOX_DIR}/valgrind.log" 2>&1
     valgrind_sim_exit=$?
     set -e
+
+    # Check if unshare failed specifically due to permission or capability issues
+    if [ "${valgrind_sim_exit}" -ne 0 ] && grep -q -E "unshare failed|Operation not permitted|permission" "${SANDBOX_DIR}/valgrind.log"; then
+        echo -e "${YELLOW}[WARNING] Network namespace isolation unavailable in this environment (unshare not permitted) - falling back to running Valgrind without network isolation.${RESET}"
+        set +e
+        timeout 45 valgrind --tool=memcheck --leak-check=full --show-leak-kinds=all --error-exitcode=99 "${SANDBOX_DIR}/harness_binary" > "${SANDBOX_DIR}/valgrind.log" 2>&1
+        valgrind_sim_exit=$?
+        set -e
+    fi
 
     # Parse Valgrind output for actual numbers
     definitely_lost=$(grep -E "definitely lost:" "${SANDBOX_DIR}/valgrind.log" | tail -n 1 | sed -E 's/.*definitely lost: ([0-9,]+) bytes.*/\1/' | tr -d ',' || echo "0")
