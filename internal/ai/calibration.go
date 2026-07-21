@@ -7,6 +7,7 @@ import (
 	"log"
 	"math"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/proda-nexus/sovereign-trading/internal/db"
@@ -221,12 +222,13 @@ func adjustStrategyThreshold(ctx context.Context, database *db.DB, symbol string
 		})
 
 		// Log calibration adjustment starting with [CALIBRATION ADJUSTMENT]
-		auditQuery := `INSERT INTO strategy_audit_logs (symbol, mode, trigger_value, action_taken, input_params, output_result) 
-		               VALUES ($1, $2, $3, $4, $5, $6)`
+		auditID := fmt.Sprintf("aud-%d", time.Now().UnixNano())
+		auditQuery := `INSERT INTO strategy_audit_logs (id, symbol, mode, trigger_value, action_taken, input_params, output_result) 
+		               VALUES ($1, $2, $3, $4, $5, $6, $7)`
 		actionString := fmt.Sprintf("[CALIBRATION ADJUSTMENT] Tightened %s threshold for %s from %.2f to %.2f due to Brier miscalibration: %.3f.",
 			mode, symbol, oldThreshold, newThreshold, brier)
 
-		_, err = database.Pool.Exec(ctx, auditQuery, symbol, "Calibration", brier, actionString, string(inputParams), string(outputResult))
+		_, err = database.Pool.Exec(ctx, auditQuery, auditID, symbol, "Calibration", brier, actionString, string(inputParams), string(outputResult))
 		if err != nil {
 			return err
 		}
