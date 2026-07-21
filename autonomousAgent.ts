@@ -1,7 +1,7 @@
 import { llmProvider, runTool } from "./llmProvider";
 import { checkChronyTracking, getCandidatesList, setCandidatesList, getActiveCandidateId, setActiveCandidateId } from "./server";
 import { runDeepResearch } from "./deepResearchAgent";
-import { GoogleGenAI } from "@google/genai";
+import { safetyBackstop } from "./safetyBackstop";
 
 export interface AgentLogEntry {
   id?: number;
@@ -232,13 +232,14 @@ Analyze this status. Think of the best cognitive action. You are capable of:
 2. "TRIGGER_TIME_SYNC": If clock offset is highly unsynced or Chrony report is offline, trigger sync procedures.
 3. "CAPTURE_SWARM_ARBITRAGE": If arbitrage is active, identify the price gap and issue automated capture execution.
 4. "PERFORM_DEEP_RESEARCH": Run scientific, multi-round deep research on a specific quantitative risk or trading weakness.
-5. "MAINTAIN_NOMINAL_STABILITY": If everything is green and pristine, run system self-tests and confirm nominal posture.
+5. "ADAPT_RISK_PARAMETERS": Dynamically adjust risk thresholds, leverage caps, or drawdown limits on the real-live account backstop.
+6. "MAINTAIN_NOMINAL_STABILITY": If everything is green and pristine, run system self-tests and confirm nominal posture.
 
 Provide your reasoning and thoughts in beautiful, academic, highly professional Kurdish (and keep technical English terms clear).
 Your response MUST be formatted strictly as a single JSON object matching this schema:
 {
   "thoughts": "Your detailed reasoning in Kurdish explaining what you see, why you made this choice, and what action you will take.",
-  "selectedAction": "HEAL_CANDIDATE_CODE" | "TRIGGER_TIME_SYNC" | "CAPTURE_SWARM_ARBITRAGE" | "PERFORM_DEEP_RESEARCH" | "MAINTAIN_NOMINAL_STABILITY",
+  "selectedAction": "HEAL_CANDIDATE_CODE" | "TRIGGER_TIME_SYNC" | "CAPTURE_SWARM_ARBITRAGE" | "PERFORM_DEEP_RESEARCH" | "ADAPT_RISK_PARAMETERS" | "MAINTAIN_NOMINAL_STABILITY",
   "actionPayload": "Any query, topic, code blueprint, or parameters needed for this action.",
   "expectedConfidenceScore": 0.0 to 1.0
 }
@@ -246,7 +247,7 @@ Your response MUST be formatted strictly as a single JSON object matching this s
 
   let parsedDecision: {
     thoughts: string;
-    selectedAction: "HEAL_CANDIDATE_CODE" | "TRIGGER_TIME_SYNC" | "CAPTURE_SWARM_ARBITRAGE" | "PERFORM_DEEP_RESEARCH" | "MAINTAIN_NOMINAL_STABILITY";
+    selectedAction: "HEAL_CANDIDATE_CODE" | "TRIGGER_TIME_SYNC" | "CAPTURE_SWARM_ARBITRAGE" | "PERFORM_DEEP_RESEARCH" | "ADAPT_RISK_PARAMETERS" | "MAINTAIN_NOMINAL_STABILITY";
     actionPayload: string;
     expectedConfidenceScore: number;
   };
@@ -404,15 +405,52 @@ Provide only the healed code inside standard C++ syntax in a \`\`\`cpp ... \`\`\
         searchQuery: "PPO RL hyperparameters currency trading"
       };
 
-      const researchClient = () => {
-        const apiKey = process.env.GEMINI_API_KEY;
-        return new GoogleGenAI({ apiKey: apiKey || "" });
-      };
-
-      const result = await runDeepResearch(topic, persona, researchClient, db, 2);
+      const result = await runDeepResearch(topic, persona, () => ({} as any), db, 2);
       actionResultDescription = `توێژینەوەی دەماری قووڵ لەسەر بابەتەکە ئەنجامدرا: "${topic}". کورتەی توێژینەوەکە بە زمانی کوردی نووسرا و بە سەرکەوتوویی لە داتابەیس جێگیرکرا.`;
     } catch (e: any) {
       actionResultDescription = `Deep research action failed: ${e.message}`;
+    }
+  } else if (chosenAction === "ADAPT_RISK_PARAMETERS") {
+    console.log("[NEXUS-AGI] Autonomous action triggered: ADAPT_RISK_PARAMETERS");
+    try {
+      const currentSafety = safetyBackstop.getState();
+      const previousMaxExposure = currentSafety.maxTotalNotionalExposure;
+      const previousDrawdownLimit = currentSafety.drawdownThresholdPct;
+
+      let newMaxExposure = previousMaxExposure;
+      let newDrawdownLimit = previousDrawdownLimit;
+
+      // Logic to dynamically compute adaptive limits based on goal modes
+      if (agentConfig.goal === "MIN_DRAWDOWN" || hasActiveFailures) {
+        // Tighten risk parameters
+        newMaxExposure = Math.max(100000.0, previousMaxExposure * 0.85);
+        newDrawdownLimit = Math.max(2.5, previousDrawdownLimit * 0.9);
+      } else if (agentConfig.goal === "MAX_PNL") {
+        // Safe expansion within hard thresholds
+        newMaxExposure = Math.min(800000.0, previousMaxExposure * 1.08);
+        newDrawdownLimit = Math.min(8.0, previousDrawdownLimit * 1.05);
+      } else {
+        // HYBRID_INTELLIGENCE: standard balance adjustments
+        newMaxExposure = Math.max(200000.0, Math.min(500000.0, previousMaxExposure * 0.98));
+        newDrawdownLimit = Math.max(3.0, Math.min(6.0, previousDrawdownLimit));
+      }
+
+      newMaxExposure = parseFloat(newMaxExposure.toFixed(2));
+      newDrawdownLimit = parseFloat(newDrawdownLimit.toFixed(2));
+
+      safetyBackstop.updateState({
+        maxTotalNotionalExposure: newMaxExposure,
+        drawdownThresholdPct: newDrawdownLimit
+      });
+
+      await db.query(`
+        INSERT INTO strategy_audit_logs (timestamp, level, module, message)
+        VALUES (NOW(), 'INFO', 'NEXUS-AGI-RISK', $1)
+      `, [`Dynamic risk-adaptivity triggered. Total exposure adjusted from $${previousMaxExposure} to $${newMaxExposure}; Drawdown threshold adjusted from ${previousDrawdownLimit}% to ${newDrawdownLimit}%.`]);
+
+      actionResultDescription = `ڕێکخستنە بیرکارییەکانی مەترسی (Risk limits) لەسەر ئاستی ئەکاونتی لایڤ بە شێوەیەکی داینامیکی نوێکرانەوە: سنووری گشتی سەرمایە لە $${previousMaxExposure} گۆڕدرا بۆ $${newMaxExposure}، و دابەزینی ڕێگەپێدراوی گشتی لە ${previousDrawdownLimit}% بۆ ${newDrawdownLimit}% ڕێکخرایەوە بۆ پاراستنی هێڵی سەرمایەی لایڤ.`;
+    } catch (e: any) {
+      actionResultDescription = `Failed to adapt safety parameters: ${e.message}`;
     }
   } else {
     // MAINTAIN_NOMINAL_STABILITY
