@@ -13,12 +13,12 @@ jobs:
 
     steps:
       - name: Check out Repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Set up Node.js Runtime
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '22'
           cache: 'npm'
 
       - name: Install Project Dependencies
@@ -48,7 +48,7 @@ jobs:
 
     steps:
       - name: Check out Repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Run HFT Strategy Playback
         run: |
@@ -64,7 +64,7 @@ jobs:
 
     steps:
       - name: Check out Repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Verify Deployment Manifest
         run: |
