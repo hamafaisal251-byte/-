@@ -16,6 +16,7 @@ import { safetyBackstop } from "./safetyBackstop";
 import { runDeepResearch } from "./deepResearchAgent";
 import { promisify } from "util";
 import { llmProvider, llmProviderMode, setLLMProviderMode, setEnablePolicyRouting, setRoutingPolicy } from "./llmProvider";
+import { initializeAgentDb, executeAgentCycle, getAgentLogs, getAgentConfig, updateAgentConfigInDb } from "./autonomousAgent";
 
 const execAsync = promisify(exec);
 
@@ -3982,6 +3983,7 @@ interface EvolutionCandidate {
   creator: string;
   status: "PASSED" | "FAILED" | "IDLE";
   code: string;
+  failureReason?: string;
   metrics: {
     avgReward: number;
     maxDrawdown: number;
@@ -4012,8 +4014,13 @@ interface EvolutionCandidate {
   };
 }
 
-let activeCandidateId = "candidate-a";
-let candidatesList: EvolutionCandidate[] = [
+export function getCandidatesList() { return candidatesList; }
+export function setCandidatesList(list: EvolutionCandidate[]) { candidatesList = list; }
+export function getActiveCandidateId() { return activeCandidateId; }
+export function setActiveCandidateId(id: string) { activeCandidateId = id; }
+
+export let activeCandidateId = "candidate-a";
+export let candidatesList: EvolutionCandidate[] = [
   {
     id: "candidate-a",
     name: "Reward Candidate #0412: Latency Optimized Sniper",
@@ -8363,6 +8370,33 @@ app.post(["/api/control/spike", "/api/v1/control/spike"], mutateRateLimiter, che
 app.get(["/api/candidates", "/api/v1/candidates"], (req, res) => {
   res.json({ success: true, candidates: candidatesList, activeCandidateId });
 });
+
+// 6b. Nexus Autonomous Agent Controller API
+app.get("/api/nexus-agent/status", (req, res) => {
+  res.json({
+    success: true,
+    logs: getAgentLogs(),
+    config: getAgentConfig()
+  });
+});
+
+app.post("/api/nexus-agent/config", checkBearerAuth, asyncHandler(async (req: express.Request, res: express.Response) => {
+  const { goal, isActive, autofixCode, arbitrageEnabled } = req.body;
+  await updateAgentConfigInDb(pgDb, { goal, isActive, autofixCode, arbitrageEnabled });
+  res.json({
+    success: true,
+    config: getAgentConfig()
+  });
+}));
+
+app.post("/api/nexus-agent/trigger", checkBearerAuth, asyncHandler(async (req: express.Request, res: express.Response) => {
+  const { instruction } = req.body;
+  const result = await executeAgentCycle(pgDb, instruction);
+  res.json({
+    success: true,
+    result
+  });
+}));
 
 app.get("/api/meta-controller/status", asyncHandler(async (req: express.Request, res: express.Response) => {
   const logsRes = await pgDb.queryAsync(
@@ -13648,6 +13682,7 @@ async function startServer() {
   console.log("[LAUNCHER] Initializing PostgreSQL database...");
   try {
     await pgDb.initialize();
+    await initializeAgentDb(pgDb);
     console.log("[LAUNCHER] PostgreSQL database initialization completed successfully.");
 
     // Connect safety backstop real-time saving to Postgres

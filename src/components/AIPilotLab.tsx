@@ -99,6 +99,73 @@ export default function AIPilotLab({ candidates, setCandidates, selectedId, setS
     return () => clearInterval(interval);
   }, []);
 
+  // Real Autonomous NEXUS-AGI Agent states
+  const [nexusLogs, setNexusLogs] = useState<any[]>([]);
+  const [nexusConfig, setNexusConfig] = useState<any>({
+    goal: "HYBRID_INTELLIGENCE",
+    isActive: true,
+    autofixCode: true,
+    arbitrageEnabled: true
+  });
+  const [isTriggeringAgent, setIsTriggeringAgent] = useState<boolean>(false);
+  const [agentDirective, setAgentDirective] = useState<string>('');
+
+  useEffect(() => {
+    const fetchNexusAgentStatus = async () => {
+      try {
+        const res = await fetch("/api/nexus-agent/status");
+        if (res.ok) {
+          const data = await res.json();
+          if (data.success) {
+            setNexusLogs(data.logs || []);
+            setNexusConfig(data.config || {});
+          }
+        }
+      } catch (err) {
+        console.error("Failed to fetch nexus agent status:", err);
+      }
+    };
+    fetchNexusAgentStatus();
+    const interval = setInterval(fetchNexusAgentStatus, 4000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const handleTriggerAgentCycle = async () => {
+    setIsTriggeringAgent(true);
+    try {
+      const res = await fetch("/api/nexus-agent/trigger", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ instruction: agentDirective })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && data.result) {
+          setNexusLogs(prev => [data.result, ...prev]);
+          setAgentDirective('');
+        }
+      }
+    } catch (err) {
+      console.error("Failed to trigger agent cycle:", err);
+    } finally {
+      setIsTriggeringAgent(false);
+    }
+  };
+
+  const handleUpdateAgentConfig = async (updatedFields: any) => {
+    const newConfig = { ...nexusConfig, ...updatedFields };
+    setNexusConfig(newConfig);
+    try {
+      await fetch("/api/nexus-agent/config", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(newConfig)
+      });
+    } catch (err) {
+      console.error("Failed to update agent config:", err);
+    }
+  };
+
   // Freeze everything if emergencyFrozen is activated
   useEffect(() => {
     if (emergencyFrozen) {
@@ -845,79 +912,135 @@ export default function AIPilotLab({ candidates, setCandidates, selectedId, setS
           </div>
         </div>
 
-        {/* Fully Autonomous Code Evolution Dashboard */}
-        <div className="bg-slate-950 border border-purple-900/30 rounded-xl p-5 space-y-4 bg-gradient-to-b from-slate-950 via-purple-950/10 to-slate-950 text-right" dir="rtl">
+        {/* Fully Autonomous NEXUS-AGI Agent Console */}
+        <div className="bg-slate-950 border border-purple-900/40 rounded-xl p-5 space-y-4 bg-gradient-to-b from-slate-950 via-purple-950/15 to-slate-950 text-right" dir="rtl">
           <div className="flex justify-between items-center border-b border-slate-900 pb-2">
             <div>
               <h3 className="text-sm font-bold text-purple-200 flex items-center gap-1.5 justify-end">
                 <Brain className="w-4 h-4 text-purple-400 animate-pulse" />
-                مەکینەی خۆبەڕێوەبەری تەواو خۆکار (Autonomous Evolution Engine)
+                کۆنسۆڵی سەرەکی بریکاری خۆبەڕێوەبەری (NEXUS-AGI Autonomous Agent)
               </h3>
-              <p className="text-[10px] text-slate-500">ژیری دەستکرد کۆدی خۆی گەشە پێدەدات و ستراتیجی نوێ دەنووسێتەوە بەبێ مرۆڤ.</p>
+              <p className="text-[10px] text-slate-500">مۆدێلی ژیری دەستکردی سەربەخۆ کە توانای گرتنەبەری بڕیار، چاکسازی کۆد و دڵنیایی کاتی هەیە.</p>
             </div>
           </div>
 
-          {/* Autopilot Switch and State Indicators */}
-          <div className="flex justify-between items-center p-3 bg-purple-950/20 border border-purple-800/20 rounded-xl">
-            <div className="space-y-0.5">
-              <span className="text-xs font-bold text-purple-300 block">گەشەکردن و خۆ-نووسینەوەی ئۆتۆماتیکی</span>
-              <div className="flex items-center gap-1.5 justify-end">
-                {emergencyFrozen ? (
-                  <span className="text-[10px] text-rose-400 font-bold font-mono">🚨 [EMERGENCY FREEZE ACTIVE]</span>
-                ) : autoEvolutionActive ? (
-                  <span className="text-[10px] text-purple-400 font-bold font-mono flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-purple-500 animate-ping"></span>
-                    ACTIVE - SELF-WRITING
-                  </span>
-                ) : (
-                  <span className="text-[10px] text-slate-500 font-bold font-mono">STANDBY</span>
-                )}
-              </div>
+          {/* Live Agent Status Banner */}
+          <div className="p-3 bg-purple-950/20 border border-purple-800/20 rounded-xl flex justify-between items-center">
+            <div className="text-right">
+              <span className="text-[10px] text-slate-400 font-bold block">باری ئێستای بریکار</span>
+              <span className="text-xs font-bold text-purple-400 font-mono flex items-center gap-1 justify-end">
+                <span className="w-1.5 h-1.5 rounded-full bg-purple-500 animate-ping"></span>
+                {isTriggeringAgent ? "PROCESSING_COGNITIVE_CYCLE..." : "AUTOPILOT_STANDBY"}
+              </span>
             </div>
-            <button
-              onClick={() => {
-                if (!emergencyFrozen) setAutoEvolutionActive(!autoEvolutionActive);
-              }}
-              disabled={emergencyFrozen}
-              className={`px-3 py-1 text-xs font-bold rounded cursor-pointer transition-all ${
-                autoEvolutionActive && !emergencyFrozen
-                  ? 'bg-purple-600 text-white'
-                  : 'bg-slate-900 text-slate-500 border border-slate-800'
-              } disabled:opacity-40`}
-            >
-              {autoEvolutionActive && !emergencyFrozen ? 'ئۆتۆپایلۆت چالاکە' : 'ڕاگیراوە'}
-            </button>
-          </div>
-
-          {/* Real-time self-authoring telemetry */}
-          <div className="grid grid-cols-2 gap-2 text-[10px] font-mono">
-            <div className="p-2 bg-slate-900/60 border border-slate-850 rounded">
-              <span className="text-slate-500 block">دوا نووسینەوەی کۆد</span>
-              <span className="text-purple-400 font-bold">{emergencyFrozen ? 'HALTED' : lastSelfAuthorTime}</span>
-            </div>
-            <div className="p-2 bg-slate-900/60 border border-slate-850 rounded">
-              <span className="text-slate-500 block">باری کۆمپایلەر</span>
-              <span className="text-emerald-400 font-bold">SUCCESS (0 Warnings)</span>
+            <div className="text-left">
+              <span className="text-[10px] text-slate-400 font-bold block">بڕوا بە خۆبوون (Confidence)</span>
+              <span className="text-xs font-bold text-emerald-400 font-mono">
+                {nexusLogs[0]?.performanceScore ? `${Math.round(nexusLogs[0].performanceScore * 100)}%` : "98%"}
+              </span>
             </div>
           </div>
 
-          {/* Evolution Log entries */}
+          {/* Goal Selectors and Switches */}
+          <div className="space-y-3 p-3.5 bg-slate-900/50 border border-slate-850 rounded-xl">
+            <div className="flex justify-between items-center">
+              <span className="text-xs font-bold text-slate-300">مۆدی ئاراستەکردنی ئامانج</span>
+              <select
+                value={nexusConfig.goal || "HYBRID_INTELLIGENCE"}
+                onChange={(e) => handleUpdateAgentConfig({ goal: e.target.value })}
+                className="bg-slate-950 text-slate-300 border border-slate-850 px-2.5 py-1 text-xs font-bold rounded focus:outline-none focus:border-purple-600 text-right"
+              >
+                <option value="HYBRID_INTELLIGENCE">🧠 ژیری دووانی (Hybrid Intelligence)</option>
+                <option value="MAX_PNL">🚀 زۆرترین قازانج (Max PnL Mode)</option>
+                <option value="MIN_DRAWDOWN">🛡️ پاراستنی توند (Min Drawdown)</option>
+                <option value="HEALTH_ONLY">🏥 تەنها دڵنیایی و تەندروستی (Health Only)</option>
+              </select>
+            </div>
+
+            <div className="h-px bg-slate-850 my-2"></div>
+
+            <div className="flex justify-between items-center">
+              <span className="text-xs text-slate-300 font-bold">چاکسازی خودکاری کۆدی C++</span>
+              <button
+                onClick={() => handleUpdateAgentConfig({ autofixCode: !nexusConfig.autofixCode })}
+                className={`px-2.5 py-0.5 text-[10px] font-bold rounded cursor-pointer transition-all ${
+                  nexusConfig.autofixCode ? 'bg-purple-600/20 text-purple-400 border border-purple-500/40' : 'bg-slate-950 text-slate-500 border border-slate-900'
+                }`}
+              >
+                {nexusConfig.autofixCode ? 'چالاککراوە' : 'ناچالاکە'}
+              </button>
+            </div>
+
+            <div className="flex justify-between items-center mt-2">
+              <span className="text-xs text-slate-300 font-bold">ئاڵوگۆڕ و ئاربیترتراژی دەستبەجێ</span>
+              <button
+                onClick={() => handleUpdateAgentConfig({ arbitrageEnabled: !nexusConfig.arbitrageEnabled })}
+                className={`px-2.5 py-0.5 text-[10px] font-bold rounded cursor-pointer transition-all ${
+                  nexusConfig.arbitrageEnabled ? 'bg-emerald-600/20 text-emerald-400 border border-emerald-500/40' : 'bg-slate-950 text-slate-500 border border-slate-900'
+                }`}
+              >
+                {nexusConfig.arbitrageEnabled ? 'چالاککراوە' : 'ناچالاکە'}
+              </button>
+            </div>
+          </div>
+
+          {/* Interactive Directives / Trigger Box */}
           <div className="space-y-2">
-            <span className="text-[10px] text-slate-400 font-bold block">لۆگی نووسینەوە و جێبەجێکردنی کۆد:</span>
-            <div className="bg-slate-950 border border-slate-900 rounded-lg p-3 h-28 overflow-y-auto space-y-2 font-mono text-[9px] text-right scrollbar-thin">
-              {emergencyFrozen ? (
-                <div className="text-rose-400 text-center italic h-full flex items-center justify-center">
-                  ⚠️ بارودۆخی فریاگوزاری چالاکە - هەموو نووسینەوە و چاکسازییەک ڕاگیراوە!
+            <span className="text-[10px] text-slate-400 font-bold block">ڕێنمایی کاتی بۆ بریکارەکە (Directives for Agent):</span>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={agentDirective}
+                onChange={(e) => setAgentDirective(e.target.value)}
+                placeholder="ڕێنمایی بنووسە... بۆ نموونە: کۆدی C++ باشتر بکە بۆ قازانجی بەرز..."
+                className="bg-slate-950 border border-slate-900 rounded px-3 py-1.5 text-xs text-slate-300 flex-1 focus:outline-none focus:border-purple-600 text-right"
+                dir="rtl"
+                disabled={isTriggeringAgent}
+              />
+              <button
+                onClick={handleTriggerAgentCycle}
+                disabled={isTriggeringAgent || emergencyFrozen}
+                className="bg-purple-600 hover:bg-purple-700 disabled:opacity-40 text-white font-bold px-4 py-1.5 text-xs rounded transition-all cursor-pointer shrink-0 flex items-center gap-1"
+              >
+                {isTriggeringAgent ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    لێکدانەوە...
+                  </>
+                ) : (
+                  <>
+                    <Play className="w-3.5 h-3.5" />
+                    دەستپێکردن
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+
+          {/* Real Audit Logs */}
+          <div className="space-y-2">
+            <span className="text-[10px] text-slate-400 font-bold block">لۆگی لێکدانەوەی بریکاری زیرەک (Cognitive Logs & Action Audit):</span>
+            <div className="bg-slate-950 border border-slate-900 rounded-lg p-3.5 h-48 overflow-y-auto space-y-3 font-mono text-[9px] text-right scrollbar-thin">
+              {nexusLogs.length === 0 ? (
+                <div className="text-slate-600 text-center italic h-full flex items-center justify-center">
+                  هیچ بڕیارێکی خۆکار نییە. دەتوانیت بە دوگمەی سەرەوە یەکەم گەڕ چالاک بکەیت.
                 </div>
-              ) : autoEvoLogs.map((log, idx) => (
-                <div key={idx} className="border-b border-slate-900 pb-1.5 last:border-0 last:pb-0">
-                  <div className="flex justify-between items-center text-[10px]">
-                    <span className="text-purple-400 font-bold">{log.event}</span>
-                    <span className="text-slate-500">{log.time}</span>
+              ) : (
+                nexusLogs.map((log, idx) => (
+                  <div key={idx} className="border-b border-slate-900 pb-2.5 last:border-0 last:pb-0">
+                    <div className="flex justify-between items-center text-[10px] mb-1">
+                      <span className="text-purple-400 font-bold">[{log.state || "COMPLETED"}] - {log.actionTaken || "ROUTINE_MONITOR"}</span>
+                      <span className="text-slate-500">{new Date(log.timestamp).toLocaleTimeString()}</span>
+                    </div>
+                    <p className="text-slate-300 leading-relaxed font-sans mb-1">{log.thoughts}</p>
+                    {log.actionResult && (
+                      <p className="text-emerald-400 text-[9px] bg-emerald-950/20 border border-emerald-950/40 p-1.5 rounded mt-1 text-left" dir="ltr">
+                        ➡️ [RESULT]: {log.actionResult}
+                      </p>
+                    )}
                   </div>
-                  <p className="text-slate-400 text-right mt-0.5">{log.detail}</p>
-                </div>
-              ))}
+                ))
+              )}
             </div>
           </div>
         </div>
