@@ -2,8 +2,8 @@ import fetch from 'node-fetch';
 import fs from 'fs';
 import path from 'path';
 
-const TS_BACKEND = 'http://127.0.0.1:3001'; // TS backend port during dual run
-const GO_BACKEND = 'http://127.0.0.1:3000'; // Go backend port during dual run
+const TS_BACKEND = process.env.TS_BACKEND_URL || 'http://127.0.0.1:3000'; // Default TS backend port
+const GO_BACKEND = process.env.GO_BACKEND_URL || 'http://127.0.0.1:3001'; // Default Go backend port
 const LOG_FILE = path.join(process.cwd(), 'cutover_discrepancies.log');
 
 function logDiscrepancy(message: string) {
@@ -150,7 +150,22 @@ async function runSideBySideVerification() {
     '/api/system-intelligence/status',
     '/api/system-intelligence/provider-config',
     '/api/system-intelligence/provider-usage',
-    '/api/system-intelligence/tool-logs'
+    '/api/system-intelligence/tool-logs',
+    '/api/sovereign-mind/snapshot',
+    '/api/sovereign-mind/history',
+    '/api/tools/registry',
+    '/api/synthesis/dashboard',
+    '/api/market_regime/summary',
+    '/api/positions',
+    '/api/nexus-agent/status',
+    '/api/meta-controller/status',
+    '/api/dark-pool/weekly',
+    '/api/value-discovery/evolution-logs',
+    '/api/risk/history',
+    '/api/historical_ticks_v2/status',
+    '/api/live-training/status',
+    '/api/gemini/research/logs',
+    '/api/strategies/audit-logs'
   ];
 
   for (const ep of endpointsToCompare) {

@@ -139,6 +139,53 @@ func SetupRouter(h *Handler) *gin.Engine {
 		protected.POST("/api/system-intelligence/recalibrate-benchmarks", h.RecalibrateBenchmarks)
 		protected.GET("/api/system-intelligence/tool-logs", h.GetToolLogs)
 		protected.GET("/api/benchmark-results", h.GetBenchmarkResults)
+
+		// Sovereign Mind
+		protected.GET("/api/sovereign-mind/snapshot", h.GetSovereignMindSnapshot)
+		protected.GET("/api/sovereign-mind/history", h.GetSovereignMindHistory)
+		protected.POST("/api/sovereign-mind/trigger", h.TriggerSovereignMind)
+
+		// Tool Registry
+		protected.GET("/api/tools/registry", h.GetToolRegistry)
+		protected.POST("/api/tools/execute", h.ExecuteTool)
+
+		// Synthesis Dashboard & Market Regime
+		protected.GET("/api/synthesis/dashboard", h.GetSynthesisDashboard)
+		protected.GET("/api/market_regime/summary", h.GetMarketRegimeSummary)
+		protected.POST("/api/market_regime/simulate-return", h.SimulateMarketRegimeReturn)
+		protected.POST("/api/market_regime/reclassify", h.ReclassifyMarketRegime)
+
+		// Positions & Order Execution
+		protected.GET("/api/positions", h.GetPositions)
+		protected.POST("/api/positions/order", h.PlaceOrder)
+		protected.POST("/api/positions/close", h.ClosePosition)
+
+		// Nexus Agent & Meta Controller
+		protected.GET("/api/nexus-agent/status", h.GetNexusAgentStatus)
+		protected.POST("/api/nexus-agent/config", h.UpdateNexusAgentConfig)
+		protected.POST("/api/nexus-agent/trigger", h.TriggerNexusAgent)
+		protected.GET("/api/meta-controller/status", h.GetMetaControllerStatus)
+
+		// Dark Pool & Value Discovery Evolution
+		protected.GET("/api/dark-pool/weekly", h.GetDarkPoolWeekly)
+		protected.POST("/api/dark-pool/config", h.ConfigDarkPool)
+		protected.POST("/api/dark-pool/fetch-finra", h.FetchFinraDarkPool)
+		protected.GET("/api/value-discovery/evolution-logs", h.GetValueDiscoveryEvolutionLogs)
+		protected.POST("/api/value-discovery/github-evolution", h.GithubEvolutionValueDiscovery)
+
+		// Risk History & Limits
+		protected.GET("/api/risk/history", h.GetRiskHistory)
+		protected.POST("/api/risk/limits", h.UpdateRiskLimits)
+
+		// Historical Ticks, Walk Forward, Live Training & Gemini Research
+		protected.GET("/api/historical_ticks_v2/status", h.GetHistoricalTicksStatus)
+		protected.POST("/api/historical_ticks_v2/sync", h.SyncHistoricalTicks)
+		protected.POST("/api/walk_forward/run", h.RunWalkForward)
+		protected.GET("/api/live-training/status", h.GetLiveTrainingStatus)
+		protected.POST("/api/live-training/toggle", h.ToggleLiveTraining)
+		protected.POST("/api/gemini/research", h.RunGeminiResearch)
+		protected.GET("/api/gemini/research/logs", h.GetGeminiResearchLogs)
+		protected.GET("/api/strategies/audit-logs", h.GetStrategyAuditLogs)
 	}
 
 	// Serve React Static assets with SPA fallback for non-API routes
