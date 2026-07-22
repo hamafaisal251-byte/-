@@ -116,6 +116,7 @@ export function getSyncedTime(): number {
 }
 
 export const app = express();
+app.set("trust proxy", 1);
 const PORT = 3000;
 
 // Enable basic CORS headers and request parsing
@@ -3436,6 +3437,7 @@ const mutateRateLimiter = rateLimit({
   },
   standardHeaders: true,
   legacyHeaders: false,
+  validate: { trustProxy: false, xForwardedForHeader: false },
 });
 
 // Bearer Token authentication middleware for mutating endpoints

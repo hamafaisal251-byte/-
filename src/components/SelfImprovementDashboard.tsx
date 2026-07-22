@@ -208,7 +208,7 @@ export default function SelfImprovementDashboard() {
       const res = await fetch("/api/self-improvement/logs");
       if (res.ok) {
         const data = await res.json();
-        setLogs(data.logs || []);
+        setLogs(Array.isArray(data?.logs) ? data.logs : (Array.isArray(data) ? data : []));
       }
     } catch (err) {
       console.error("Failed to fetch self-improvement logs:", err);
@@ -235,7 +235,7 @@ export default function SelfImprovementDashboard() {
       const res = await fetch("/api/deep-research/sessions");
       if (res.ok) {
         const data = await res.json();
-        setResearchSessions(data.sessions || []);
+        setResearchSessions(Array.isArray(data?.sessions) ? data.sessions : (Array.isArray(data) ? data : []));
       }
     } catch (err) {
       console.error("Failed to fetch deep research sessions:", err);
@@ -250,7 +250,7 @@ export default function SelfImprovementDashboard() {
       const res = await fetch("/api/dark-pool/weekly");
       if (res.ok) {
         const data = await res.json();
-        setDarkPoolVolumes(data.volumes || []);
+        setDarkPoolVolumes(Array.isArray(data?.volumes) ? data.volumes : (Array.isArray(data) ? data : []));
         setVendorConnected(data.paidConnected || false);
       }
     } catch (err) {
@@ -371,7 +371,7 @@ export default function SelfImprovementDashboard() {
       if (res.ok) {
         const data = await res.json();
         if (data.success && data.log) {
-          setLogs(prev => [data.log, ...prev]);
+          setLogs(prev => [data.log, ...(Array.isArray(prev) ? prev : [])]);
           setExpandedLogId(data.log.id);
         }
       }
@@ -382,11 +382,15 @@ export default function SelfImprovementDashboard() {
     }
   };
 
+  const safeLogs = Array.isArray(logs) ? logs : [];
+  const safeResearchSessions = Array.isArray(researchSessions) ? researchSessions : [];
+  const safeDarkPoolVolumes = Array.isArray(darkPoolVolumes) ? darkPoolVolumes : [];
+
   // Stats derivation
-  const totalRuns = logs.length;
-  const passedCount = logs.filter(l => l.sandboxStatus === "PASSED").length;
-  const failedCount = logs.filter(l => l.sandboxStatus === "FAILED").length;
-  const cacheHitCount = logs.filter(l => l.cacheHit).length;
+  const totalRuns = safeLogs.length;
+  const passedCount = safeLogs.filter(l => l && l.sandboxStatus === "PASSED").length;
+  const failedCount = safeLogs.filter(l => l && l.sandboxStatus === "FAILED").length;
+  const cacheHitCount = safeLogs.filter(l => l && l.cacheHit).length;
   const cacheHitRate = totalRuns > 0 ? Math.round((cacheHitCount / totalRuns) * 100) : 0;
   const successRate = totalRuns > 0 ? Math.round((passedCount / totalRuns) * 100) : 0;
 
@@ -532,7 +536,7 @@ export default function SelfImprovementDashboard() {
               </button>
             </div>
 
-            {logs.length === 0 ? (
+            {safeLogs.length === 0 ? (
               <div className="text-center py-12 text-slate-500 space-y-2">
                 <Brain className="w-8 h-8 text-slate-700 mx-auto animate-pulse" />
                 <p className="text-xs font-mono">هیچ لۆگێکی خۆباشکردن لە سیستەمدا بەردەست نییە لەم خولەدا.</p>
@@ -540,7 +544,7 @@ export default function SelfImprovementDashboard() {
               </div>
             ) : (
               <div className="space-y-3">
-                {logs.map((log) => {
+                {safeLogs.map((log) => {
                   const isExpanded = expandedLogId === log.id;
                   const logDate = new Date(log.timestamp).toLocaleTimeString();
                   
@@ -654,26 +658,26 @@ export default function SelfImprovementDashboard() {
                             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 bg-slate-900/60 p-3.5 rounded-lg border border-slate-850 text-center font-mono pr-5">
                               <div>
                                 <span className="text-slate-500 block text-[9px]">Sharpe Ratio</span>
-                                <span className={`text-sm font-bold ${log.metrics.SharpeRatio >= 1.2 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                                  {log.metrics.SharpeRatio.toFixed(2)}
+                                <span className={`text-sm font-bold ${(log.metrics?.SharpeRatio ?? 0) >= 1.2 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                  {(log.metrics?.SharpeRatio ?? 0).toFixed(2)}
                                 </span>
                               </div>
                               <div>
                                 <span className="text-slate-500 block text-[9px]">Max Drawdown</span>
-                                <span className={`text-sm font-bold ${log.metrics.maxDrawdown <= 5.0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                                  {log.metrics.maxDrawdown.toFixed(2)}%
+                                <span className={`text-sm font-bold ${(log.metrics?.maxDrawdown ?? 0) <= 5.0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                  {(log.metrics?.maxDrawdown ?? 0).toFixed(2)}%
                                 </span>
                               </div>
                               <div>
                                 <span className="text-slate-500 block text-[9px]">Avg Reward</span>
                                 <span className="text-sm font-bold text-slate-100">
-                                  {log.metrics.avgReward.toFixed(2)}
+                                  {(log.metrics?.avgReward ?? 0).toFixed(2)}
                                 </span>
                               </div>
                               <div>
                                 <span className="text-slate-500 block text-[9px]">Total Trades</span>
-                                <span className={`text-sm font-bold ${log.metrics.tradesCount >= 10 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                                  {log.metrics.tradesCount}
+                                <span className={`text-sm font-bold ${(log.metrics?.tradesCount ?? 0) >= 10 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                  {log.metrics?.tradesCount ?? 0}
                                 </span>
                               </div>
                             </div>
@@ -714,9 +718,9 @@ export default function SelfImprovementDashboard() {
                                         <span className={c.success ? "text-emerald-400" : "text-slate-400"}>{c.name}</span>
                                       </div>
                                       <div className="flex items-center gap-3">
-                                        <span>Sharpe: <strong className={c.metrics.SharpeRatio >= 1.2 ? "text-emerald-400" : "text-rose-400"}>{c.metrics.SharpeRatio.toFixed(2)}</strong></span>
-                                        <span>MaxDD: <strong>{c.metrics.maxDrawdown.toFixed(1)}%</strong></span>
-                                        <span>Trades: <strong>{c.metrics.tradesCount}</strong></span>
+                                        <span>Sharpe: <strong className={(c.metrics?.SharpeRatio ?? 0) >= 1.2 ? "text-emerald-400" : "text-rose-400"}>{(c.metrics?.SharpeRatio ?? 0).toFixed(2)}</strong></span>
+                                        <span>MaxDD: <strong>{(c.metrics?.maxDrawdown ?? 0).toFixed(1)}%</strong></span>
+                                        <span>Trades: <strong>{c.metrics?.tradesCount ?? 0}</strong></span>
                                         <span className={`px-1 rounded text-[8px] font-bold ${c.success ? "bg-emerald-950 text-emerald-400 border border-emerald-900" : "bg-rose-950 text-rose-400 border border-rose-900"}`}>
                                           {c.success ? "PASSED" : "FAILED"}
                                         </span>
@@ -871,14 +875,14 @@ export default function SelfImprovementDashboard() {
               <div className="space-y-3">
                 <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider font-mono text-right">Research History Trail</h3>
 
-                {researchSessions.length === 0 ? (
+                {safeResearchSessions.length === 0 ? (
                   <div className="bg-slate-950/40 border border-slate-850 rounded-xl p-8 text-center text-slate-500 text-xs font-sans">
                     <Search className="w-6 h-6 text-slate-700 mx-auto mb-2 animate-pulse" />
                     هیچ لێکۆڵینەوەیەکی قووڵ ئەنجام نەدراوە یان مەکینەکە لە دەیتابەیسدا داتای نەدۆزیوەتەوە.
                   </div>
                 ) : (
                   <div className="space-y-3 text-right">
-                    {researchSessions.map((session) => {
+                    {safeResearchSessions.map((session) => {
                       const isExpanded = expandedSessionId === session.id;
                       const parsedRounds = Array.isArray(session.rounds) ? session.rounds : [];
                       const parsedSources = Array.isArray(session.sources) ? session.sources : [];
@@ -1059,12 +1063,12 @@ export default function SelfImprovementDashboard() {
                       </tr>
                     </thead>
                     <tbody>
-                      {darkPoolVolumes.length === 0 ? (
+                      {safeDarkPoolVolumes.length === 0 ? (
                         <tr>
                           <td colSpan={5} className="p-8 text-center text-slate-600 italic font-sans">هیچ داتایەکی هەفتانەی حەوزی تاریک بەردەست نییە...</td>
                         </tr>
                       ) : (
-                        darkPoolVolumes.map((row: any, idx: number) => {
+                        safeDarkPoolVolumes.map((row: any, idx: number) => {
                           const formattedDate = new Date(row.reporting_date).toISOString().split('T')[0];
                           const isPaid = row.is_paid_vendor;
                           return (
@@ -1516,14 +1520,14 @@ export default function SelfImprovementDashboard() {
               <div className="grid grid-cols-2 gap-3 text-center font-mono">
                 <div className="bg-slate-950/60 p-2.5 rounded-lg border border-slate-850">
                   <span className="text-slate-500 block text-[9px] uppercase">Rolling Sharpe</span>
-                  <span className={`text-base font-bold ${monitorStats.rollingSharpe >= 0.5 ? "text-emerald-400" : "text-rose-400"}`}>
-                    {monitorStats.rollingSharpe.toFixed(2)}
+                  <span className={`text-base font-bold ${(monitorStats.rollingSharpe ?? 0) >= 0.5 ? "text-emerald-400" : "text-rose-400"}`}>
+                    {(monitorStats.rollingSharpe ?? 0).toFixed(2)}
                   </span>
                 </div>
                 <div className="bg-slate-950/60 p-2.5 rounded-lg border border-slate-850">
                   <span className="text-slate-500 block text-[9px] uppercase">Rolling Avg Reward</span>
                   <span className="text-base font-bold text-slate-100">
-                    {monitorStats.rollingAvgReward.toFixed(2)}
+                    {(monitorStats.rollingAvgReward ?? 0).toFixed(2)}
                   </span>
                 </div>
               </div>
@@ -1555,7 +1559,7 @@ export default function SelfImprovementDashboard() {
                     <p>وەشانی کێشەدار: <strong className="text-rose-300">{monitorStats.lastRollbackEvent.fromVersion}</strong></p>
                     <p>وەشانی جێگیر: <strong className="text-emerald-400">{monitorStats.lastRollbackEvent.toVersion}</strong></p>
                     <p>کاتی پاشەکشە: <span className="text-slate-400 font-mono">{new Date(monitorStats.lastRollbackEvent.timestamp).toLocaleTimeString()}</span></p>
-                    <p>کارایی کاتی تێکچوون: <span className="font-mono text-rose-300">Sharpe={monitorStats.lastRollbackEvent.metricsAtTrigger.SharpeRatio.toFixed(2)}</span></p>
+                    <p>کارایی کاتی تێکچوون: <span className="font-mono text-rose-300">Sharpe={(monitorStats.lastRollbackEvent.metricsAtTrigger?.SharpeRatio ?? 0).toFixed(2)}</span></p>
                   </div>
                 </div>
               ) : (
@@ -1587,7 +1591,7 @@ export default function SelfImprovementDashboard() {
             <div className="space-y-2">
               <div className="bg-slate-950/60 p-3 rounded-lg border border-slate-850 flex justify-between items-center text-xs">
                 <span className="text-slate-400">بابەتە پاشەکەوتکراوەکان (RAM Cache)</span>
-                <span className="font-mono font-bold text-slate-100">{logs.length > 0 ? Array.from(new Set(logs.map(l => l.researchTopic))).length : 0} بابەت</span>
+                <span className="font-mono font-bold text-slate-100">{safeLogs.length > 0 ? Array.from(new Set(safeLogs.map(l => l?.researchTopic || "").filter(Boolean))).length : 0} بابەت</span>
               </div>
               
               <div className="bg-slate-950/60 p-3 rounded-lg border border-slate-850 flex justify-between items-center text-xs">
@@ -1603,10 +1607,10 @@ export default function SelfImprovementDashboard() {
             <div className="space-y-2 pt-1">
               <span className="text-[10px] text-slate-500 block uppercase font-bold">دوایین بابەتە کاشکراوەکان:</span>
               
-              {logs.length === 0 ? (
+              {safeLogs.length === 0 ? (
                 <span className="text-[10px] text-slate-600 block italic">هیچ داتایەک نەدۆزرایەوە...</span>
               ) : (
-                Array.from(new Set(logs.map(l => l.researchTopic))).slice(0, 3).map((topic, i) => (
+                Array.from(new Set(safeLogs.map(l => l?.researchTopic || "").filter(Boolean))).slice(0, 3).map((topic, i) => (
                   <div key={i} className="bg-slate-950/40 p-2.5 rounded-lg border border-slate-900 text-[10px] text-slate-400 truncate" title={topic}>
                     🧠 {topic}
                   </div>

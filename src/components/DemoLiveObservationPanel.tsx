@@ -303,13 +303,13 @@ export default function DemoLiveObservationPanel() {
             </div>
             <div className="text-xs text-gray-400 font-medium tracking-wider uppercase font-mono">Peak Equity & Drawdown</div>
             <div className="text-2xl font-bold tracking-tight text-rose-400 mt-2 font-mono">
-              -{runDetails.max_drawdown.toFixed(2)}%
+              -{(runDetails?.max_drawdown ?? 0).toFixed(2)}%
             </div>
             <div className="flex items-center gap-1.5 text-xs mt-2.5 text-gray-400">
               <span className="flex h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
               <span>Peak:</span>
               <span className="font-semibold text-gray-200 font-mono">
-                ${runDetails.peak_equity.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                ${(runDetails?.peak_equity ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </span>
             </div>
           </div>

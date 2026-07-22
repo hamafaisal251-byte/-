@@ -82,7 +82,7 @@ export const ValueDiscoveryPanel: React.FC<ValueDiscoveryPanelProps> = ({
     fdrThreshold: 0.05
   };
 
-  const hypotheses = summary?.hypotheses || [];
+  const hypotheses = Array.isArray(summary?.hypotheses) ? summary.hypotheses : [];
 
   // Filter & Search
   const filteredHypotheses = hypotheses.filter(h => {

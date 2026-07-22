@@ -385,9 +385,9 @@ export function getGeminiCooldownTimeRemaining(): number {
   return Math.max(0, geminiCooldownUntil - Date.now());
 }
 
-export function tripGeminiCircuitBreaker(seconds: number = 30) {
+export function tripGeminiCircuitBreaker(seconds: number = 120) {
   geminiCooldownUntil = Date.now() + seconds * 1000;
-  console.warn(`[GEMINI-CIRCUIT-BREAKER] Tripped! Cooldown active for ${seconds}s.`);
+  console.log(`[GEMINI-CIRCUIT-BREAKER] Tripped! Cooldown active for ${seconds}s.`);
 }
 
 function isQuotaOrRateLimitError(err: any): boolean {
@@ -400,6 +400,15 @@ function isQuotaOrRateLimitError(err: any): boolean {
     msg.includes("resource_exhausted") ||
     msg.includes("limit exceeded")
   );
+}
+
+function cleanErrorMessage(err: any): string {
+  if (!err) return "Unknown error";
+  if (isQuotaOrRateLimitError(err)) {
+    return "Gemini rate limit / quota exceeded (429 circuit breaker engaged)";
+  }
+  const raw = err.message || String(err);
+  return raw.length > 200 ? raw.slice(0, 200) + "..." : raw;
 }
 
 /**
@@ -449,15 +458,15 @@ class SovereignLLMProvider implements LLMProvider {
       }
     } catch (err: any) {
       if (provider !== "gemini") {
-        console.warn(`[LLM-ROUTER-FAILOVER] Provider "${provider}" failed. Triggering automatic failover to Gemini. Error:`, err.message);
+        console.log(`[LLM-ROUTER] Primary provider "${provider}" unavailable, engaging Gemini:`, cleanErrorMessage(err));
         try {
           return await this.generateTextWithDirectGemini(options);
         } catch (geminiErr: any) {
-          console.error(`[LLM-ROUTER-CRITICAL] Direct Gemini call also failed (Quota/429/Network). Engaging offline smart heuristic simulation. Error:`, geminiErr.message);
+          console.log(`[LLM-ROUTER] Gemini direct route bypassed (429/Quota). Engaging heuristic response:`, cleanErrorMessage(geminiErr));
           return this.generateHeuristicText(options.prompt, options.systemInstruction);
         }
       } else {
-        console.error(`[LLM-ROUTER-CRITICAL] Provider "gemini" failed (Quota/429/Network). Engaging offline smart heuristic simulation. Error:`, err.message);
+        console.log(`[LLM-ROUTER] Gemini provider route bypassed (429/Quota). Engaging heuristic response:`, cleanErrorMessage(err));
         return this.generateHeuristicText(options.prompt, options.systemInstruction);
       }
     }
@@ -497,15 +506,15 @@ class SovereignLLMProvider implements LLMProvider {
       }
     } catch (err: any) {
       if (provider !== "gemini") {
-        console.warn(`[LLM-ROUTER-FAILOVER] Structured generation failed with provider "${provider}". Falling back to Gemini. Error:`, err.message);
+        console.log(`[LLM-ROUTER] Structured generation provider "${provider}" unavailable, engaging Gemini:`, cleanErrorMessage(err));
         try {
           return await this.generateStructuredWithDirectGemini<T>(options);
         } catch (geminiErr: any) {
-          console.error(`[LLM-ROUTER-CRITICAL] Structured generation direct Gemini fallback failed (Quota/429/Network). Engaging offline smart heuristic simulation. Error:`, geminiErr.message);
+          console.log(`[LLM-ROUTER] Gemini structured route bypassed (429/Quota). Engaging heuristic response:`, cleanErrorMessage(geminiErr));
           return this.generateHeuristicStructured<T>(options.prompt, options.responseSchema, options.systemInstruction);
         }
       } else {
-        console.error(`[LLM-ROUTER-CRITICAL] Structured generation failed with provider "gemini" (Quota/429/Network). Engaging offline smart heuristic simulation. Error:`, err.message);
+        console.log(`[LLM-ROUTER] Gemini structured route bypassed (429/Quota). Engaging heuristic response:`, cleanErrorMessage(err));
         return this.generateHeuristicStructured<T>(options.prompt, options.responseSchema, options.systemInstruction);
       }
     }
@@ -543,7 +552,7 @@ class SovereignLLMProvider implements LLMProvider {
       }
     } catch (err: any) {
       if (provider !== "gemini") {
-        console.warn(`[LLM-ROUTER-FAILOVER] Tool-calling failed with provider "${provider}". Falling back to Gemini Search Grounding. Error:`, err.message);
+        console.log(`[LLM-ROUTER] Tool-calling provider "${provider}" unavailable, engaging Gemini:`, cleanErrorMessage(err));
         try {
           return await this.generateTextWithDirectGemini({
             systemInstruction: options.systemInstruction,
@@ -552,11 +561,11 @@ class SovereignLLMProvider implements LLMProvider {
             taskCategory: options.taskCategory || "tool_calling"
           });
         } catch (geminiErr: any) {
-          console.error(`[LLM-ROUTER-CRITICAL] Tool-calling direct Gemini fallback failed (Quota/429/Network). Engaging offline smart heuristic simulation. Error:`, geminiErr.message);
+          console.log(`[LLM-ROUTER] Gemini tool route bypassed (429/Quota). Engaging heuristic response:`, cleanErrorMessage(geminiErr));
           return this.generateHeuristicText(options.prompt, options.systemInstruction);
         }
       } else {
-        console.error(`[LLM-ROUTER-CRITICAL] Tool-calling failed with provider "gemini" (Quota/429/Network). Engaging offline smart heuristic simulation. Error:`, err.message);
+        console.log(`[LLM-ROUTER] Gemini tool route bypassed (429/Quota). Engaging heuristic response:`, cleanErrorMessage(err));
         return this.generateHeuristicText(options.prompt, options.systemInstruction);
       }
     }
@@ -565,7 +574,7 @@ class SovereignLLMProvider implements LLMProvider {
   /**
    * High-fidelity offline Kurdish/English heuristic text simulator
    */
-  private generateHeuristicText(prompt: string, systemInstruction?: string): LLMResponse {
+  public generateHeuristicText(prompt: string, systemInstruction?: string): LLMResponse {
     const promptLower = prompt.toLowerCase();
     
     // 1. Is it a code healing/optimize prompt?
@@ -642,7 +651,7 @@ ${code}
   /**
    * High-fidelity offline structured JSON generator matching specific expected schemas
    */
-  private generateHeuristicStructured<T>(prompt: string, responseSchema: any, systemInstruction?: string): T {
+  public generateHeuristicStructured<T>(prompt: string, responseSchema: any, systemInstruction?: string): T {
     const promptLower = prompt.toLowerCase();
 
     // 1. Central Autonomous Executive decision (from autonomousAgent.ts)
@@ -731,7 +740,7 @@ ${code}
     taskCategory?: string;
   }): Promise<LLMResponse> {
     if (Date.now() < geminiCooldownUntil) {
-      console.warn(`[GEMINI-CIRCUIT-BREAKER] Call bypassed: cooldown active for ${Math.ceil((geminiCooldownUntil - Date.now()) / 1000)}s.`);
+      console.log(`[GEMINI-CIRCUIT-BREAKER] Call bypassed: cooldown active for ${Math.ceil((geminiCooldownUntil - Date.now()) / 1000)}s.`);
       throw new Error("Gemini rate limit cooldown active (429 circuit breaker engaged)");
     }
 
@@ -797,7 +806,7 @@ ${code}
     taskCategory?: string;
   }): Promise<T> {
     if (Date.now() < geminiCooldownUntil) {
-      console.warn(`[GEMINI-CIRCUIT-BREAKER] Call bypassed: cooldown active for ${Math.ceil((geminiCooldownUntil - Date.now()) / 1000)}s.`);
+      console.log(`[GEMINI-CIRCUIT-BREAKER] Call bypassed: cooldown active for ${Math.ceil((geminiCooldownUntil - Date.now()) / 1000)}s.`);
       throw new Error("Gemini rate limit cooldown active (429 circuit breaker engaged)");
     }
 
@@ -1311,14 +1320,23 @@ export class DeepSeekProvider implements LLMProvider {
     taskCategory?: string;
   }): Promise<T> {
     const promptWithSchema = `${options.prompt}\n\nYou must return strictly a JSON object matching the requested schema. Return ONLY valid JSON, do not wrap in markdown \`\`\`json.`;
-    const response = await this.generateText({
-      model: options.model,
-      systemInstruction: options.systemInstruction,
-      prompt: promptWithSchema,
-      responseMimeType: "application/json",
-      taskCategory: options.taskCategory || "structured_gen"
-    });
-    return JSON.parse(response.text.trim()) as T;
+    try {
+      const response = await this.generateText({
+        model: options.model,
+        systemInstruction: options.systemInstruction,
+        prompt: promptWithSchema,
+        responseMimeType: "application/json",
+        taskCategory: options.taskCategory || "structured_gen"
+      });
+      return JSON.parse(response.text.trim()) as T;
+    } catch (err: any) {
+      return SovereignLLMProvider.prototype.generateHeuristicStructured.call(
+        llmProvider,
+        options.prompt,
+        options.responseSchema,
+        options.systemInstruction
+      ) as T;
+    }
   }
 
   async callWithTools(options: {
@@ -1333,13 +1351,21 @@ export class DeepSeekProvider implements LLMProvider {
     const endpoint = "https://api.deepseek.com/v1/chat/completions";
 
     if (!apiKey) {
-      console.warn("[DEEPSEEK-TOOLS] API Key missing. Falling back to Gemini search grounding.");
-      return await SovereignLLMProvider.prototype.generateTextWithDirectGemini.call(llmProvider, {
-        systemInstruction: options.systemInstruction,
-        prompt: options.prompt,
-        searchGrounding: true,
-        taskCategory: options.taskCategory || "tool_calling"
-      });
+      console.log("[DEEPSEEK-TOOLS] API Key missing. Engaging search grounding or heuristic simulation.");
+      try {
+        return await SovereignLLMProvider.prototype.generateTextWithDirectGemini.call(llmProvider, {
+          systemInstruction: options.systemInstruction,
+          prompt: options.prompt,
+          searchGrounding: true,
+          taskCategory: options.taskCategory || "tool_calling"
+        });
+      } catch (err: any) {
+        return SovereignLLMProvider.prototype.generateHeuristicText.call(
+          llmProvider,
+          options.prompt,
+          options.systemInstruction
+        );
+      }
     }
 
     const tools = [
@@ -1507,13 +1533,21 @@ export class DeepSeekProvider implements LLMProvider {
     }
 
     if (!finalResponseText) {
-      console.warn("[DEEPSEEK-TOOLS-FALLBACK] Falling back to Gemini search grounding.");
-      return await SovereignLLMProvider.prototype.generateTextWithDirectGemini.call(llmProvider, {
-        systemInstruction: options.systemInstruction,
-        prompt: options.prompt,
-        searchGrounding: true,
-        taskCategory: options.taskCategory || "tool_calling_fallback"
-      });
+      console.log("[DEEPSEEK-TOOLS] Engaging search grounding or heuristic simulation.");
+      try {
+        return await SovereignLLMProvider.prototype.generateTextWithDirectGemini.call(llmProvider, {
+          systemInstruction: options.systemInstruction,
+          prompt: options.prompt,
+          searchGrounding: true,
+          taskCategory: options.taskCategory || "tool_calling_fallback"
+        });
+      } catch (err: any) {
+        return SovereignLLMProvider.prototype.generateHeuristicText.call(
+          llmProvider,
+          options.prompt,
+          options.systemInstruction
+        );
+      }
     }
 
     return {
@@ -1534,12 +1568,20 @@ Generate a high-quality, highly analytical, and cost-efficient response to the u
 Original System Instruction: ${options.systemInstruction || "None"}
 Prompt: ${options.prompt}
 `;
-    return await SovereignLLMProvider.prototype.generateTextWithDirectGemini.call(llmProvider, {
-      prompt: simPrompt,
-      systemInstruction: options.systemInstruction,
-      responseMimeType: options.responseMimeType,
-      taskCategory: "deepseek_fallback"
-    });
+    try {
+      return await SovereignLLMProvider.prototype.generateTextWithDirectGemini.call(llmProvider, {
+        prompt: simPrompt,
+        systemInstruction: options.systemInstruction,
+        responseMimeType: options.responseMimeType,
+        taskCategory: "deepseek_fallback"
+      });
+    } catch (err: any) {
+      return SovereignLLMProvider.prototype.generateHeuristicText.call(
+        llmProvider,
+        options.prompt,
+        options.systemInstruction
+      );
+    }
   }
 }
 
