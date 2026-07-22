@@ -24,7 +24,7 @@ console.log(`${BOLD}${CYAN}=====================================================
 console.log(`        SOVEREIGN NEXUS AUTOMATED AUDIT-AND-REPAIR SYSTEM           `);
 console.log(`=====================================================================${RESET}`);
 
-// Definition of the 3 strictly excluded areas (Never touched by automated generation/repair)
+// Definition of the 4 strictly excluded areas (Never touched by automated generation/repair)
 const EXCLUDED_AREAS = [
   {
     id: "trading-execution",
@@ -43,6 +43,12 @@ const EXCLUDED_AREAS = [
     name: "Emergency Capital Caps & Drawdown Risk Halts",
     pattern: /(internal\/safety\/backstop\.go|watchdog\.ts|emergency_halt)/i,
     description: "Drawdown caps, capital loss limits, and watchdog process killers acting as hardware-level safety breakers."
+  },
+  {
+    id: "sovereign-mind-boundary",
+    name: "Sovereign Mind Safety Boundary & Orchestrator Constraints",
+    pattern: /(sovereignMind\.ts|internal\/ai\/sovereign_mind)/i,
+    description: "Sovereign Mind orchestration safety boundary preventing autonomous trade execution or risk override."
   }
 ];
 

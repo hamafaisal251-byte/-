@@ -21,9 +21,10 @@ import PortfolioRiskPanel from './components/PortfolioRiskPanel';
 import DemoLiveObservationPanel from './components/DemoLiveObservationPanel';
 import CodePipelinePanel from './components/CodePipelinePanel';
 import ModelBenchmark from './components/ModelBenchmark';
+import SovereignMindPanel from './components/SovereignMindPanel';
 import { EvolutionCandidate } from './types/quant';
 
-type TabId = 'architecture' | 'telemetry' | 'evolution' | 'risk-broker' | 'portfolio-risk' | 'alien-brain' | 'reward-playground' | 'backtest-arena' | 'ai-pilot-lab' | 'self-improvement-log' | 'arbitrage' | 'safety-backstop' | 'ensemble' | 'demo-live' | 'code-pipeline' | 'model-benchmark';
+type TabId = 'architecture' | 'sovereign-mind' | 'telemetry' | 'evolution' | 'risk-broker' | 'portfolio-risk' | 'alien-brain' | 'reward-playground' | 'backtest-arena' | 'ai-pilot-lab' | 'self-improvement-log' | 'arbitrage' | 'safety-backstop' | 'ensemble' | 'demo-live' | 'code-pipeline' | 'model-benchmark';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<TabId>('architecture');
@@ -230,6 +231,20 @@ export default function App() {
           >
             <Cpu className="w-4 h-4 shrink-0 text-emerald-400" />
             <span>01. تەلارسازی سیستەم | Architecture Blueprint</span>
+          </button>
+
+          {/* New Tab: Sovereign Mind Continuous Orchestrator */}
+          <button
+            id="tab-btn-sovereign-mind"
+            onClick={() => setActiveTab('sovereign-mind')}
+            className={`px-4 py-2.5 rounded-lg text-xs font-bold font-mono flex items-center space-x-2 border transition-all cursor-pointer whitespace-nowrap ${
+              activeTab === 'sovereign-mind'
+                ? 'bg-slate-900 border-purple-600 text-purple-200 shadow-lg shadow-purple-950/40 ring-1 ring-purple-500/30'
+                : 'bg-transparent border-transparent text-purple-400 hover:text-purple-300'
+            }`}
+          >
+            <Brain className="w-4 h-4 shrink-0 text-purple-400 animate-pulse" />
+            <span className="text-purple-300">★ ئۆرکێستریتەری SOVEREIGN MIND | Orchestrator Engine</span>
           </button>
 
           {/* Tab 2: Telemetry */}
@@ -530,6 +545,7 @@ export default function App() {
         {/* Tab content switcher */}
         <div id="tab-content-container" className="transition-opacity duration-300">
           {activeTab === 'architecture' && <ArchitectureMap />}
+          {activeTab === 'sovereign-mind' && <SovereignMindPanel />}
           {activeTab === 'telemetry' && <TelemetrySimulator activeCandidateName={candidates.find(c => c.id === selectedId)?.name} />}
           {activeTab === 'evolution' && <EvolutionLab candidates={candidates} setCandidates={handleUpdateCandidates} selectedId={selectedId} setSelectedId={handleSelectCandidateId} />}
           {activeTab === 'risk-broker' && <RiskBrokerManager />}

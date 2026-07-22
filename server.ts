@@ -16,7 +16,16 @@ import { safetyBackstop } from "./safetyBackstop";
 import { runDeepResearch } from "./deepResearchAgent";
 import { promisify } from "util";
 import { llmProvider, llmProviderMode, setLLMProviderMode, setEnablePolicyRouting, setRoutingPolicy } from "./llmProvider";
+import { toolRegistry, inMemoryToolCallLogs, HARD_EXCLUSION_PATTERNS, validateToolSafety, runTool as executeRegistryTool } from "./toolRegistry";
 import { initializeAgentDb, executeAgentCycle, getAgentLogs, getAgentConfig, updateAgentConfigInDb } from "./autonomousAgent";
+import {
+  aggregateSubsystemState,
+  generateCoordinatedRecommendation,
+  applySovereignMindRecommendation,
+  runSovereignMindOrchestrationCycle,
+  startSovereignMindOrchestrator,
+  getSovereignMindHistory
+} from "./sovereignMind";
 
 const execAsync = promisify(exec);
 
@@ -9405,7 +9414,7 @@ export async function checkGeminiAvailability(): Promise<boolean> {
         }
       });
       const result = await ai.models.generateContent({
-        model: "gemini-3.5-flash",
+        model: "gemini-2.5-flash",
         contents: "ping",
         config: {
           maxOutputTokens: 2,
@@ -9547,7 +9556,7 @@ export async function benchmarkLocalModels() {
 
 export async function runTier2Task(taskType: "summarize" | "sentiment" | "anomaly", payload: any): Promise<any> {
   const isGeminiAvailable = geminiAvailableState === "GEMINI_AVAILABLE";
-  const modelToUse = isGeminiAvailable ? "gemini-3.5-flash" : selectedLocalModel;
+  const modelToUse = isGeminiAvailable ? "gemini-2.5-flash" : selectedLocalModel;
   const generatedBy = isGeminiAvailable ? "gemini" : "local-fallback-model";
 
   const promptMap = {
@@ -12061,6 +12070,23 @@ app.post("/api/value-discovery/promote", asyncHandler(async (req: any, res: any)
   res.json({ success: true, message: `Hypothesis "${hyp.title}" promoted to Sandbox pipeline.` });
 }));
 
+// Sovereign Mind Orchestrator Endpoints
+app.get("/api/sovereign-mind/snapshot", asyncHandler(async (req: any, res: any) => {
+  const snapshot = await aggregateSubsystemState(pgDb);
+  res.json({ success: true, snapshot });
+}));
+
+app.get("/api/sovereign-mind/history", asyncHandler(async (req: any, res: any) => {
+  const history = getSovereignMindHistory();
+  res.json({ success: true, history });
+}));
+
+app.post("/api/sovereign-mind/trigger", asyncHandler(async (req: any, res: any) => {
+  addServerLog("SOVEREIGN-MIND", "INFO", "Manual trigger of Sovereign Mind orchestration cycle...");
+  const cycleRecord = await runSovereignMindOrchestrationCycle(pgDb);
+  res.json({ success: true, cycleRecord });
+}));
+
 app.get("/api/synthesis/dashboard", asyncHandler(async (req: any, res: any) => {
   const hypotheses = await pgDb.executeLocalQuery("SELECT * FROM hypothesis_journal") || [];
   const techniques = await pgDb.executeLocalQuery("SELECT * FROM github_techniques") || [];
@@ -12713,11 +12739,51 @@ app.post("/api/system-intelligence/provider-config", (req, res) => {
 
 app.get("/api/system-intelligence/tool-logs", asyncHandler(async (req, res) => {
   try {
-    const logs = await pgDb.queryAsync("SELECT id, timestamp, session_id as \"sessionId\", tool_name as \"toolName\", arguments, return_value as \"returnValue\" FROM self_hosted_tool_logs ORDER BY timestamp DESC LIMIT 100");
+    let logs: any[] = [];
+    try {
+      logs = await pgDb.queryAsync("SELECT id, timestamp, session_id as \"sessionId\", tool_name as \"toolName\", arguments, return_value as \"returnValue\" FROM self_hosted_tool_logs ORDER BY timestamp DESC LIMIT 100") || [];
+    } catch (dbErr) {
+      console.warn("[TOOL-LOGS] DB query failed, utilizing in-memory tool call logs fallback:", dbErr.message);
+    }
+
+    if (!logs || logs.length === 0) {
+      logs = inMemoryToolCallLogs;
+    }
+
     res.json({ success: true, logs });
   } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message });
+    res.status(500).json({ success: false, error: err.message, logs: inMemoryToolCallLogs });
   }
+}));
+
+// Tool Registry REST Endpoints
+app.get("/api/tools/registry", asyncHandler(async (req, res) => {
+  const tools = toolRegistry.getAllTools().map(t => ({
+    name: t.name,
+    description: t.description,
+    category: t.category,
+    parameters: t.parameters
+  }));
+  res.json({
+    success: true,
+    totalCount: tools.length,
+    tools,
+    hardExclusionRules: HARD_EXCLUSION_PATTERNS
+  });
+}));
+
+app.post("/api/tools/execute", asyncHandler(async (req, res) => {
+  const { toolName, args, sessionId, provider } = req.body;
+  if (!toolName) {
+    return res.status(400).json({ success: false, error: "toolName is required" });
+  }
+  const result = await executeRegistryTool(toolName, args || {}, sessionId || "api-direct-trigger", provider || "api-user");
+  res.json({
+    success: true,
+    toolName,
+    args: args || {},
+    result: typeof result === "string" ? JSON.parse(result) : result
+  });
 }));
 
 // ============================================================================
@@ -13760,6 +13826,9 @@ async function startServer() {
         console.error("[CALIBRATION-INTERVAL-ERROR] Scheduled run failed:", err.message);
       });
     }, 600000);
+
+    // Start Sovereign Mind continuous orchestrator (aggregates signals across all subsystems every 60s)
+    startSovereignMindOrchestrator(pgDb, 60000);
 
     // Initial Market Regime Classification on startup, then every 5 minutes
     runMarketRegimeClassification(true).then(() => {
