@@ -204,6 +204,24 @@ export const SystemImplementationStatusPanel: React.FC = () => {
         </div>
       </div>
 
+      {/* Error / Reconnect Banner */}
+      {error && (
+        <div className="p-4 bg-amber-950/30 border border-amber-500/30 rounded-lg text-xs flex items-center justify-between text-amber-200">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+            <span>Connection issue during diagnostic scan: <strong>{error}</strong>. Reconnecting...</span>
+          </div>
+          <button
+            onClick={fetchHealthMatrix}
+            disabled={loading}
+            className="flex items-center gap-1.5 px-3 py-1 bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 border border-amber-500/40 rounded transition-colors"
+          >
+            <RefreshCw className={`w-3 h-3 ${loading ? 'animate-spin' : ''}`} />
+            Retry Scan
+          </button>
+        </div>
+      )}
+
       {/* Safety Watchdog Test Modal Output */}
       {testOutput && (
         <div className="p-4 bg-slate-900 border border-rose-500/30 rounded-lg text-xs space-y-2">
