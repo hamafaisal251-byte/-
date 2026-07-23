@@ -272,6 +272,26 @@ export default function TelemetrySimulator({ activeCandidateName }: TelemetrySim
     return () => clearInterval(interval);
   }, []);
 
+  const [feedStreams, setFeedStreams] = useState<any>(null);
+
+  const fetchFeedStreams = async () => {
+    try {
+      const res = await fetch('/api/feed-connection-status');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) {
+          setFeedStreams(data.feeds);
+        }
+      }
+    } catch (err) {}
+  };
+
+  useEffect(() => {
+    fetchFeedStreams();
+    const feedInterval = setInterval(fetchFeedStreams, 2000);
+    return () => clearInterval(feedInterval);
+  }, []);
+
   // Action: Trigger Flash Crash/Slippage Volatility Spike over server
   const triggerVolatilitySpike = async () => {
     try {
@@ -399,7 +419,59 @@ export default function TelemetrySimulator({ activeCandidateName }: TelemetrySim
 
           </div>
 
-          {/* Live Exchange Rates Ticker */}
+          {/* Live Price Streaming Connection Status Panel */}
+          <div id="streaming-feeds-status-panel" className="p-4 bg-slate-900/50 border border-slate-800/80 rounded-lg mb-4 space-y-3">
+            <div className="flex justify-between items-center">
+              <h4 className="text-[10px] font-mono font-bold text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                <Globe className="w-4 h-4 text-emerald-400" />
+                <span>Real-Time Price Streaming Feeds (No Polling)</span>
+              </h4>
+              <span className="text-[9px] font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                ACTIVE STREAMS
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+              {feedStreams ? (
+                Object.entries(feedStreams).map(([key, feed]: [string, any]) => (
+                  <div key={key} className="p-2.5 bg-slate-950 border border-slate-800 rounded flex flex-col justify-between">
+                    <div className="flex justify-between items-center mb-1">
+                      <span className="font-bold text-slate-200 capitalize">{key} Feed</span>
+                      <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded ${
+                        feed.status === 'CONNECTED' || feed.status === 'DEMO_SIMULATED'
+                          ? 'bg-emerald-950 text-emerald-400 border border-emerald-800/50'
+                          : 'bg-amber-950 text-amber-400 border border-amber-800/50 animate-pulse'
+                      }`}>
+                        {feed.status}
+                      </span>
+                    </div>
+                    <div className="text-[10px] font-mono text-slate-400 space-y-0.5">
+                      <div className="flex justify-between">
+                        <span>Mode:</span>
+                        <span className="text-sky-300">{feed.type}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Uptime:</span>
+                        <span className="text-slate-200">{feed.uptimeSeconds}s</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Reconnects:</span>
+                        <span className="text-slate-200">{feed.reconnectCount}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Msgs Recv:</span>
+                        <span className="text-emerald-400">{feed.messagesReceived?.toLocaleString()}</span>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="col-span-2 text-center text-slate-500 py-3 text-xs font-mono">
+                  Loading streaming feed metrics...
+                </div>
+              )}
+            </div>
+          </div>
           <div id="live-exchange-rates-ticker" className="p-4 bg-slate-900/50 border border-slate-800/80 rounded-lg mb-4 space-y-3 text-right" dir="rtl">
             <h4 className="text-[10px] font-mono font-bold text-slate-400 uppercase tracking-widest flex items-center justify-start space-x-2 space-x-reverse">
               <Globe className="w-4 h-4 text-sky-400" />

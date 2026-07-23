@@ -10,6 +10,7 @@ import { rateLimit } from "express-rate-limit";
 import { spawn, execSync, exec } from "child_process";
 import WebSocket from "ws";
 import crypto from "crypto";
+import https from "https";
 import fs from "fs";
 import { Pool } from "pg";
 import { safetyBackstop } from "./safetyBackstop";
@@ -5063,91 +5064,571 @@ export let currentWhaleSignals: Record<string, number> = {
   "BTC/USD": 0.0
 };
 
-export async function pollOandaPrices() {
-  try {
-    const oandaRows = await pgDb.queryAsync("SELECT * FROM broker_connections WHERE broker_type = $1", ["oanda"]);
-    if (!oandaRows || oandaRows.length === 0) {
-      oandaConnected = false;
-      return;
-    }
-    
-    const conn = oandaRows[0];
-    if (conn.status !== "CONNECTED") {
-      oandaConnected = false;
-      return;
-    }
-    
-    // Decrypt API token
-    let apiToken = "";
-    try {
-      apiToken = decrypt(conn.api_token_encrypted || conn.api_token_enc);
-    } catch {
-      apiToken = conn.api_token_encrypted || conn.api_token_enc || "";
-    }
-    
-    const apiUrl = conn.api_url || "https://api-fxtrade.oanda.com/v3";
-    const accountId = conn.account_id;
-    
-    if (!apiToken || !accountId) {
-      oandaConnected = false;
-      return;
-    }
+// ============================================================================
+// OANDA REAL-TIME HTTP STREAMING PRICE FEED MANAGER
+// ============================================================================
+export interface FeedStreamTelemetry {
+  feedName: string;
+  type: "STREAMING_HTTP" | "STREAMING_WEBSOCKET" | "REST_POLLING_FALLBACK";
+  status: "CONNECTED" | "RECONNECTING" | "DISCONNECTED" | "DEMO_SIMULATED";
+  uptimeSeconds: number;
+  reconnectCount: number;
+  messagesReceived: number;
+  lastHeartbeat: string | null;
+  lastMessageTime: string | null;
+  instrumentsOrChannels: string[];
+  backoffMs: number;
+  rateLimitStatus?: string;
+  note?: string;
+}
 
-    const testTokenLower = apiToken.toLowerCase();
-    const isDemo = testTokenLower.includes("demo") || testTokenLower.includes("test") || testTokenLower.includes("simulated") || apiToken === "SIMULATED-SOVEREIGN-KEY";
-    
-    if (isDemo) {
-      oandaConnected = true;
-      // Drift the prices slightly so they update
+class OandaPriceStreamManager {
+  private activeRequest: any = null;
+  private reconnectTimer: NodeJS.Timeout | null = null;
+  private demoTimer: NodeJS.Timeout | null = null;
+  private uptimeInterval: NodeJS.Timeout | null = null;
+  private isConnecting = false;
+
+  public telemetry: FeedStreamTelemetry = {
+    feedName: "OANDA Forex Streaming API",
+    type: "STREAMING_HTTP",
+    status: "DISCONNECTED",
+    uptimeSeconds: 0,
+    reconnectCount: 0,
+    messagesReceived: 0,
+    lastHeartbeat: null,
+    lastMessageTime: null,
+    instrumentsOrChannels: ["EUR_USD", "GBP_USD", "USD_JPY", "AUD_USD"],
+    backoffMs: 1000,
+    note: "Persistent HTTP streaming pricing endpoint (/v3/accounts/{accountID}/pricing/stream)"
+  };
+
+  constructor() {
+    this.startUptimeTracker();
+  }
+
+  private startUptimeTracker() {
+    if (this.uptimeInterval) clearInterval(this.uptimeInterval);
+    this.uptimeInterval = setInterval(() => {
+      if (this.telemetry.status === "CONNECTED" || this.telemetry.status === "DEMO_SIMULATED") {
+        this.telemetry.uptimeSeconds++;
+      }
+    }, 1000);
+  }
+
+  public async startStream() {
+    if (this.isConnecting) return;
+    this.isConnecting = true;
+
+    try {
+      const oandaRows = await pgDb.queryAsync("SELECT * FROM broker_connections WHERE broker_type = $1", ["oanda"]);
+      if (!oandaRows || oandaRows.length === 0) {
+        this.setDisconnected("No OANDA connection configured in database");
+        this.isConnecting = false;
+        this.scheduleReconnect(10000);
+        return;
+      }
+
+      const conn = oandaRows[0];
+      if (conn.status !== "CONNECTED") {
+        this.setDisconnected("OANDA connection status is not CONNECTED");
+        this.isConnecting = false;
+        this.scheduleReconnect(10000);
+        return;
+      }
+
+      let apiToken = "";
+      try {
+        apiToken = decrypt(conn.api_token_encrypted || conn.api_token_enc);
+      } catch {
+        apiToken = conn.api_token_encrypted || conn.api_token_enc || "";
+      }
+
+      const apiUrl = conn.api_url || "https://api-fxtrade.oanda.com/v3";
+      const accountId = conn.account_id;
+
+      if (!apiToken || !accountId) {
+        this.setDisconnected("OANDA API token or Account ID missing");
+        this.isConnecting = false;
+        this.scheduleReconnect(10000);
+        return;
+      }
+
+      const testTokenLower = apiToken.toLowerCase();
+      const isDemo = testTokenLower.includes("demo") || testTokenLower.includes("test") || testTokenLower.includes("simulated") || apiToken === "SIMULATED-SOVEREIGN-KEY";
+
+      if (isDemo) {
+        this.startDemoSimulatedStream();
+        this.isConnecting = false;
+        return;
+      }
+
+      // Real OANDA HTTP Streaming Connection
+      this.closeActiveConnections();
+
+      let streamHost = "stream-fxtrade.oanda.com";
+      if (apiUrl.includes("fxpractice") || apiUrl.includes("practice")) {
+        streamHost = "stream-fxpractice.oanda.com";
+      }
+
+      const instrumentsParam = "EUR_USD,GBP_USD,USD_JPY,AUD_USD";
+      const path = `/v3/accounts/${accountId}/pricing/stream?instruments=${instrumentsParam}`;
+
+      const options = {
+        hostname: streamHost,
+        port: 443,
+        path: path,
+        method: "GET",
+        headers: {
+          "Authorization": `Bearer ${apiToken}`,
+          "Accept-Encoding": "identity",
+          "User-Agent": "Sovereign-NEXUS-Bot/2.4"
+        }
+      };
+
+      console.log(`[OANDA-STREAM] Connecting to persistent stream: https://${streamHost}${path}`);
+      this.telemetry.status = "RECONNECTING";
+
+      let lineBuffer = "";
+
+      this.activeRequest = https.request(options, (res) => {
+        if (res.statusCode !== 200) {
+          let errBody = "";
+          res.on("data", (c) => errBody += c.toString());
+          res.on("end", () => {
+            console.error(`[OANDA-STREAM-ERROR] HTTP ${res.statusCode}: ${errBody}`);
+            this.setDisconnected(`HTTP Error ${res.statusCode}`);
+            this.isConnecting = false;
+            this.handleReconnectWithBackoff();
+          });
+          return;
+        }
+
+        console.log(`[OANDA-STREAM] Connected successfully to OANDA live pricing stream (HTTP 200 OK).`);
+        oandaConnected = true;
+        this.telemetry.status = "CONNECTED";
+        this.telemetry.type = "STREAMING_HTTP";
+        this.telemetry.backoffMs = 1000;
+        this.isConnecting = false;
+
+        res.on("data", (chunk: Buffer) => {
+          lineBuffer += chunk.toString("utf8");
+          const lines = lineBuffer.split("\n");
+          lineBuffer = lines.pop() || "";
+
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed) continue;
+
+            try {
+              const msg = JSON.parse(trimmed);
+              this.telemetry.messagesReceived++;
+              this.telemetry.lastMessageTime = new Date().toISOString();
+
+              if (msg.type === "PRICE") {
+                const instrument = msg.instrument;
+                const priceVal = msg.asks && msg.asks[0] ? parseFloat(msg.asks[0].price) : parseFloat(msg.closeoutAsk);
+                if (priceVal && !isNaN(priceVal)) {
+                  if (instrument === "EUR_USD") liveRates.eurUsd = priceVal;
+                  else if (instrument === "GBP_USD") liveRates.gbpUsd = priceVal;
+                  else if (instrument === "USD_JPY") liveRates.usdJpy = priceVal;
+                  else if (instrument === "AUD_USD") liveRates.audUsd = priceVal;
+                }
+              } else if (msg.type === "HEARTBEAT") {
+                this.telemetry.lastHeartbeat = msg.time || new Date().toISOString();
+              }
+            } catch (pErr) {}
+          }
+        });
+
+        res.on("end", () => {
+          console.warn("[OANDA-STREAM] Stream connection closed by server.");
+          this.setDisconnected("Stream ended by server");
+          this.handleReconnectWithBackoff();
+        });
+
+        res.on("error", (err) => {
+          console.error("[OANDA-STREAM-ERROR] Stream error:", err.message);
+          this.setDisconnected(`Stream error: ${err.message}`);
+          this.handleReconnectWithBackoff();
+        });
+      });
+
+      this.activeRequest.on("error", (err: any) => {
+        console.error("[OANDA-STREAM-ERROR] Request error:", err.message);
+        this.setDisconnected(`Request error: ${err.message}`);
+        this.isConnecting = false;
+        this.handleReconnectWithBackoff();
+      });
+
+      this.activeRequest.end();
+
+    } catch (err: any) {
+      console.error("[OANDA-STREAM-ERROR] Unexpected exception:", err.message);
+      this.setDisconnected(`Exception: ${err.message}`);
+      this.isConnecting = false;
+      this.handleReconnectWithBackoff();
+    }
+  }
+
+  private startDemoSimulatedStream() {
+    this.closeActiveConnections();
+    oandaConnected = true;
+    this.telemetry.status = "DEMO_SIMULATED";
+    this.telemetry.type = "STREAMING_HTTP";
+    this.telemetry.note = "Persistent streaming feed active (Demo key simulated ticks)";
+    console.log("[OANDA-STREAM] Demo key detected — running persistent simulated pricing stream.");
+
+    if (this.demoTimer) clearInterval(this.demoTimer);
+    this.demoTimer = setInterval(() => {
       const drift = (Math.random() - 0.5);
       liveRates.eurUsd = parseFloat((getNumericRate(liveRates.eurUsd, 1.08520) + drift * 0.0001).toFixed(5));
       liveRates.gbpUsd = parseFloat((getNumericRate(liveRates.gbpUsd, 1.27350) + drift * 0.0001).toFixed(5));
       liveRates.usdJpy = parseFloat((getNumericRate(liveRates.usdJpy, 156.440) + drift * 0.01).toFixed(3));
       liveRates.audUsd = parseFloat((getNumericRate(liveRates.audUsd, 0.66580) + drift * 0.0001).toFixed(5));
-      return;
-    }
 
-    const cleanUrl = apiUrl.replace(/\/$/, "");
-    const url = `${cleanUrl}/accounts/${accountId}/pricing?instruments=EUR_USD,GBP_USD,USD_JPY,AUD_USD`;
-    const res = await fetch(url, {
-      method: "GET",
-      headers: {
-        "Authorization": `Bearer ${apiToken}`,
-        "Content-Type": "application/json"
+      this.telemetry.messagesReceived++;
+      this.telemetry.lastMessageTime = new Date().toISOString();
+      if (this.telemetry.messagesReceived % 5 === 0) {
+        this.telemetry.lastHeartbeat = new Date().toISOString();
       }
-    });
+    }, 1000);
+  }
 
-    if (res.ok) {
-      const data = await res.json();
-      oandaConnected = true;
-      if (data && Array.isArray(data.prices)) {
-        for (const p of data.prices) {
-          const instrument = p.instrument;
-          const priceVal = p.asks && p.asks[0] ? parseFloat(p.asks[0].price) : parseFloat(p.closeoutAsk);
-          if (priceVal && !isNaN(priceVal)) {
-            if (instrument === "EUR_USD") liveRates.eurUsd = priceVal;
-            else if (instrument === "GBP_USD") liveRates.gbpUsd = priceVal;
-            else if (instrument === "USD_JPY") liveRates.usdJpy = priceVal;
-            else if (instrument === "AUD_USD") liveRates.audUsd = priceVal;
-          }
-        }
-      }
-    } else {
-      console.error(`[OANDA-POLLING-ERROR] ${res.status} - ${await res.text()}`);
-      oandaConnected = false;
-    }
-  } catch (err: any) {
-    console.error("[OANDA-POLLING-ERROR] Exception:", err.message);
+  private handleReconnectWithBackoff() {
+    this.telemetry.reconnectCount++;
+    this.telemetry.backoffMs = Math.min(30000, this.telemetry.backoffMs * 2);
+    console.log(`[OANDA-STREAM] Scheduling stream reconnection in ${this.telemetry.backoffMs}ms (Attempt #${this.telemetry.reconnectCount})...`);
+    this.scheduleReconnect(this.telemetry.backoffMs);
+  }
+
+  private scheduleReconnect(delayMs: number) {
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = setTimeout(() => {
+      this.startStream();
+    }, delayMs);
+  }
+
+  private setDisconnected(reason: string) {
     oandaConnected = false;
+    this.telemetry.status = "DISCONNECTED";
+    this.telemetry.note = reason;
+  }
+
+  private closeActiveConnections() {
+    if (this.activeRequest) {
+      try { this.activeRequest.destroy(); } catch {}
+      this.activeRequest = null;
+    }
+    if (this.demoTimer) {
+      clearInterval(this.demoTimer);
+      this.demoTimer = null;
+    }
   }
 }
 
-// Start polling OANDA prices every 5 seconds
-setInterval(() => {
-  pollOandaPrices().catch(err => {
-    console.error("[OANDA-POLLING-INTERVAL] Poller failed:", err);
-  });
-}, 5000);
+export const oandaStreamManager = new OandaPriceStreamManager();
+
+// Bridge function for backwards compatibility
+export async function pollOandaPrices() {
+  if (oandaStreamManager.telemetry.status === "DISCONNECTED") {
+    await oandaStreamManager.startStream();
+  }
+}
+
+// Start OANDA stream automatically
+oandaStreamManager.startStream().catch(() => {});
+
+// ============================================================================
+// MULTI-EXCHANGE WEBSOCKET STREAMING ENGINE (BINANCE, COINBASE, KRAKEN)
+// ============================================================================
+class ExchangeStreamManager {
+  private binanceWs: WebSocket | null = null;
+  private coinbaseWs: WebSocket | null = null;
+  private krakenWs: WebSocket | null = null;
+
+  public binanceTelemetry: FeedStreamTelemetry = {
+    feedName: "Binance WebSocket Stream",
+    type: "STREAMING_WEBSOCKET",
+    status: "DISCONNECTED",
+    uptimeSeconds: 0,
+    reconnectCount: 0,
+    messagesReceived: 0,
+    lastHeartbeat: null,
+    lastMessageTime: null,
+    instrumentsOrChannels: ["btcusdt@ticker", "btcusdt@depth10@100ms"],
+    backoffMs: 1000
+  };
+
+  public coinbaseTelemetry: FeedStreamTelemetry = {
+    feedName: "Coinbase Exchange WebSocket Stream",
+    type: "STREAMING_WEBSOCKET",
+    status: "DISCONNECTED",
+    uptimeSeconds: 0,
+    reconnectCount: 0,
+    messagesReceived: 0,
+    lastHeartbeat: null,
+    lastMessageTime: null,
+    instrumentsOrChannels: ["BTC-USD ticker"],
+    backoffMs: 1000
+  };
+
+  public krakenTelemetry: FeedStreamTelemetry = {
+    feedName: "Kraken WebSocket Stream",
+    type: "STREAMING_WEBSOCKET",
+    status: "DISCONNECTED",
+    uptimeSeconds: 0,
+    reconnectCount: 0,
+    messagesReceived: 0,
+    lastHeartbeat: null,
+    lastMessageTime: null,
+    instrumentsOrChannels: ["XBT/USD ticker"],
+    backoffMs: 1000
+  };
+
+  constructor() {
+    this.startUptimeTrackers();
+  }
+
+  private startUptimeTrackers() {
+    setInterval(() => {
+      if (this.binanceTelemetry.status === "CONNECTED") this.binanceTelemetry.uptimeSeconds++;
+      if (this.coinbaseTelemetry.status === "CONNECTED") this.coinbaseTelemetry.uptimeSeconds++;
+      if (this.krakenTelemetry.status === "CONNECTED") this.krakenTelemetry.uptimeSeconds++;
+    }, 1000);
+  }
+
+  public initAllStreams() {
+    this.connectBinanceStream();
+    this.connectCoinbaseStream();
+    this.connectKrakenStream();
+  }
+
+  public connectBinanceStream() {
+    try {
+      console.log("[EXCHANGE-STREAM] Initializing Binance combined WS stream...");
+      const url = "wss://stream.binance.com:9443/stream?streams=btcusdt@ticker/btcusdt@depth10@100ms";
+      this.binanceWs = new WebSocket(url);
+
+      this.binanceWs.on("open", () => {
+        console.log("[EXCHANGE-STREAM] Binance WebSocket stream connected successfully.");
+        this.binanceTelemetry.status = "CONNECTED";
+        this.binanceTelemetry.backoffMs = 1000;
+      });
+
+      this.binanceWs.on("message", (data) => {
+        try {
+          const raw = JSON.parse(data.toString());
+          const streamName = raw.stream || "";
+          const payload = raw.data || raw;
+
+          this.binanceTelemetry.messagesReceived++;
+          this.binanceTelemetry.lastMessageTime = new Date().toISOString();
+
+          if (streamName.includes("ticker") || payload.c) {
+            const lastPrice = parseFloat(payload.c);
+            if (!isNaN(lastPrice) && lastPrice > 0) {
+              liveRates.btcUsd = lastPrice;
+            }
+          }
+
+          if (streamName.includes("depth") || (payload.bids && payload.asks)) {
+            const bids = payload.bids || [];
+            const asks = payload.asks || [];
+            let sumBids = 0;
+            let sumAsks = 0;
+            for (const [p, q] of bids) sumBids += parseFloat(q);
+            for (const [p, q] of asks) sumAsks += parseFloat(q);
+            const maxVol = Math.max(sumBids, sumAsks);
+            const minVol = Math.max(1, Math.min(sumBids, sumAsks));
+            lastBinanceBTCUSDDepth = {
+              bidsVolume: sumBids,
+              asksVolume: sumAsks,
+              bids,
+              asks,
+              imbalanceRatio: maxVol / minVol,
+              timestamp: Date.now()
+            };
+          }
+        } catch {}
+      });
+
+      this.binanceWs.on("close", () => {
+        this.binanceTelemetry.status = "DISCONNECTED";
+        this.binanceTelemetry.reconnectCount++;
+        this.binanceTelemetry.backoffMs = Math.min(30000, this.binanceTelemetry.backoffMs * 2);
+        console.warn(`[EXCHANGE-STREAM] Binance WS closed. Reconnecting in ${this.binanceTelemetry.backoffMs}ms...`);
+        setTimeout(() => this.connectBinanceStream(), this.binanceTelemetry.backoffMs);
+      });
+
+      this.binanceWs.on("error", (err) => {
+        console.error("[EXCHANGE-STREAM] Binance WS error:", err.message);
+      });
+    } catch (e: any) {
+      console.error("[EXCHANGE-STREAM] Binance WS creation error:", e.message);
+      setTimeout(() => this.connectBinanceStream(), 5000);
+    }
+  }
+
+  public connectCoinbaseStream() {
+    try {
+      console.log("[EXCHANGE-STREAM] Initializing Coinbase WS stream...");
+      this.coinbaseWs = new WebSocket("wss://ws-feed.exchange.coinbase.com");
+
+      this.coinbaseWs.on("open", () => {
+        console.log("[EXCHANGE-STREAM] Coinbase WS connected. Subscribing to BTC-USD ticker...");
+        this.coinbaseTelemetry.status = "CONNECTED";
+        this.coinbaseTelemetry.backoffMs = 1000;
+        this.coinbaseWs?.send(JSON.stringify({
+          type: "subscribe",
+          product_ids: ["BTC-USD"],
+          channels: ["ticker"]
+        }));
+      });
+
+      this.coinbaseWs.on("message", (data) => {
+        try {
+          const msg = JSON.parse(data.toString());
+          if (msg.type === "ticker" && msg.price) {
+            this.coinbaseTelemetry.messagesReceived++;
+            this.coinbaseTelemetry.lastMessageTime = new Date().toISOString();
+          }
+        } catch {}
+      });
+
+      this.coinbaseWs.on("close", () => {
+        this.coinbaseTelemetry.status = "DISCONNECTED";
+        this.coinbaseTelemetry.reconnectCount++;
+        this.coinbaseTelemetry.backoffMs = Math.min(30000, this.coinbaseTelemetry.backoffMs * 2);
+        setTimeout(() => this.connectCoinbaseStream(), this.coinbaseTelemetry.backoffMs);
+      });
+
+      this.coinbaseWs.on("error", (err) => {
+        console.error("[EXCHANGE-STREAM] Coinbase WS error:", err.message);
+      });
+    } catch (e: any) {
+      setTimeout(() => this.connectCoinbaseStream(), 5000);
+    }
+  }
+
+  public connectKrakenStream() {
+    try {
+      console.log("[EXCHANGE-STREAM] Initializing Kraken WS stream...");
+      this.krakenWs = new WebSocket("wss://ws.kraken.com");
+
+      this.krakenWs.on("open", () => {
+        console.log("[EXCHANGE-STREAM] Kraken WS connected. Subscribing to XBT/USD ticker...");
+        this.krakenTelemetry.status = "CONNECTED";
+        this.krakenTelemetry.backoffMs = 1000;
+        this.krakenWs?.send(JSON.stringify({
+          event: "subscribe",
+          pair: ["XBT/USD"],
+          subscription: { name: "ticker" }
+        }));
+      });
+
+      this.krakenWs.on("message", (data) => {
+        try {
+          const msg = JSON.parse(data.toString());
+          if (Array.isArray(msg) && msg[1] && msg[1].c) {
+            this.krakenTelemetry.messagesReceived++;
+            this.krakenTelemetry.lastMessageTime = new Date().toISOString();
+          }
+        } catch {}
+      });
+
+      this.krakenWs.on("close", () => {
+        this.krakenTelemetry.status = "DISCONNECTED";
+        this.krakenTelemetry.reconnectCount++;
+        this.krakenTelemetry.backoffMs = Math.min(30000, this.krakenTelemetry.backoffMs * 2);
+        setTimeout(() => this.connectKrakenStream(), this.krakenTelemetry.backoffMs);
+      });
+
+      this.krakenWs.on("error", (err) => {
+        console.error("[EXCHANGE-STREAM] Kraken WS error:", err.message);
+      });
+    } catch (e: any) {
+      setTimeout(() => this.connectKrakenStream(), 5000);
+    }
+  }
+}
+
+export const exchangeStreamManager = new ExchangeStreamManager();
+exchangeStreamManager.initAllStreams();
+
+// ============================================================================
+// RATE-LIMIT GUARD AND EXPONENTIAL BACKOFF FOR REST FALLBACKS
+// ============================================================================
+export interface RateLimitState {
+  domain: string;
+  consecutive429s: number;
+  backoffUntil: number;
+  lastStatusCode: number | null;
+  rateLimitStatus: "NORMAL" | "BACKOFF_ACTIVE" | "THROTTLED";
+  note: string;
+}
+
+class RateLimitGuardManager {
+  private states: Record<string, RateLimitState> = {};
+
+  public getState(domain: string): RateLimitState {
+    if (!this.states[domain]) {
+      this.states[domain] = {
+        domain,
+        consecutive429s: 0,
+        backoffUntil: 0,
+        lastStatusCode: null,
+        rateLimitStatus: "NORMAL",
+        note: "Respecting provider rate limits"
+      };
+    }
+    return this.states[domain];
+  }
+
+  public async fetchWithGuard(url: string, init?: RequestInit, domainKey: string = "default"): Promise<Response | null> {
+    const state = this.getState(domainKey);
+    const now = Date.now();
+
+    if (now < state.backoffUntil) {
+      const remainingSec = Math.ceil((state.backoffUntil - now) / 1000);
+      console.warn(`[RATE-LIMIT-GUARD] Request to ${domainKey} suppressed due to active 429 backoff (${remainingSec}s remaining).`);
+      return null;
+    }
+
+    try {
+      const res = await fetch(url, init);
+      state.lastStatusCode = res.status;
+
+      if (res.status === 429) {
+        state.consecutive429s++;
+        const retryHeader = res.headers.get("retry-after") || res.headers.get("cb-after-seconds");
+        let backoffSec = 10 * Math.pow(2, state.consecutive429s - 1);
+        if (retryHeader && !isNaN(parseInt(retryHeader))) {
+          backoffSec = Math.max(backoffSec, parseInt(retryHeader));
+        }
+        state.backoffUntil = now + backoffSec * 1000;
+        state.rateLimitStatus = "BACKOFF_ACTIVE";
+        state.note = `HTTP 429 received. Exponential backoff active for ${backoffSec}s.`;
+        console.warn(`[RATE-LIMIT-GUARD] 429 Too Many Requests received for ${domainKey}. Backing off for ${backoffSec}s.`);
+        return null;
+      }
+
+      state.consecutive429s = 0;
+      state.rateLimitStatus = "NORMAL";
+      state.note = "Connection healthy, respecting provider rate limits";
+      return res;
+    } catch (err: any) {
+      console.error(`[RATE-LIMIT-GUARD] Fetch error for ${domainKey}:`, err.message);
+      return null;
+    }
+  }
+
+  public getAllStates() {
+    return this.states;
+  }
+}
+
+export const rateLimitGuard = new RateLimitGuardManager();
 
 // Periodically drift rates and run genuine RL updates on Python microservice
 setInterval(() => {
@@ -12593,6 +13074,23 @@ export async function seedInitialRiskHistoryIfEmpty() {
 setTimeout(() => {
   seedInitialRiskHistoryIfEmpty();
 }, 5000);
+
+// ============================================================================
+// REAL-TIME PRICE STREAMING AND FEED CONNECTION STATUS ENDPOINT
+// ============================================================================
+app.get("/api/feed-connection-status", asyncHandler(async (req: express.Request, res: express.Response) => {
+  res.json({
+    success: true,
+    timestamp: new Date().toISOString(),
+    feeds: {
+      oanda: oandaStreamManager.telemetry,
+      binance: exchangeStreamManager.binanceTelemetry,
+      coinbase: exchangeStreamManager.coinbaseTelemetry,
+      kraken: exchangeStreamManager.krakenTelemetry,
+    },
+    rateLimits: rateLimitGuard.getAllStates()
+  });
+}));
 
 // ============================================================================
 // SYSTEM INTELLIGENCE STATUS & RESILIENCE LAYER ENDPOINTS
