@@ -24,6 +24,9 @@ jobs:
       - name: Install Project Dependencies
         run: npm ci
 
+      - name: Verify Architectural Invariants (Regression Guard)
+        run: node scripts/verify_invariants.js
+
       - name: Run Code Linter
         run: npm run lint
 

@@ -34,23 +34,87 @@ interface HistoricalMerge {
   version: string;
 }
 
+interface Invariant {
+  id: string;
+  name: string;
+  description: string;
+  file: string;
+  ruleType: string;
+}
+
+interface ProtectedZone {
+  id: string;
+  name: string;
+  pattern: string;
+  status: string;
+}
+
+interface ViolationLog {
+  id: string;
+  timestamp: string;
+  invariantId: string;
+  targetFile: string;
+  actor: string;
+  result: string;
+  details: string;
+}
+
+interface InvariantUpdate {
+  id: string;
+  commit: string;
+  author: string;
+  timestamp: string;
+  prTitle: string;
+  description: string;
+  status: string;
+}
+
 export default function CodePipelinePanel() {
   const [prs, setPrs] = useState<PullRequest[]>([]);
   const [history, setHistory] = useState<HistoricalMerge[]>([]);
   const [selectedPrId, setSelectedPrId] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
   const [proposingGoal, setProposingGoal] = useState<string>("high-volatility");
+  const [targetFile, setTargetFile] = useState<string>("");
+  const [isHumanAuthorized, setIsHumanAuthorized] = useState<boolean>(false);
   const [proposeLogs, setProposeLogs] = useState<string[]>([]);
   const [proposeStatus, setProposeStatus] = useState<"idle" | "running" | "success" | "error">("idle");
   const [mergeLogs, setMergeLogs] = useState<string[]>([]);
   const [mergeStatus, setMergeStatus] = useState<"idle" | "running" | "success">("idle");
   
+  // Invariants state
+  const [invariants, setInvariants] = useState<Invariant[]>([]);
+  const [protectedZones, setProtectedZones] = useState<ProtectedZone[]>([]);
+  const [violations, setViolations] = useState<ViolationLog[]>([]);
+  const [invariantUpdates, setInvariantUpdates] = useState<InvariantUpdate[]>([]);
+  const [invVersion, setInvVersion] = useState<string>("1.0.0");
+  const [invLastUpdated, setInvLastUpdated] = useState<string>("");
+  const [invTab, setInvTab] = useState<"invariants" | "zones" | "violations" | "updates">("invariants");
+
   const consoleEndRef = useRef<HTMLDivElement>(null);
   const proposeConsoleEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     fetchPipelineData();
+    fetchInvariantsData();
   }, []);
+
+  const fetchInvariantsData = async () => {
+    try {
+      const res = await fetch("/api/pipeline/invariants");
+      if (res.ok) {
+        const data = await res.json();
+        setInvariants(data.invariants || []);
+        setProtectedZones(data.protectedZones || []);
+        setViolations(data.recentViolations || []);
+        setInvariantUpdates(data.invariantUpdatesHistory || []);
+        setInvVersion(data.version || "1.0.0");
+        setInvLastUpdated(data.lastUpdated || "");
+      }
+    } catch (err) {
+      console.error("Error fetching invariants:", err);
+    }
+  };
 
   useEffect(() => {
     if (consoleEndRef.current) {
@@ -128,7 +192,11 @@ export default function CodePipelinePanel() {
       const response = await fetch("/api/pipeline/propose", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ goal: proposingGoal })
+        body: JSON.stringify({ 
+          goal: proposingGoal,
+          targetFile: targetFile.trim(),
+          isHumanAuthorized: isHumanAuthorized
+        })
       });
       
       if (response.ok) {
@@ -139,7 +207,11 @@ export default function CodePipelinePanel() {
         setSelectedPrId(data.pr.prId);
       } else {
         const errData = await response.json();
-        setProposeLogs(prev => [...prev, `[ERROR] AI Code Loop failure: ${errData.error || "Validation check failed"}`]);
+        setProposeLogs(prev => [
+          ...prev, 
+          `[ERROR] ${errData.status || 'REJECTED'}: ${errData.error || "Validation check failed"}`,
+          `[LOG] ${errData.log || ""}`
+        ]);
         setProposeStatus("error");
       }
     } catch (err: any) {
@@ -235,6 +307,187 @@ export default function CodePipelinePanel() {
         </div>
       </div>
 
+      {/* REGRESSION GUARD & ARCHITECTURAL INVARIANTS SECTION */}
+      <div className="p-6 bg-slate-900 border border-slate-800 rounded-2xl space-y-5 shadow-xl">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-800 pb-4">
+          <div className="flex items-center space-x-3">
+            <div className="p-2.5 bg-emerald-950/60 border border-emerald-500/30 rounded-xl text-emerald-400">
+              <ShieldCheck className="w-6 h-6" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-slate-100 flex items-center gap-2 font-mono">
+                پارێزەری داڕشتن و پێوانەی بنەڕەتی <span className="text-emerald-400 font-mono text-xs">| Regression Guard & Architectural Invariants</span>
+              </h3>
+              <p className="text-xs text-slate-400">
+                Protected baseline invariants prevent architectural reversions, stray files, or protected-zone shrinkage across all AI and developer loops.
+              </p>
+            </div>
+          </div>
+          
+          <div className="flex items-center gap-2 shrink-0">
+            <span className="text-[10px] font-mono bg-slate-950 border border-slate-800 px-2.5 py-1 rounded-lg text-slate-400">
+              Version {invVersion}
+            </span>
+            <span className="text-[10px] font-mono bg-emerald-950/80 text-emerald-400 border border-emerald-500/30 px-3 py-1 rounded-lg font-bold flex items-center gap-1.5">
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+              ALL {invariants.length} INVARIANTS PASSED
+            </span>
+          </div>
+        </div>
+
+        {/* Tab Navigation for Regression Guard */}
+        <div className="flex items-center space-x-2 border-b border-slate-800 pb-2 text-xs font-mono">
+          <button
+            onClick={() => setInvTab("invariants")}
+            className={`px-3 py-1.5 rounded-lg border transition-all cursor-pointer ${
+              invTab === "invariants"
+                ? "bg-purple-950/60 border-purple-500/40 text-purple-300 font-bold"
+                : "bg-slate-950/40 border-slate-850 text-slate-400 hover:text-slate-200"
+            }`}
+          >
+            Baseline Invariants ({invariants.length})
+          </button>
+          <button
+            onClick={() => setInvTab("zones")}
+            className={`px-3 py-1.5 rounded-lg border transition-all cursor-pointer ${
+              invTab === "zones"
+                ? "bg-purple-950/60 border-purple-500/40 text-purple-300 font-bold"
+                : "bg-slate-950/40 border-slate-850 text-slate-400 hover:text-slate-200"
+            }`}
+          >
+            Protected Exclusions ({protectedZones.length})
+          </button>
+          <button
+            onClick={() => setInvTab("violations")}
+            className={`px-3 py-1.5 rounded-lg border transition-all cursor-pointer ${
+              invTab === "violations"
+                ? "bg-purple-950/60 border-purple-500/40 text-purple-300 font-bold"
+                : "bg-slate-950/40 border-slate-850 text-slate-400 hover:text-slate-200"
+            }`}
+          >
+            Violations & Reversions ({violations.length})
+          </button>
+          <button
+            onClick={() => setInvTab("updates")}
+            className={`px-3 py-1.5 rounded-lg border transition-all cursor-pointer ${
+              invTab === "updates"
+                ? "bg-purple-950/60 border-purple-500/40 text-purple-300 font-bold"
+                : "bg-slate-950/40 border-slate-850 text-slate-400 hover:text-slate-200"
+            }`}
+          >
+            `invariant:` Log History ({invariantUpdates.length})
+          </button>
+        </div>
+
+        {/* Tab 1: Baseline Invariants Table */}
+        {invTab === "invariants" && (
+          <div className="space-y-3">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr className="border-b border-slate-800 text-[10px] font-mono uppercase text-slate-500 bg-slate-950/60">
+                    <th className="p-3 font-semibold">Invariant ID & Name</th>
+                    <th className="p-3 font-semibold">Target File / Scope</th>
+                    <th className="p-3 font-semibold">Rule Description</th>
+                    <th className="p-3 font-semibold text-right">Verification Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-850/60 font-mono text-[11px]">
+                  {invariants.map((inv) => (
+                    <tr key={inv.id} className="hover:bg-slate-950/30 transition-colors">
+                      <td className="p-3 font-bold text-slate-200">
+                        <span className="block text-purple-400 text-[10px]">{inv.id}</span>
+                        <span>{inv.name}</span>
+                      </td>
+                      <td className="p-3 text-slate-400">
+                        <span className="bg-slate-950 border border-slate-800 p-1 px-2 rounded text-[10px] text-amber-400">
+                          {inv.file}
+                        </span>
+                      </td>
+                      <td className="p-3 text-slate-300 font-sans text-xs leading-relaxed max-w-md">
+                        {inv.description}
+                      </td>
+                      <td className="p-3 text-right">
+                        <span className="inline-flex items-center gap-1 bg-emerald-950/80 text-emerald-400 border border-emerald-800/40 px-2 py-0.5 rounded text-[10px] font-bold">
+                          <CheckCircle2 className="w-3 h-3 text-emerald-400" /> PASSED
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* Tab 2: Protected Zones */}
+        {invTab === "zones" && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {protectedZones.map((zone) => (
+              <div key={zone.id} className="p-3.5 bg-slate-950 border border-slate-850 rounded-xl space-y-1.5 font-mono">
+                <div className="flex justify-between items-center">
+                  <span className="text-xs font-bold text-slate-200">{zone.name}</span>
+                  <span className="text-[9px] bg-purple-950 text-purple-400 border border-purple-800/40 px-2 py-0.5 rounded font-bold uppercase">
+                    PROTECTED ZONE
+                  </span>
+                </div>
+                <div className="text-[10px] text-slate-500">Pattern: <code className="text-amber-400">{zone.pattern}</code></div>
+                <p className="text-[10px] text-slate-400 font-sans leading-relaxed">
+                  Automated mutations on files matching this area are immediately blocked by the pipeline.
+                </p>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Tab 3: Violations Log */}
+        {invTab === "violations" && (
+          <div className="space-y-3 font-mono text-xs">
+            {violations.map((v) => (
+              <div key={v.id} className="p-3.5 bg-slate-950 border border-slate-850 rounded-xl space-y-2">
+                <div className="flex justify-between items-center">
+                  <span className="text-rose-400 font-bold flex items-center gap-1.5">
+                    <XCircle className="w-4 h-4 text-rose-400" />
+                    {v.invariantId}
+                  </span>
+                  <span className="text-[10px] text-slate-500">{new Date(v.timestamp).toLocaleString()}</span>
+                </div>
+                <div className="text-[11px] text-slate-300 leading-relaxed font-sans">
+                  <strong>Target File:</strong> <code className="text-amber-400 font-mono text-[10px]">{v.targetFile}</code> — {v.details}
+                </div>
+                <div className="text-[10px] text-slate-500">
+                  Actor: <span className="text-purple-400">{v.actor}</span> | Result: <span className="text-rose-400 font-bold">{v.result}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Tab 4: Invariant Update Log History */}
+        {invTab === "updates" && (
+          <div className="space-y-3 font-mono text-xs">
+            {invariantUpdates.map((upd) => (
+              <div key={upd.id} className="p-3.5 bg-slate-950 border border-slate-850 rounded-xl space-y-2">
+                <div className="flex justify-between items-center">
+                  <span className="text-purple-400 font-bold flex items-center gap-1.5">
+                    <GitMerge className="w-4 h-4 text-purple-400" />
+                    {upd.commit}
+                  </span>
+                  <span className="text-[10px] text-slate-500">{new Date(upd.timestamp).toLocaleString()}</span>
+                </div>
+                <p className="text-[11px] text-amber-300/90 font-sans bg-amber-950/30 p-2.5 rounded-lg border border-amber-500/20">
+                  {upd.description}
+                </p>
+                <div className="text-[10px] text-slate-500 flex justify-between">
+                  <span>Author: {upd.author}</span>
+                  <span className="text-emerald-400 font-bold">{upd.status}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         
         {/* Left column: AI Strategy Lab & Open PRs List */}
@@ -251,19 +504,51 @@ export default function CodePipelinePanel() {
               Trigger the Gemini AI Quant agent to formulate, code, scan, and test a new strategy candidate on-demand.
             </p>
             
-            <div className="space-y-3">
-              <label className="block text-[10px] font-bold text-slate-400 font-mono uppercase">Strategy Hypothesis Goal</label>
-              <select 
-                value={proposingGoal}
-                onChange={(e) => setProposingGoal(e.target.value)}
-                disabled={proposeStatus === "running"}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 outline-none focus:border-purple-500 transition-all font-mono"
-              >
-                <option value="high-volatility">High Volatility Scaling 📊</option>
-                <option value="slippage-compensation">Asymmetric Slippage Cost Penalty ⚡</option>
-                <option value="latency-minimization">Low-Latency Sniper Micro-Bonus ⏱️</option>
-              </select>
-            </div>
+              <div className="space-y-3">
+                <label className="block text-[10px] font-bold text-slate-400 font-mono uppercase">Strategy / Core Goal</label>
+                <select 
+                  value={proposingGoal}
+                  onChange={(e) => setProposingGoal(e.target.value)}
+                  disabled={proposeStatus === "running"}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 outline-none focus:border-purple-500 transition-all font-mono"
+                >
+                  <option value="high-volatility">High Volatility Scaling (C++) 📊</option>
+                  <option value="slippage-compensation">Asymmetric Slippage Cost Penalty (C++) ⚡</option>
+                  <option value="latency-minimization">Low-Latency Sniper Micro-Bonus (C++) ⏱️</option>
+                  <option value="server-performance">Express Telemetry Logging (server.ts) 🚀</option>
+                  <option value="go-strategy-opt">Order Book Lock-Free Engine (Go) 🏎️</option>
+                  <option value="cpp-drl-throughput">SIMD Feature Extraction (C++ DRL) 🧠</option>
+                </select>
+
+                <div className="space-y-1.5 pt-2">
+                  <label className="block text-[10px] font-bold text-slate-400 font-mono uppercase">Optional Target File</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. server.ts or architectural_invariants.json"
+                    value={targetFile}
+                    onChange={(e) => setTargetFile(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-slate-200 font-mono outline-none focus:border-purple-500"
+                  />
+                </div>
+
+                {targetFile.includes("architectural_invariants.json") && (
+                  <div className="p-2.5 bg-rose-950/40 border border-rose-500/30 rounded-xl text-[10px] text-rose-300 space-y-1.5">
+                    <span className="font-bold flex items-center gap-1 text-rose-400">
+                      <AlertTriangle className="w-3.5 h-3.5" /> Protected Zone Detected!
+                    </span>
+                    <p>Automated proposals targeting architectural_invariants.json will be automatically blocked by the pipeline unless human authorization is toggled.</p>
+                    <label className="flex items-center gap-2 pt-1 font-mono text-[10px] text-slate-300 cursor-pointer">
+                      <input 
+                        type="checkbox" 
+                        checked={isHumanAuthorized} 
+                        onChange={(e) => setIsHumanAuthorized(e.target.checked)}
+                        className="rounded border-slate-700 bg-slate-900 text-purple-500"
+                      />
+                      Human Authorized Invariant Update (PR prefix: invariant:)
+                    </label>
+                  </div>
+                )}
+              </div>
 
             {proposeStatus !== "running" ? (
               <button

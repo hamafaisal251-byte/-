@@ -14,6 +14,8 @@ import {
   Activity 
 } from 'lucide-react';
 
+import TelegramNotificationPanel from './TelegramNotificationPanel';
+
 interface TriggerHistoryItem {
   id: string;
   timestamp: string;
@@ -503,6 +505,9 @@ export default function SafetyBackstopPanel() {
         </div>
 
       </div>
+
+      {/* Telegram Critical Event & Daily Summary Push Notification Hub */}
+      <TelegramNotificationPanel />
 
       {/* Safety Logs & Trigger Event History Panels */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6" id="safety-logs-grid">

@@ -49,6 +49,12 @@ const EXCLUDED_AREAS = [
     name: "Sovereign Mind Safety Boundary & Orchestrator Constraints",
     pattern: /(sovereignMind\.ts|internal\/ai\/sovereign_mind)/i,
     description: "Sovereign Mind orchestration safety boundary preventing autonomous trade execution or risk override."
+  },
+  {
+    id: "architectural-invariants-protection",
+    name: "Architectural Invariants & Regression Guard Baseline",
+    pattern: /(architectural_invariants\.json|scripts\/verify_invariants\.js)/i,
+    description: "Baseline architectural invariants file and validator preventing automated modification of system regression definitions."
   }
 ];
 

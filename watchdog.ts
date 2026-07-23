@@ -2,6 +2,7 @@ import fs from "fs";
 import path from "path";
 import { Pool } from "pg";
 import { safetyBackstop } from "./safetyBackstop";
+import { telegramNotifier } from "./telegramNotifier";
 
 const MAIN_SERVER_URL = "http://127.0.0.1:3000";
 const CHECK_INTERVAL_MS = 2000; // Ping every 2 seconds
@@ -135,10 +136,14 @@ async function monitorLoop() {
         const reason = `MAIN ENGINE UNRESPONSIVE: Failed heartbeat checks ${consecutiveFailures} consecutive times. Detached sentinel initiating failover.`;
         console.error(`[WATCHDOG] ${reason}`);
         
-        // Trigger Safe Mode
+        // Trigger Safe Mode & Emergency Halt
         safetyBackstop.triggerSafeMode(reason);
-        // Trigger Emergency Halt
         safetyBackstop.triggerEmergencyHalt(reason, { source: "WATCHDOG_DETECTION" });
+
+        telegramNotifier.sendCriticalEvent("watchdogAlert", "Main Process Unresponsive", reason, {
+          "Sequential Heartbeat Failures": consecutiveFailures,
+          "Action": "Detached sentinel initiated emergency failover"
+        });
 
         // Execute Halt policy on disk directly since server is frozen!
         await executeHaltPolicyOnDisk(safety.emergencyHaltPolicy, liveState);
