@@ -66,10 +66,10 @@ func (g *GeminiClient) GenerateText(ctx context.Context, prompt string, systemIn
 	// For search grounding or if SDK is nil, we route to the robust HTTP implementation 
 	// to avoid type incompatibilities with older versions of the official SDK.
 	if g.sdkClient == nil || searchGrounding {
-		return g.generateTextHTTP(ctx, "gemini-2.5-flash", prompt, systemInstruction, searchGrounding, nil)
+		return g.generateTextHTTP(ctx, "gemini-3.6-flash", prompt, systemInstruction, searchGrounding, nil)
 	}
 
-	modelName := "gemini-2.5-flash"
+	modelName := "gemini-3.6-flash"
 	model := g.sdkClient.GenerativeModel(modelName)
 	model.SetTemperature(0.2)
 
@@ -102,7 +102,7 @@ func (g *GeminiClient) GenerateText(ctx context.Context, prompt string, systemIn
 
 // GenerateStructured queries Gemini and returns a parsed JSON response matching the provided schema.
 func (g *GeminiClient) GenerateStructured(ctx context.Context, prompt string, systemInstruction string, schema map[string]interface{}, out interface{}) error {
-	modelName := "gemini-2.5-flash"
+	modelName := "gemini-3.6-flash"
 	
 	// Structured generation uses our robust HTTP proxy to ensure perfect schema serialization compatibility
 	resp, err := g.generateTextHTTP(ctx, modelName, prompt, systemInstruction, false, schema)

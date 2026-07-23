@@ -186,6 +186,7 @@ func SetupRouter(h *Handler) *gin.Engine {
 		protected.POST("/api/gemini/research", h.RunGeminiResearch)
 		protected.GET("/api/gemini/research/logs", h.GetGeminiResearchLogs)
 		protected.GET("/api/strategies/audit-logs", h.GetStrategyAuditLogs)
+		protected.GET("/api/system-implementation-status", h.GetSystemImplementationStatus)
 	}
 
 	// Serve React Static assets with SPA fallback for non-API routes

@@ -96,7 +96,7 @@ export default function CodePipelinePanel() {
     ]);
 
     const stepLogs = [
-      `[GEMINI-PROVIDER] Invoking models/gemini-2.5-flash for non-linear reward synthesis...`,
+      `[GEMINI-PROVIDER] Invoking models/gemini-3.6-flash for non-linear reward synthesis...`,
       `[GEMINI-PROVIDER] Optimization hypothesis generated! Extracting C++ strategy module...`,
       `[AST-SANITIZER] Initiating Step 1: Lexical parser scan for unapproved platform tokens...`,
       `[AST-SANITIZER] Success: Zero unsafe operating system keywords (system, popen, fork, socket) found.`,

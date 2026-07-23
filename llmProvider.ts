@@ -746,7 +746,7 @@ ${code}
 
     try {
       const ai = this.getGeminiClient();
-      const model = options.model || "gemini-2.5-flash";
+      const model = options.model || "gemini-3.6-flash";
       const config: any = {};
       
       if (options.systemInstruction) {
@@ -812,7 +812,7 @@ ${code}
 
     try {
       const ai = this.getGeminiClient();
-      const model = options.model || "gemini-2.5-flash";
+      const model = options.model || "gemini-3.6-flash";
       const config: any = {
         responseMimeType: "application/json",
         responseSchema: options.responseSchema
