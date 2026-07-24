@@ -11,6 +11,39 @@ import json
 import math
 import sys
 
+# Initialize Sentry Error Tracking with Credential Scrubbing
+SENTRY_DSN = os.environ.get("SENTRY_DSN")
+if SENTRY_DSN:
+    try:
+        import sentry_sdk
+        def scrub_sentry_event(event, hint):
+            def redact_dict(d):
+                if not isinstance(d, dict):
+                    return d
+                clean = {}
+                for k, v in d.items():
+                    lk = str(k).lower()
+                    if any(sec in lk for sec in ["token", "secret", "password", "key", "auth", "credential", "gemini"]):
+                        clean[k] = "[REDACTED]"
+                    elif isinstance(v, dict):
+                        clean[k] = redact_dict(v)
+                    elif isinstance(v, list):
+                        clean[k] = [redact_dict(x) if isinstance(x, dict) else x for x in v]
+                    else:
+                        clean[k] = v
+                return clean
+            return redact_dict(event)
+
+        sentry_sdk.init(
+            dsn=SENTRY_DSN,
+            environment=os.environ.get("ENVIRONMENT", "development"),
+            before_send=scrub_sentry_event,
+            traces_sample_rate=1.0,
+        )
+        print("[SENTRY] Python DRL Microservice Sentry tracking initialized with sensitive data scrubbing.")
+    except Exception as _sentry_err:
+        print(f"[SENTRY WARNING] Failed to initialize sentry_sdk in Python DRL service: {_sentry_err}")
+
 # Determine if we can run with heavy dependencies
 HAS_REQUIRED_LIBS = True
 try:

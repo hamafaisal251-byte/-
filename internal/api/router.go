@@ -30,6 +30,15 @@ func SetupRouter(h *Handler) *gin.Engine {
 	r.GET("/api/v1/health", h.HealthCheck)
 	r.GET("/api/ready", h.ReadyCheck)
 
+	// OpenAPI / Swagger Documentation
+	r.GET("/swagger/doc.json", h.ServeSwaggerJSON)
+	r.GET("/swagger/index.html", h.ServeSwaggerUI)
+	r.GET("/swagger", h.ServeSwaggerUI)
+	r.GET("/swagger/*any", h.ServeSwaggerUI)
+	r.GET("/api/docs", func(c *gin.Context) {
+		c.Redirect(http.StatusMovedPermanently, "/swagger/index.html")
+	})
+
 	// Public safety status & heartbeat
 	r.GET("/api/safety/state", h.GetSafetyState)
 	r.GET("/api/safety/heartbeat", h.GetSafetyHeartbeat)
