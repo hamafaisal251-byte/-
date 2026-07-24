@@ -40,9 +40,8 @@ export const SystemImplementationStatusPanel: React.FC = () => {
   const [testRunning, setTestRunning] = useState<boolean>(false);
   const [testOutput, setTestOutput] = useState<string[] | null>(null);
 
-  const fetchHealthMatrix = async () => {
-    setLoading(true);
-    setError(null);
+  const fetchHealthMatrix = async (retryCount = 0) => {
+    if (!summary) setLoading(true);
     try {
       const res = await fetch('/api/system-implementation-status');
       if (!res.ok) {
@@ -52,12 +51,17 @@ export const SystemImplementationStatusPanel: React.FC = () => {
       if (data.success) {
         setSummary(data.summary);
         setComponents(data.components || []);
+        setError(null);
       } else {
         throw new Error(data.error || 'Failed to parse implementation health report');
       }
     } catch (err: any) {
-      console.error('[HEALTH-MATRIX] Fetch error:', err.message);
-      setError(err.message);
+      console.warn('[HEALTH-MATRIX] Fetch attempt failed:', err.message);
+      if (retryCount < 3) {
+        setTimeout(() => fetchHealthMatrix(retryCount + 1), 1000);
+      } else {
+        setError(err.message);
+      }
     } finally {
       setLoading(false);
     }
@@ -65,7 +69,9 @@ export const SystemImplementationStatusPanel: React.FC = () => {
 
   useEffect(() => {
     fetchHealthMatrix();
-    const interval = setInterval(fetchHealthMatrix, 60000);
+    const interval = setInterval(() => {
+      fetchHealthMatrix();
+    }, 30000);
     return () => clearInterval(interval);
   }, []);
 
@@ -194,7 +200,7 @@ export const SystemImplementationStatusPanel: React.FC = () => {
             {testRunning ? 'Simulating Fault...' : 'Test Safety Watchdog'}
           </button>
           <button
-            onClick={fetchHealthMatrix}
+            onClick={() => fetchHealthMatrix()}
             disabled={loading}
             className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-md transition-colors disabled:opacity-50"
           >
@@ -212,7 +218,7 @@ export const SystemImplementationStatusPanel: React.FC = () => {
             <span>Connection issue during diagnostic scan: <strong>{error}</strong>. Reconnecting...</span>
           </div>
           <button
-            onClick={fetchHealthMatrix}
+            onClick={() => fetchHealthMatrix()}
             disabled={loading}
             className="flex items-center gap-1.5 px-3 py-1 bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 border border-amber-500/40 rounded transition-colors"
           >

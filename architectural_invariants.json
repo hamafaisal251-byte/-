@@ -1,0 +1,52 @@
+{
+  "version": "1.0.0",
+  "lastUpdated": "2026-07-23T13:55:00Z",
+  "updatedBy": "human-admin",
+  "description": "Baseline architectural invariants for Sovereign FX Trading Bot (NEXUS)",
+  "invariants": [
+    {
+      "id": "package_scripts_no_dev_reversion",
+      "name": "Package Scripts Architecture Guard",
+      "description": "package.json dev/build/start scripts must maintain compiled server and node dist execution and never revert to raw unoptimized tsx server.ts",
+      "file": "package.json",
+      "ruleType": "script_check",
+      "forbiddenPatterns": ["mock_server.js", "http-server"],
+      "requiredPatterns": []
+    },
+    {
+      "id": "no_stray_installer_scripts",
+      "name": "No Stray Installer/Utility Scripts in Root",
+      "description": "Files like get-pip.py or stray installer/utility scripts unrelated to project must never exist in repository root",
+      "file": ".",
+      "ruleType": "root_file_blacklist",
+      "blacklistedFiles": ["get-pip.py", "pip-installer.py", "install-pip.sh", "get-pip.sh"],
+      "maxFileSizeMb": 5
+    },
+    {
+      "id": "evolution_validator_real_valgrind",
+      "name": "Evolution Validator Real Valgrind Check",
+      "description": "evolution_validator.sh must contain a real valgrind invocation and must never be mocked with hardcoded _sim_exit=0",
+      "file": "evolution_validator.sh",
+      "ruleType": "file_contains",
+      "requiredPatterns": ["valgrind --tool=memcheck"],
+      "forbiddenPatterns": ["_sim_exit=0"]
+    },
+    {
+      "id": "protected_zones_never_shrink",
+      "name": "Protected Zones Integrity Guard",
+      "description": "The protected-zones EXCLUDED_AREAS list in audit_and_repair.js must never shrink below baseline protected areas count",
+      "file": "scripts/audit_and_repair.js",
+      "ruleType": "protected_zones_min_count",
+      "minZoneCount": 5,
+      "requiredZoneIds": ["trading-execution", "security-auth", "risk-halt", "sovereign-mind-boundary", "architectural-invariants-protection"]
+    },
+    {
+      "id": "ingress_port_3000_compliance",
+      "name": "Ingress Port 3000 Invariant",
+      "description": "Server entrypoints and Vite configuration files must enforce port 3000 and not revert to 3001 or 5173",
+      "file": "server.ts",
+      "ruleType": "port_check",
+      "requiredPort": 3000
+    }
+  ]
+}

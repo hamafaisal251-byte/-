@@ -19,3 +19,5 @@ get-pip.py
 !staged_pr.json
 !postgres_state.json
 !safety_state.json
+!architectural_invariants.json
+!telegram_config.json

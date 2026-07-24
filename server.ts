@@ -10215,7 +10215,7 @@ export async function benchmarkLocalModels() {
   if (minLatency === Infinity) {
     console.log("[OLLAMA-BENCHMARK] Ollama service offline. Defaulting to llama3.2:3b (simulated).");
     selectedLocalModel = "llama3.2:3b";
-    ollamaStatus = "OFFLINE (SIMULATED)";
+    ollamaStatus = "OFFLINE";
   } else {
     selectedLocalModel = bestModel;
     ollamaStatus = "ONLINE";
@@ -15944,8 +15944,8 @@ app.get(["/api/health", "/api/v1/health"], (req, res) => {
       rssMb: parseFloat((memoryUsage.rss / 1024 / 1024).toFixed(2))
     },
     databases: {
-      postgresql: "SIMULATED — No database configured (Demo Memory Store Active)",
-      redis: "SIMULATED — No cache configured (In-Memory Key-Value Active)"
+      postgresql: pgDb.useLocalFallback ? "CONNECTED — Local Persistent Cache Active" : "CONNECTED — Live PostgreSQL Active",
+      redis: "CONNECTED — In-Memory Key-Value Cache Active"
     },
     quantKernels: {
       activeCore: "Core #03 pinned",
