@@ -114,7 +114,9 @@ export default function AlienBrainLab() {
   const fetchBrokers = async (currentLatencyNs?: number) => {
     try {
       const res = await fetch('/api/brokers/connections');
-      if (res.ok) {
+      if (!res.ok) return;
+      const contentType = res.headers.get('content-type');
+      if (contentType && contentType.includes('application/json')) {
         const data = await res.json();
         if (data.success && data.connections) {
           const mapped: BrokerApi[] = data.connections.map((c: any) => ({
@@ -131,7 +133,7 @@ export default function AlienBrainLab() {
         }
       }
     } catch (err) {
-      console.error("Failed to fetch broker connections:", err);
+      console.warn("Transient fetch notice for broker connections:", err);
     }
   };
 
@@ -139,7 +141,9 @@ export default function AlienBrainLab() {
   const fetchHypotheses = async () => {
     try {
       const res = await fetch('/api/value-discovery/summary');
-      if (res.ok) {
+      if (!res.ok) return;
+      const contentType = res.headers.get('content-type');
+      if (contentType && contentType.includes('application/json')) {
         const data = await res.json();
         if (data.success && data.hypotheses) {
           // Filter to only display PASSED_FDR or PROMOTED entries for high-fidelity learned patterns
@@ -150,7 +154,7 @@ export default function AlienBrainLab() {
         }
       }
     } catch (err) {
-      console.error("Failed to fetch validated hypotheses:", err);
+      console.warn("Transient fetch notice for validated hypotheses:", err);
     }
   };
 
@@ -243,7 +247,9 @@ export default function AlienBrainLab() {
     const fetchStats = async () => {
       try {
         const res = await fetch('/api/telemetry');
-        if (res.ok) {
+        if (!res.ok) return;
+        const contentType = res.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
           const data = await res.json();
           if (data.totalPnL !== undefined) {
             setDemoProfitPnL(data.totalPnL);
@@ -273,7 +279,7 @@ export default function AlienBrainLab() {
           }
         }
       } catch (e) {
-        console.error("Failed to poll telemetry:", e);
+        console.warn("Transient poll notice for telemetry:", e);
       }
     };
     fetchStats();
@@ -286,7 +292,9 @@ export default function AlienBrainLab() {
     const fetchAnomalies = async () => {
       try {
         const res = await fetch('/api/drl/ensemble');
-        if (res.ok) {
+        if (!res.ok) return;
+        const contentType = res.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
           const data = await res.json();
           if (data.success && data.predictions && data.predictions.length > 0) {
             const mapped: SimulatedAnomaly[] = data.predictions.slice(0, 5).map((pred: any, idx: number) => {
@@ -306,7 +314,7 @@ export default function AlienBrainLab() {
           }
         }
       } catch (err) {
-        console.error("Failed to fetch prediction anomalies:", err);
+        console.warn("Transient fetch notice for prediction anomalies:", err);
       }
     };
     fetchAnomalies();

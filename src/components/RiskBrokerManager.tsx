@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
+import { ExecutionAttributionPanel } from './ExecutionAttributionPanel';
 import { 
   ShieldCheck, Database, Key, CheckCircle, AlertTriangle, Play, 
   RefreshCw, Layers, Lock, TrendingUp, 
@@ -192,9 +193,13 @@ export default function RiskBrokerManager() {
   const fetchCustomConnectors = async () => {
     try {
       const res = await fetch('/api/custom-connectors');
-      const data = await res.json();
-      if (data.success) {
-        setCustomConnectors(data.connectors);
+      if (!res.ok) return;
+      const contentType = res.headers.get('content-type');
+      if (contentType && contentType.includes('application/json')) {
+        const data = await res.json();
+        if (data.success) {
+          setCustomConnectors(data.connectors || []);
+        }
       }
     } catch (e) {
       console.error("Failed to fetch custom connectors:", e);
@@ -204,9 +209,13 @@ export default function RiskBrokerManager() {
   const fetchConnections = async () => {
     try {
       const res = await fetch('/api/brokers/connections');
-      const data = await res.json();
-      if (data.success) {
-        setConnections(data.connections);
+      if (!res.ok) return;
+      const contentType = res.headers.get('content-type');
+      if (contentType && contentType.includes('application/json')) {
+        const data = await res.json();
+        if (data.success) {
+          setConnections(data.connections || []);
+        }
       }
     } catch (e) {
       console.error("Failed to fetch connections:", e);
@@ -216,9 +225,13 @@ export default function RiskBrokerManager() {
   const fetchNewsPlatforms = async () => {
     try {
       const res = await fetch('/api/news/platforms');
-      const data = await res.json();
-      if (data.success) {
-        setNewsPlatforms(data.platforms);
+      if (!res.ok) return;
+      const contentType = res.headers.get('content-type');
+      if (contentType && contentType.includes('application/json')) {
+        const data = await res.json();
+        if (data.success) {
+          setNewsPlatforms(data.platforms || []);
+        }
       }
     } catch (e) {
       console.error("Failed to fetch news platforms:", e);
@@ -228,45 +241,57 @@ export default function RiskBrokerManager() {
   const fetchNewsFeed = async () => {
     try {
       const res = await fetch('/api/news/feed');
-      const data = await res.json();
-      if (data.success) {
-        setNewsEvents(data.events || []);
-        setNewsStats({
-          minutesUntilHighImpactNews: data.minutesUntilHighImpactNews,
-          sentimentScore: data.sentimentScore,
-          influenceMultiplier: data.influenceMultiplier
-        });
-        setHasCalendarFeed(data.hasCalendarFeed);
-        setSentimentState(data.sentimentState || null);
-        setNewsFeed(data.liveFeed || []);
+      if (!res.ok) return;
+      const contentType = res.headers.get('content-type');
+      if (contentType && contentType.includes('application/json')) {
+        const data = await res.json();
+        if (data.success) {
+          setNewsEvents(data.events || []);
+          setNewsStats({
+            minutesUntilHighImpactNews: data.minutesUntilHighImpactNews,
+            sentimentScore: data.sentimentScore,
+            influenceMultiplier: data.influenceMultiplier
+          });
+          setHasCalendarFeed(data.hasCalendarFeed);
+          setSentimentState(data.sentimentState || null);
+          setNewsFeed(data.liveFeed || []);
+        }
       }
     } catch (e) {
-      console.error("Failed to fetch news feed:", e);
+      console.warn("Transient fetch notice for news feed:", e);
     }
   };
 
   const fetchFixStatus = async () => {
     try {
       const res = await fetch('/api/fix/status');
-      const data = await res.json();
-      if (data.success) {
-        setFixStatus(data);
+      if (!res.ok) return;
+      const contentType = res.headers.get('content-type');
+      if (contentType && contentType.includes('application/json')) {
+        const data = await res.json();
+        if (data.success) {
+          setFixStatus(data);
+        }
       }
     } catch (e) {
-      console.error("Failed to fetch FIX status:", e);
+      console.warn("Transient fetch notice for FIX status:", e);
     }
   };
 
   const fetchSecurityInfo = async () => {
     try {
       const res = await fetch('/api/security/info');
-      const data = await res.json();
-      if (data.success) {
-        setSecurityInfo(data);
-        setFormAllowedIps(data.allowedIps.join(', '));
+      if (!res.ok) return;
+      const contentType = res.headers.get('content-type');
+      if (contentType && contentType.includes('application/json')) {
+        const data = await res.json();
+        if (data.success) {
+          setSecurityInfo(data);
+          setFormAllowedIps(data.allowedIps ? data.allowedIps.join(', ') : '');
+        }
       }
     } catch (e) {
-      console.error("Failed to fetch security info:", e);
+      console.warn("Transient fetch notice for security info:", e);
     }
   };
 
@@ -279,44 +304,62 @@ export default function RiskBrokerManager() {
   const fetchLivePositions = async () => {
     try {
       const res = await fetch(`/api/positions?environment=${selectedEnvRef.current}`);
-      const data = await res.json();
-      if (data.success) {
-        setPositions(data.positions);
-        setAccountStats(data.accountStats);
+      if (res.ok) {
+        const contentType = res.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+          const data = await res.json();
+          if (data.success) {
+            setPositions(data.positions || []);
+            setAccountStats(data.accountStats || null);
+          }
+        }
       }
       
       const telRes = await fetch('/api/telemetry');
-      const telData = await telRes.json();
-      if (telData.status === "ok") {
-        setIsShockAbsorberActive(telData.isShockAbsorberActive);
-        setShockAbsorberLevel(telData.shockAbsorberLevel);
+      if (telRes.ok) {
+        const telContentType = telRes.headers.get('content-type');
+        if (telContentType && telContentType.includes('application/json')) {
+          const telData = await telRes.json();
+          if (telData.status === "ok") {
+            setIsShockAbsorberActive(telData.isShockAbsorberActive);
+            setShockAbsorberLevel(telData.shockAbsorberLevel);
+          }
+        }
       }
     } catch (e) {
-      console.error("Failed to fetch live positions from server:", e);
+      console.warn("Transient fetch notice for live positions:", e);
     }
   };
 
   const fetchStrategiesConfig = async () => {
     try {
       const res = await fetch('/api/strategies/config');
-      const data = await res.json();
-      if (data.success) {
-        setStrategiesConfig(data.config);
+      if (!res.ok) return;
+      const contentType = res.headers.get('content-type');
+      if (contentType && contentType.includes('application/json')) {
+        const data = await res.json();
+        if (data.success) {
+          setStrategiesConfig(data.config || {});
+        }
       }
     } catch (e) {
-      console.error("Failed to fetch strategies config from server:", e);
+      console.warn("Transient fetch notice for strategies config:", e);
     }
   };
 
   const fetchStrategyAuditLogs = async () => {
     try {
       const res = await fetch('/api/strategies/audit-logs');
-      const data = await res.json();
-      if (data.success) {
-        setStrategyAuditLogs(data.logs);
+      if (!res.ok) return;
+      const contentType = res.headers.get('content-type');
+      if (contentType && contentType.includes('application/json')) {
+        const data = await res.json();
+        if (data.success) {
+          setStrategyAuditLogs(data.logs || []);
+        }
       }
     } catch (e) {
-      console.error("Failed to fetch strategy audit logs from server:", e);
+      console.warn("Transient fetch notice for strategy audit logs:", e);
     }
   };
 
@@ -593,15 +636,26 @@ export default function RiskBrokerManager() {
           environment: selectedEnvironment
         })
       });
-      const data = await response.json();
-      if (response.ok && data.success) {
-        fetchLivePositions();
-        fetchStrategyAuditLogs();
+      const contentType = response.headers.get('content-type');
+      if (contentType && contentType.includes('application/json')) {
+        const data = await response.json();
+        if (response.ok && data.success) {
+          fetchLivePositions();
+          fetchStrategyAuditLogs();
+        } else {
+          alert("فەرمانەکە ڕەتکرایەوە لەلایەن هێڵی مەترسی: " + (data.error || "مەترسی زۆر بەرزە یان سیستەمەکە قوفڵە."));
+        }
       } else {
-        alert("فەرمانەکە ڕەتکرایەوە لەلایەن هێڵی مەترسی: " + (data.error || "مەترسی زۆر بەرزە یان سیستەمەکە قوفڵە."));
+        if (response.ok) {
+          fetchLivePositions();
+          fetchStrategyAuditLogs();
+        } else {
+          alert("سیستەمەکە وەڵامی ناکارای دایەوە لە کاتی دروستکردنی فەرمان.");
+        }
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error("Failed to create order:", err);
+      alert("هەڵە لە دروستکردنی فەرمان: " + (err?.message || "پەیوەندی پچڕا."));
     }
   };
 
@@ -2731,6 +2785,11 @@ export default function RiskBrokerManager() {
             </button>
           </form>
         </div>
+      </div>
+
+      {/* 5. EXECUTION QUALITY & ATTRIBUTION ANALYTICS */}
+      <div className="lg:col-span-12">
+        <ExecutionAttributionPanel />
       </div>
 
     </div>
