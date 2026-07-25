@@ -4,7 +4,7 @@
  */
 
 import { useState, useEffect } from 'react';
-import { Cpu, Shuffle, Target, ShieldAlert, Sliders, Zap, Activity, Info, ShieldCheck, Brain, Award, BarChart3, ArrowUpDown, GitPullRequest } from 'lucide-react';
+import { Cpu, Shuffle, Target, ShieldAlert, Sliders, Zap, Activity, Info, ShieldCheck, Brain, Award, BarChart3, ArrowUpDown, GitPullRequest, Droplets } from 'lucide-react';
 import ArchitectureMap from './components/ArchitectureMap';
 import RewardPlayground from './components/RewardPlayground';
 import TelemetrySimulator from './components/TelemetrySimulator';
@@ -23,9 +23,10 @@ import CodePipelinePanel from './components/CodePipelinePanel';
 import ModelBenchmark from './components/ModelBenchmark';
 import SovereignMindPanel from './components/SovereignMindPanel';
 import SystemImplementationStatusPanel from './components/SystemImplementationStatusPanel';
+import { LiquidityManagerPanel } from './components/LiquidityManagerPanel';
 import { EvolutionCandidate } from './types/quant';
 
-type TabId = 'architecture' | 'sovereign-mind' | 'telemetry' | 'evolution' | 'risk-broker' | 'portfolio-risk' | 'alien-brain' | 'reward-playground' | 'backtest-arena' | 'ai-pilot-lab' | 'self-improvement-log' | 'arbitrage' | 'safety-backstop' | 'ensemble' | 'demo-live' | 'code-pipeline' | 'model-benchmark' | 'system-status';
+type TabId = 'architecture' | 'sovereign-mind' | 'telemetry' | 'evolution' | 'risk-broker' | 'portfolio-risk' | 'alien-brain' | 'reward-playground' | 'backtest-arena' | 'ai-pilot-lab' | 'self-improvement-log' | 'arbitrage' | 'safety-backstop' | 'ensemble' | 'demo-live' | 'code-pipeline' | 'model-benchmark' | 'system-status' | 'liquidity-manager';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<TabId>('architecture');
@@ -472,6 +473,20 @@ export default function App() {
             <span className="font-bold">14. دۆخی جێبەجێکردنی سیستەم | System Implementation Status</span>
           </button>
 
+          {/* Tab 15: Liquidity & Manipulation Resistance */}
+          <button
+            id="tab-btn-liquidity-manager"
+            onClick={() => setActiveTab('liquidity-manager')}
+            className={`px-4 py-2.5 rounded-lg text-xs font-bold font-mono flex items-center space-x-2 border transition-all cursor-pointer whitespace-nowrap ${
+              activeTab === 'liquidity-manager'
+                ? 'bg-slate-900 border-cyan-500 text-cyan-200 shadow-lg shadow-cyan-950/40 ring-1 ring-cyan-500/30'
+                : 'bg-transparent border-transparent text-cyan-400 hover:text-cyan-300'
+            }`}
+          >
+            <Droplets className="w-4 h-4 shrink-0 text-cyan-400 animate-pulse" />
+            <span className="font-bold">15. نەختینەیی و دژی دەستکاری | Liquidity & Anti-Manipulation</span>
+          </button>
+
         </div>
       </nav>
 
@@ -577,6 +592,7 @@ export default function App() {
           {activeTab === 'code-pipeline' && <CodePipelinePanel />}
           {activeTab === 'model-benchmark' && <ModelBenchmark />}
           {activeTab === 'system-status' && <SystemImplementationStatusPanel />}
+          {activeTab === 'liquidity-manager' && <LiquidityManagerPanel />}
         </div>
 
       </main>

@@ -79,3 +79,23 @@ export interface ArchitectureComponent {
   productionCode: string;
   language: 'cpp' | 'go' | 'bash' | 'json';
 }
+
+export interface InstrumentLiquidityRecord {
+  id?: number;
+  timestamp: string;
+  instrument: string;
+  compositeScore: number;
+  spreadScore: number;
+  volumeScore: number;
+  slippageScore: number;
+  depthScore: number;
+  dataSourceType: 'FULL_DATA' | 'TICK_PROXY_ONLY';
+  confidenceLevel: 'HIGH' | 'LOW_PROXY';
+  avgSpreadPips: number;
+  volume24hOrTicks: number;
+  avgRealizedSlippagePips: number;
+  depthUsd: number;
+  allocationMultiplier: number;
+  allocationStatus: 'FULL' | 'REDUCED' | 'DEPRIORITIZED';
+  note: string;
+}

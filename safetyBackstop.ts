@@ -7,6 +7,12 @@ export interface InstrumentEdgeInfo {
   sharpe: number;
   tradesCount: number;
   demonstratedEdgeScore: number;
+  liquidityScore?: number;
+  dataSourceType?: "FULL_DATA" | "TICK_PROXY_ONLY";
+  liquidityConfidence?: "HIGH" | "LOW_PROXY";
+  liquidityMultiplier?: number;
+  avgSpreadPips?: number;
+  avgRealizedSlippagePips?: number;
   allocationStatus: "FULL" | "REDUCED" | "DEPRIORITIZED";
   note: string;
 }
