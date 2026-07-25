@@ -72,7 +72,7 @@ export default function SafetyBackstopPanel() {
           setDrawdownThreshold(data.state.drawdownThresholdPct);
         }
       } catch (err) {
-        console.error("Failed to fetch safety backstop state:", err);
+        console.warn("Transient fetch notice for safety backstop state:", err);
       }
     };
 

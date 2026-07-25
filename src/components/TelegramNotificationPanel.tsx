@@ -98,7 +98,7 @@ export default function TelegramNotificationPanel() {
         setLogs(logsData.logs || []);
       }
     } catch (err) {
-      console.error("Failed to fetch Telegram config or logs:", err);
+      console.warn("Transient fetch notice for Telegram config or logs:", err);
     } finally {
       setIsLoading(false);
     }

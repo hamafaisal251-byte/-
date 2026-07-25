@@ -582,8 +582,8 @@ export default function ArbitragePanel() {
                         <span className="text-[9px] text-slate-500 font-mono">({opp.pair})</span>
                       </div>
                       <div className="text-[10px] text-slate-500 font-mono flex items-center gap-2">
-                        <span>Buy: ${opp.buyPrice.toLocaleString()}</span>
-                        <span>Sell: ${opp.sellPrice.toLocaleString()}</span>
+                        <span>Buy: ${(opp.buyPrice ?? 0).toLocaleString()}</span>
+                        <span>Sell: ${(opp.sellPrice ?? 0).toLocaleString()}</span>
                       </div>
                       <div className="text-[9px] text-slate-600 font-mono">{new Date(opp.timestamp).toLocaleTimeString()}</div>
                     </div>

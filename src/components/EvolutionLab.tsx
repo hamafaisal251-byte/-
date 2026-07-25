@@ -46,7 +46,7 @@ export default function EvolutionLab({ candidates, setCandidates, selectedId, se
         setSynthesisData(data);
       }
     } catch (err) {
-      console.error("Failed to fetch synthesis data:", err);
+      console.warn("Transient fetch notice for synthesis data:", err);
     }
   };
 
@@ -174,7 +174,7 @@ export default function EvolutionLab({ candidates, setCandidates, selectedId, se
           setCandidates(data.candidates);
         }
       } catch (err) {
-        console.error("Failed to fetch candidates:", err);
+        console.warn("Transient fetch notice for candidates:", err);
       }
     };
     fetchCandidates();

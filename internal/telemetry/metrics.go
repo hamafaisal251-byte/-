@@ -2,72 +2,186 @@ package telemetry
 
 import (
 	"fmt"
-	"net/http"
-	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
-type MetricsCollector struct {
-	mu                       sync.RWMutex
-	httpRequestsTotal        map[string]uint64
-	httpErrorsTotal          map[string]uint64
-	tradesExecutedTotal      map[string]uint64
-	drlTrainingDurationSec   float64
-	dbActiveConnections      int
-	dbMaxConnections         int
-	dbIdleConnections        int
-	requestLatencySumSec     float64
-	requestLatencyCount      uint64
+var (
+	// HTTP Metrics
+	HTTPRequestsTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "http_requests_total",
+			Help: "Total number of processed HTTP requests.",
+		},
+		[]string{"method", "endpoint", "status"},
+	)
+
+	HTTPRequestDurationSeconds = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "http_request_duration_seconds",
+			Help:    "HTTP request latency in seconds.",
+			Buckets: []float64{0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10},
+		},
+		[]string{"method", "endpoint"},
+	)
+
+	HTTPErrorsTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "http_requests_errors_total",
+			Help: "Total number of HTTP server or client errors.",
+		},
+		[]string{"endpoint", "status"},
+	)
+
+	// Trading & Risk Metrics
+	TradesExecutedTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "trades_executed_total",
+			Help: "Total number of executed trades across all brokers.",
+		},
+		[]string{"broker", "symbol", "side", "outcome"},
+	)
+
+	PortfolioDrawdownPct = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "portfolio_drawdown_pct",
+			Help: "Current portfolio drawdown percentage.",
+		},
+	)
+
+	PortfolioVarUSD = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "portfolio_var_usd",
+			Help: "Current Value-at-Risk (99% 1-day VaR) in USD.",
+		},
+	)
+
+	PortfolioSharpeRatio = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "portfolio_sharpe_ratio",
+			Help: "Current annualized portfolio Sharpe ratio.",
+		},
+	)
+
+	SilentLockTriggersTotal = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name: "silent_lock_triggers_total",
+			Help: "Total count of Silent Lock triggers.",
+		},
+	)
+
+	EmergencyHaltTriggersTotal = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name: "emergency_halt_triggers_total",
+			Help: "Total count of Emergency Halt / Safe Mode triggers.",
+		},
+	)
+
+	// DRL Metrics
+	DRLTrainingCycleDurationSeconds = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "drl_training_cycle_duration_seconds",
+			Help: "Last recorded DRL training cycle duration in seconds.",
+		},
+	)
+
+	// DB Metrics
+	DBActiveConnections = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "db_pool_active_connections",
+			Help: "Current active database connections in pool.",
+		},
+	)
+
+	DBIdleConnections = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "db_pool_idle_connections",
+			Help: "Current idle database connections in pool.",
+		},
+	)
+
+	DBMaxConnections = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "db_pool_max_connections",
+			Help: "Maximum configured database pool size.",
+		},
+	)
+)
+
+func init() {
+	prometheus.MustRegister(
+		HTTPRequestsTotal,
+		HTTPRequestDurationSeconds,
+		HTTPErrorsTotal,
+		TradesExecutedTotal,
+		PortfolioDrawdownPct,
+		PortfolioVarUSD,
+		PortfolioSharpeRatio,
+		SilentLockTriggersTotal,
+		EmergencyHaltTriggersTotal,
+		DRLTrainingCycleDurationSeconds,
+		DBActiveConnections,
+		DBIdleConnections,
+		DBMaxConnections,
+	)
+
+	DBMaxConnections.Set(20)
 }
 
-var GlobalMetrics = &MetricsCollector{
-	httpRequestsTotal:   make(map[string]uint64),
-	httpErrorsTotal:     make(map[string]uint64),
-	tradesExecutedTotal: make(map[string]uint64),
-	dbMaxConnections:    20,
-}
+// RecordHTTPRequest updates Prometheus HTTP metrics
+func RecordHTTPRequest(method, endpoint string, statusCode int, durationSec float64) {
+	statusStr := fmt.Sprintf("%d", statusCode)
+	HTTPRequestsTotal.WithLabelValues(method, endpoint, statusStr).Inc()
+	HTTPRequestDurationSeconds.WithLabelValues(method, endpoint).Observe(durationSec)
 
-func (m *MetricsCollector) RecordHTTPRequest(method, endpoint string, statusCode int, durationSec float64) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	key := fmt.Sprintf(`method="%s",endpoint="%s",status="%d"`, method, endpoint, statusCode)
-	m.httpRequestsTotal[key]++
-
-	if statusCode >= 500 {
-		errKey := fmt.Sprintf(`endpoint="%s"`, endpoint)
-		m.httpErrorsTotal[errKey]++
+	if statusCode >= 400 {
+		HTTPErrorsTotal.WithLabelValues(endpoint, statusStr).Inc()
 	}
-
-	m.requestLatencySumSec += durationSec
-	atomic.AddUint64(&m.requestLatencyCount, 1)
 }
 
-func (m *MetricsCollector) RecordTradeExecuted(broker, symbol, side string) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	key := fmt.Sprintf(`broker="%s",symbol="%s",side="%s"`, broker, symbol, side)
-	m.tradesExecutedTotal[key]++
+// RecordTradeExecuted records a trade execution with default outcome
+func RecordTradeExecuted(broker, symbol, side string) {
+	RecordTradeExecutedWithOutcome(broker, symbol, side, "EXECUTED")
 }
 
-func (m *MetricsCollector) SetDRLTrainingDuration(sec float64) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.drlTrainingDurationSec = sec
+// RecordTradeExecutedWithOutcome records a trade with explicit outcome
+func RecordTradeExecutedWithOutcome(broker, symbol, side, outcome string) {
+	TradesExecutedTotal.WithLabelValues(broker, symbol, side, outcome).Inc()
 }
 
-func (m *MetricsCollector) SetDBPoolStats(active, idle, max int) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.dbActiveConnections = active
-	m.dbIdleConnections = idle
-	m.dbMaxConnections = max
+// SetPortfolioRiskMetrics updates real portfolio risk gauge values
+func SetPortfolioRiskMetrics(drawdownPct, varUsd, sharpe float64) {
+	PortfolioDrawdownPct.Set(drawdownPct)
+	PortfolioVarUSD.Set(varUsd)
+	PortfolioSharpeRatio.Set(sharpe)
 }
 
+// RecordSilentLockTrigger increments Silent Lock counter
+func RecordSilentLockTrigger() {
+	SilentLockTriggersTotal.Inc()
+}
+
+// RecordEmergencyHaltTrigger increments Emergency Halt counter
+func RecordEmergencyHaltTrigger() {
+	EmergencyHaltTriggersTotal.Inc()
+}
+
+// SetDRLTrainingDuration sets DRL training duration metric
+func SetDRLTrainingDuration(sec float64) {
+	DRLTrainingCycleDurationSeconds.Set(sec)
+}
+
+// SetDBPoolStats updates database connection pool gauges
+func SetDBPoolStats(active, idle, max int) {
+	DBActiveConnections.Set(float64(active))
+	DBIdleConnections.Set(float64(idle))
+	DBMaxConnections.Set(float64(max))
+}
+
+// PrometheusMiddleware returns a Gin middleware for request tracking
 func PrometheusMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		start := time.Now()
@@ -76,50 +190,14 @@ func PrometheusMiddleware() gin.HandlerFunc {
 
 		endpoint := c.FullPath()
 		if endpoint == "" {
-			endpoint = "unknown"
+			endpoint = c.Request.URL.Path
 		}
 
-		GlobalMetrics.RecordHTTPRequest(c.Request.Method, endpoint, c.Writer.Status(), duration)
+		RecordHTTPRequest(c.Request.Method, endpoint, c.Writer.Status(), duration)
 	}
 }
 
+// ServePrometheusMetrics delegates to prometheus/client_golang promhttp handler
 func ServePrometheusMetrics(c *gin.Context) {
-	GlobalMetrics.mu.RLock()
-	defer GlobalMetrics.mu.RUnlock()
-
-	res := "# HELP http_requests_total Total number of processed HTTP requests.\n"
-	res += "# TYPE http_requests_total counter\n"
-	for labels, count := range GlobalMetrics.httpRequestsTotal {
-		res += fmt.Sprintf("http_requests_total{%s} %d\n", labels, count)
-	}
-
-	res += "\n# HELP http_requests_errors_total Total number of HTTP 5xx server errors.\n"
-	res += "# TYPE http_requests_errors_total counter\n"
-	for labels, count := range GlobalMetrics.httpErrorsTotal {
-		res += fmt.Sprintf("http_requests_errors_total{%s} %d\n", labels, count)
-	}
-
-	res += "\n# HELP trades_executed_total Total number of executed trades across all brokers.\n"
-	res += "# TYPE trades_executed_total counter\n"
-	for labels, count := range GlobalMetrics.tradesExecutedTotal {
-		res += fmt.Sprintf("trades_executed_total{%s} %d\n", labels, count)
-	}
-
-	res += "\n# HELP drl_training_cycle_duration_seconds Last recorded DRL training cycle duration in seconds.\n"
-	res += "# TYPE drl_training_cycle_duration_seconds gauge\n"
-	res += fmt.Sprintf("drl_training_cycle_duration_seconds %.4f\n", GlobalMetrics.drlTrainingDurationSec)
-
-	res += "\n# HELP db_pool_active_connections Current active database connections in pool.\n"
-	res += "# TYPE db_pool_active_connections gauge\n"
-	res += fmt.Sprintf("db_pool_active_connections %d\n", GlobalMetrics.dbActiveConnections)
-
-	res += "\n# HELP db_pool_idle_connections Current idle database connections in pool.\n"
-	res += "# TYPE db_pool_idle_connections gauge\n"
-	res += fmt.Sprintf("db_pool_idle_connections %d\n", GlobalMetrics.dbIdleConnections)
-
-	res += "\n# HELP db_pool_max_connections Maximum configured database pool size.\n"
-	res += "# TYPE db_pool_max_connections gauge\n"
-	res += fmt.Sprintf("db_pool_max_connections %d\n", GlobalMetrics.dbMaxConnections)
-
-	c.Data(http.StatusOK, "text/plain; version=0.0.4; charset=utf-8", []byte(res))
+	promhttp.Handler().ServeHTTP(c.Writer, c.Request)
 }

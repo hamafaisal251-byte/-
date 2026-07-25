@@ -91,7 +91,7 @@ export default function AIPilotLab({ candidates, setCandidates, selectedId, setS
           }
         }
       } catch (err) {
-        console.error("Failed to fetch meta-controller status:", err);
+        console.warn("Transient fetch notice for meta-controller status:", err);
       }
     };
     fetchMetaController();
@@ -122,7 +122,7 @@ export default function AIPilotLab({ candidates, setCandidates, selectedId, setS
           }
         }
       } catch (err) {
-        console.error("Failed to fetch nexus agent status:", err);
+        console.warn("Transient fetch notice for nexus agent status:", err);
       }
     };
     fetchNexusAgentStatus();

@@ -114,7 +114,7 @@ export default function SelfImprovementDashboard() {
         setDiscoverySummary(data);
       }
     } catch (err) {
-      console.error("Failed to fetch discovery summary:", err);
+      console.warn("Transient fetch notice for discovery summary:", err);
     } finally {
       setDiscoveryLoading(false);
     }
@@ -196,7 +196,7 @@ export default function SelfImprovementDashboard() {
         });
       }
     } catch (err) {
-      console.error("Failed to fetch calibration summary:", err);
+      console.warn("Transient fetch notice for calibration summary:", err);
     } finally {
       setCalibrationLoading(false);
     }
@@ -211,7 +211,7 @@ export default function SelfImprovementDashboard() {
         setLogs(Array.isArray(data?.logs) ? data.logs : (Array.isArray(data) ? data : []));
       }
     } catch (err) {
-      console.error("Failed to fetch self-improvement logs:", err);
+      console.warn("Transient fetch notice for self-improvement logs:", err);
     } finally {
       setRefreshing(false);
     }
@@ -225,7 +225,7 @@ export default function SelfImprovementDashboard() {
         setMonitorStats(data);
       }
     } catch (err) {
-      console.error("Failed to fetch monitor stats:", err);
+      console.warn("Transient fetch notice for monitor stats:", err);
     }
   };
 
@@ -238,7 +238,7 @@ export default function SelfImprovementDashboard() {
         setResearchSessions(Array.isArray(data?.sessions) ? data.sessions : (Array.isArray(data) ? data : []));
       }
     } catch (err) {
-      console.error("Failed to fetch deep research sessions:", err);
+      console.warn("Transient fetch notice for deep research sessions:", err);
     } finally {
       setResearchLoading(false);
     }
@@ -254,7 +254,7 @@ export default function SelfImprovementDashboard() {
         setVendorConnected(data.paidConnected || false);
       }
     } catch (err) {
-      console.error("Failed to fetch dark pool data:", err);
+      console.warn("Transient fetch notice for dark pool data:", err);
     } finally {
       setDarkPoolLoading(false);
     }

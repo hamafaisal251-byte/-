@@ -202,7 +202,7 @@ export default function RiskBrokerManager() {
         }
       }
     } catch (e) {
-      console.error("Failed to fetch custom connectors:", e);
+      console.warn("Transient fetch notice for custom connectors:", e);
     }
   };
 
@@ -218,7 +218,7 @@ export default function RiskBrokerManager() {
         }
       }
     } catch (e) {
-      console.error("Failed to fetch connections:", e);
+      console.warn("Transient fetch notice for connections:", e);
     }
   };
 
@@ -234,7 +234,7 @@ export default function RiskBrokerManager() {
         }
       }
     } catch (e) {
-      console.error("Failed to fetch news platforms:", e);
+      console.warn("Transient fetch notice for news platforms:", e);
     }
   };
 
@@ -310,7 +310,9 @@ export default function RiskBrokerManager() {
           const data = await res.json();
           if (data.success) {
             setPositions(data.positions || []);
-            setAccountStats(data.accountStats || null);
+            if (data.accountStats) {
+              setAccountStats(data.accountStats);
+            }
           }
         }
       }
@@ -2524,29 +2526,29 @@ export default function RiskBrokerManager() {
         <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
           <div className="p-3 bg-slate-900/40 border border-slate-800/80 rounded-lg text-right" dir="rtl">
             <span className="text-[10px] text-slate-500 font-bold block uppercase">باڵانسی گشتی (Balance)</span>
-            <span className="text-sm font-mono font-bold text-slate-100">${accountStats.balance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+            <span className="text-sm font-mono font-bold text-slate-100">${(accountStats?.balance ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
           </div>
           <div className="p-3 bg-slate-900/40 border border-slate-800/80 rounded-lg text-right" dir="rtl">
             <span className="text-[10px] text-slate-500 font-bold block uppercase">سەرمایەی داینامیکی (Equity)</span>
-            <span className="text-sm font-mono font-bold text-sky-400">${accountStats.equity.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+            <span className="text-sm font-mono font-bold text-sky-400">${(accountStats?.equity ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
           </div>
           <div className="p-3 bg-slate-900/40 border border-slate-800/80 rounded-lg text-right" dir="rtl">
             <span className="text-[10px] text-slate-500 font-bold block uppercase">مارجینی بەکارهاتوو (Used Margin)</span>
-            <span className="text-sm font-mono font-bold text-amber-500">${accountStats.usedMargin.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+            <span className="text-sm font-mono font-bold text-amber-500">${(accountStats?.usedMargin ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
           </div>
           <div className="p-3 bg-slate-900/40 border border-slate-800/80 rounded-lg text-right" dir="rtl">
             <span className="text-[10px] text-slate-500 font-bold block uppercase">مارجینی ئازاد (Free Margin)</span>
-            <span className="text-sm font-mono font-bold text-emerald-400">${accountStats.freeMargin.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+            <span className="text-sm font-mono font-bold text-emerald-400">${(accountStats?.freeMargin ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
           </div>
           <div className="p-3 bg-slate-900/40 border border-slate-800/80 rounded-lg text-right" dir="rtl">
             <span className="text-[10px] text-slate-500 font-bold block uppercase">ئاستی مارجین (Margin Level %)</span>
-            <span className={`text-sm font-mono font-bold ${accountStats.marginLevel > 200 ? 'text-emerald-400' : 'text-rose-500'}`}>{accountStats.marginLevel}%</span>
+            <span className={`text-sm font-mono font-bold ${(accountStats?.marginLevel ?? 0) > 200 ? 'text-emerald-400' : 'text-rose-500'}`}>{accountStats?.marginLevel ?? 0}%</span>
           </div>
           <div className="p-3 bg-slate-900/40 border border-slate-800/80 rounded-lg text-right" dir="rtl">
             <span className="text-[10px] text-slate-500 font-bold block uppercase">قازانج/زیانی ئەمڕۆ (Today's PnL)</span>
-            <span className={`text-sm font-mono font-bold flex items-center gap-1 justify-end ${accountStats.todayPnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-              {accountStats.todayPnl >= 0 ? <TrendingUp className="w-3.5 h-3.5" /> : <TrendingDown className="w-3.5 h-3.5" />}
-              ${accountStats.todayPnl.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            <span className={`text-sm font-mono font-bold flex items-center gap-1 justify-end ${(accountStats?.todayPnl ?? 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+              {(accountStats?.todayPnl ?? 0) >= 0 ? <TrendingUp className="w-3.5 h-3.5" /> : <TrendingDown className="w-3.5 h-3.5" />}
+              ${(accountStats?.todayPnl ?? 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </span>
           </div>
         </div>

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/proda-nexus/sovereign-trading/internal/telemetry"
 )
 
 func SetupRouter(h *Handler) *gin.Engine {
@@ -24,6 +25,10 @@ func SetupRouter(h *Handler) *gin.Engine {
 	r.Use(LoggerMiddleware())
 	r.Use(CORSMiddleware())
 	r.Use(TrackActiveRequests())
+	r.Use(telemetry.PrometheusMiddleware())
+
+	// Prometheus Metrics Endpoint
+	r.GET("/metrics", telemetry.ServePrometheusMetrics)
 
 	// Public Health endpoints
 	r.GET("/api/health", h.HealthCheck)
