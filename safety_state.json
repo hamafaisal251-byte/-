@@ -24,7 +24,13 @@
       "tradesCount": 48,
       "demonstratedEdgeScore": 0.85,
       "allocationStatus": "FULL",
-      "note": "Statistically significant edge demonstrated"
+      "note": "Statistically significant edge demonstrated. Liquidity: 82/100 (LOW_PROXY).",
+      "liquidityScore": 82,
+      "dataSourceType": "TICK_PROXY_ONLY",
+      "liquidityConfidence": "LOW_PROXY",
+      "liquidityMultiplier": 0.89,
+      "avgSpreadPips": 1.51,
+      "avgRealizedSlippagePips": 0.68
     },
     "GBP/USD": {
       "winRate": 58.1,
@@ -32,7 +38,13 @@
       "tradesCount": 36,
       "demonstratedEdgeScore": 0.72,
       "allocationStatus": "FULL",
-      "note": "Positive Sharpe and edge confirmed"
+      "note": "Positive Sharpe and edge confirmed. Liquidity: 83/100 (LOW_PROXY).",
+      "liquidityScore": 83,
+      "dataSourceType": "TICK_PROXY_ONLY",
+      "liquidityConfidence": "LOW_PROXY",
+      "liquidityMultiplier": 0.9,
+      "avgSpreadPips": 1.47,
+      "avgRealizedSlippagePips": 0.66
     },
     "USD/JPY": {
       "winRate": 54,
@@ -40,15 +52,27 @@
       "tradesCount": 29,
       "demonstratedEdgeScore": 0.58,
       "allocationStatus": "FULL",
-      "note": "Moderate positive edge"
+      "note": "Moderate positive edge. Liquidity: 78/100 (LOW_PROXY).",
+      "liquidityScore": 78,
+      "dataSourceType": "TICK_PROXY_ONLY",
+      "liquidityConfidence": "LOW_PROXY",
+      "liquidityMultiplier": 0.87,
+      "avgSpreadPips": 0.9,
+      "avgRealizedSlippagePips": 0.41
     },
     "AUD/USD": {
       "winRate": 42,
       "sharpe": 0.35,
       "tradesCount": 22,
       "demonstratedEdgeScore": 0.25,
-      "allocationStatus": "REDUCED",
-      "note": "Sub-threshold Sharpe. Allocation scaled down to 40%"
+      "allocationStatus": "FULL",
+      "note": "Sub-threshold Sharpe. Allocation scaled down to 40%. Liquidity: 74/100 (LOW_PROXY).",
+      "liquidityScore": 74,
+      "dataSourceType": "TICK_PROXY_ONLY",
+      "liquidityConfidence": "LOW_PROXY",
+      "liquidityMultiplier": 0.84,
+      "avgSpreadPips": 1.2,
+      "avgRealizedSlippagePips": 0.54
     },
     "BTC/USD": {
       "winRate": 68.4,
@@ -56,7 +80,55 @@
       "tradesCount": 52,
       "demonstratedEdgeScore": 0.92,
       "allocationStatus": "FULL",
-      "note": "High statistical edge demonstrated"
+      "note": "High statistical edge demonstrated. Liquidity: 72/100 (HIGH).",
+      "liquidityScore": 72,
+      "dataSourceType": "FULL_DATA",
+      "liquidityConfidence": "HIGH",
+      "liquidityMultiplier": 0.83,
+      "avgSpreadPips": 1.88,
+      "avgRealizedSlippagePips": 0.85
+    },
+    "ETH/USD": {
+      "winRate": 50,
+      "sharpe": 1,
+      "tradesCount": 10,
+      "demonstratedEdgeScore": 0.5,
+      "allocationStatus": "REDUCED",
+      "note": "Initialized. Liquidity: 63/100 (HIGH).",
+      "liquidityScore": 63,
+      "dataSourceType": "FULL_DATA",
+      "liquidityConfidence": "HIGH",
+      "liquidityMultiplier": 0.78,
+      "avgSpreadPips": 2.2,
+      "avgRealizedSlippagePips": 0.99
+    },
+    "XAU/USD": {
+      "winRate": 50,
+      "sharpe": 1,
+      "tradesCount": 10,
+      "demonstratedEdgeScore": 0.5,
+      "allocationStatus": "FULL",
+      "note": "Initialized. Liquidity: 70/100 (LOW_PROXY).",
+      "liquidityScore": 70,
+      "dataSourceType": "TICK_PROXY_ONLY",
+      "liquidityConfidence": "LOW_PROXY",
+      "liquidityMultiplier": 0.82,
+      "avgSpreadPips": 1.5,
+      "avgRealizedSlippagePips": 0.68
+    },
+    "WTI/USD": {
+      "winRate": 50,
+      "sharpe": 1,
+      "tradesCount": 10,
+      "demonstratedEdgeScore": 0.5,
+      "allocationStatus": "FULL",
+      "note": "Initialized. Liquidity: 80/100 (LOW_PROXY).",
+      "liquidityScore": 80,
+      "dataSourceType": "TICK_PROXY_ONLY",
+      "liquidityConfidence": "LOW_PROXY",
+      "liquidityMultiplier": 0.88,
+      "avgSpreadPips": 0.8,
+      "avgRealizedSlippagePips": 0.36
     }
   },
   "aiTimeframes": {
@@ -107,7 +179,7 @@
   "maxTotalNotionalExposure": 500000,
   "maxSingleInstrumentExposure": 300000,
   "maxCorrelatedGroupExposure": 400000,
-  "watchdogLastHeartbeat": "2026-07-25T15:12:43.714Z",
+  "watchdogLastHeartbeat": "2026-07-25T15:33:34.516Z",
   "watchdogStatus": "NOMINAL",
   "lastDrawdownPct": 0,
   "lastRollbackEvent": null,
