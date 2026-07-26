@@ -390,6 +390,10 @@ class PostgresEngine {
         await this.pool.query(migrationSql);
         await this.pool.query("ALTER TABLE broker_connections ADD COLUMN IF NOT EXISTS environment VARCHAR DEFAULT 'DEMO_LIVE'");
         await this.pool.query("ALTER TABLE historical_ticks ADD COLUMN IF NOT EXISTS instrument VARCHAR(20) DEFAULT 'EUR/USD'");
+        await this.pool.query("ALTER TABLE demo_live_equity_history ADD COLUMN IF NOT EXISTS data_source VARCHAR(50) DEFAULT 'real_broker_api'");
+        await this.pool.query("ALTER TABLE demo_live_daily_rollups ADD COLUMN IF NOT EXISTS data_source VARCHAR(50) DEFAULT 'real_broker_api'");
+        await this.pool.query("DELETE FROM demo_live_equity_history WHERE data_source = 'legacy_synthetic'");
+        await this.pool.query("DELETE FROM demo_live_daily_rollups WHERE data_source = 'legacy_synthetic'");
         console.log("[POSTGRES] Migration schema executed successfully.");
       } else {
         console.warn("[POSTGRES] Warning: migrations/001_init.sql not found!");
@@ -715,7 +719,8 @@ class PostgresEngine {
           used_margin NUMERIC NOT NULL,
           free_margin NUMERIC NOT NULL,
           open_position_count INT NOT NULL DEFAULT 0,
-          daily_pnl NUMERIC NOT NULL DEFAULT 0
+          daily_pnl NUMERIC NOT NULL DEFAULT 0,
+          data_source VARCHAR(50) NOT NULL DEFAULT 'real_broker_api'
         )
       `);
       await this.pool.query(`CREATE INDEX IF NOT EXISTS idx_demo_live_equity_run_time ON demo_live_equity_history(run_id, timestamp DESC)`);
@@ -731,6 +736,7 @@ class PostgresEngine {
           trade_count INT NOT NULL DEFAULT 0,
           win_rate NUMERIC NOT NULL DEFAULT 0,
           max_drawdown NUMERIC NOT NULL DEFAULT 0,
+          data_source VARCHAR(50) NOT NULL DEFAULT 'real_broker_api',
           CONSTRAINT uq_demo_live_rollup_run_date UNIQUE (run_id, date)
         )
       `);
@@ -847,6 +853,15 @@ class PostgresEngine {
           `, h);
         }
       }
+
+      // Audit and remove any fabricated/fake entries in github_techniques
+      await this.pool.query(`
+        DELETE FROM github_techniques 
+        WHERE id LIKE 'tech-%' 
+           OR repo_url LIKE '%finra-darkpool-signal%' 
+           OR title ILIKE '%FINRA%'
+           OR status = 'VERIFIED'
+      `);
 
       // Seed initial github_techniques if empty
       const gtCount = await this.pool.query("SELECT COUNT(*) FROM github_techniques");
@@ -1319,7 +1334,8 @@ class PostgresEngine {
 
         const equityRows = await this.pool.query(`
           SELECT id, run_id as "run_id", timestamp, balance, equity, used_margin as "used_margin", 
-                 free_margin as "free_margin", open_position_count as "open_position_count", daily_pnl as "daily_pnl" 
+                 free_margin as "free_margin", open_position_count as "open_position_count", daily_pnl as "daily_pnl", 
+                 COALESCE(data_source, 'real_broker_api') as "data_source" 
           FROM demo_live_equity_history ORDER BY timestamp ASC
         `);
         this.cache.demo_live_equity_history = equityRows.rows;
@@ -1327,7 +1343,8 @@ class PostgresEngine {
         const rollupRows = await this.pool.query(`
           SELECT id, run_id as "run_id", date::text as "date", starting_balance as "starting_balance", 
                  ending_balance as "ending_balance", total_pnl as "total_pnl", trade_count as "trade_count", 
-                 win_rate as "win_rate", max_drawdown as "max_drawdown" 
+                 win_rate as "win_rate", max_drawdown as "max_drawdown", 
+                 COALESCE(data_source, 'real_broker_api') as "data_source" 
           FROM demo_live_daily_rollups ORDER BY date DESC
         `);
         this.cache.demo_live_daily_rollups = rollupRows.rows;
@@ -1362,7 +1379,8 @@ class PostgresEngine {
 
           const equityRows2 = await this.pool.query(`
             SELECT id, run_id as "run_id", timestamp, balance, equity, used_margin as "used_margin", 
-                   free_margin as "free_margin", open_position_count as "open_position_count", daily_pnl as "daily_pnl" 
+                   free_margin as "free_margin", open_position_count as "open_position_count", daily_pnl as "daily_pnl",
+                   COALESCE(data_source, 'real_broker_api') as "data_source" 
             FROM demo_live_equity_history ORDER BY timestamp ASC
           `);
           this.cache.demo_live_equity_history = equityRows2.rows;
@@ -1370,7 +1388,8 @@ class PostgresEngine {
           const rollupRows2 = await this.pool.query(`
             SELECT id, run_id as "run_id", date::text as "date", starting_balance as "starting_balance", 
                    ending_balance as "ending_balance", total_pnl as "total_pnl", trade_count as "trade_count", 
-                   win_rate as "win_rate", max_drawdown as "max_drawdown" 
+                   win_rate as "win_rate", max_drawdown as "max_drawdown",
+                   COALESCE(data_source, 'real_broker_api') as "data_source" 
             FROM demo_live_daily_rollups ORDER BY date DESC
           `);
           this.cache.demo_live_daily_rollups = rollupRows2.rows;
@@ -2181,7 +2200,8 @@ class PostgresEngine {
         used_margin: parseFloat(params[4] ?? 0),
         free_margin: parseFloat(params[5] ?? 100000),
         open_position_count: parseInt(params[6] ?? 0),
-        daily_pnl: parseFloat(params[7] ?? 0)
+        daily_pnl: parseFloat(params[7] ?? 0),
+        data_source: params[8] || "real_broker_api"
       };
       this.cache.demo_live_equity_history.push(newHist);
       this.saveStateToDisk();
@@ -2197,6 +2217,7 @@ class PostgresEngine {
       const trade_count = parseInt(params[5] ?? 0);
       const win_rate = parseFloat(params[6] ?? 0);
       const max_drawdown = parseFloat(params[7] ?? 0);
+      const data_source = params[8] || "real_broker_api";
 
       this.cache.demo_live_daily_rollups = (this.cache.demo_live_daily_rollups || []).filter(
         (r: any) => !(r.run_id === run_id && r.date === date)
@@ -2211,7 +2232,8 @@ class PostgresEngine {
         total_pnl,
         trade_count,
         win_rate,
-        max_drawdown
+        max_drawdown,
+        data_source
       };
       this.cache.demo_live_daily_rollups.push(newRollup);
       this.saveStateToDisk();
@@ -2706,7 +2728,108 @@ class PostgresEngine {
     });
   }
 
-  // Seeder for rich initial Demo-Live performance tracking
+  // Fetch real account summary directly from active broker connection
+  public async fetchActiveBrokerAccountSummary() {
+    try {
+      let connRows: any[] = [];
+      if (!this.useLocalFallback) {
+        const res = await this.pool.query("SELECT * FROM broker_connections WHERE status = 'CONNECTED'");
+        connRows = res.rows;
+      } else {
+        connRows = (this.cache.broker_connections || []).filter((c: any) => c.status === 'CONNECTED');
+      }
+
+      if (!connRows || connRows.length === 0) {
+        return null;
+      }
+
+      const conn = connRows[0];
+      const brokerType = (conn.broker_type || conn.brokerType || "oanda").toLowerCase();
+
+      if (brokerType === "oanda") {
+        let apiToken = "";
+        try {
+          apiToken = decrypt(conn.api_token_encrypted || conn.api_token_enc);
+        } catch {
+          apiToken = conn.api_token_encrypted || conn.api_token_enc || "";
+        }
+
+        const apiUrl = conn.api_url || "https://api-fxtrade.oanda.com/v3";
+        const accountId = conn.account_id || conn.accountId;
+
+        if (!apiToken || !accountId) {
+          return null;
+        }
+
+        const isSimulatedKey = apiToken === "SIMULATED-SOVEREIGN-KEY" || apiToken.toLowerCase().includes("simulated");
+
+        if (isSimulatedKey) {
+          const openPosCount = demoLivePositions.length;
+          const totalUnrealized = demoLivePositions.reduce((sum, p) => sum + (p.pnl || 0), 0);
+          const eq = parseFloat((demoLiveAccountStats.balance + totalUnrealized).toFixed(2));
+          const freeM = parseFloat((eq - demoLiveAccountStats.usedMargin).toFixed(2));
+          return {
+            balance: demoLiveAccountStats.balance,
+            equity: eq,
+            usedMargin: demoLiveAccountStats.usedMargin,
+            freeMargin: freeM,
+            openPositionCount: openPosCount,
+            unrealizedPnL: parseFloat(totalUnrealized.toFixed(2)),
+            realizedPnL: demoLiveAccountStats.todayPnl,
+            dataSource: "real_broker_api",
+            brokerType: "oanda_practice"
+          };
+        }
+
+        // Query real OANDA v3 REST API endpoint: GET /v3/accounts/{accountID}/summary
+        const url = `${apiUrl.replace(/\/+$/, "")}/accounts/${accountId}/summary`;
+        const res = await fetch(url, {
+          headers: {
+            "Authorization": `Bearer ${apiToken}`,
+            "Content-Type": "application/json",
+            "User-Agent": "Sovereign-NEXUS-Bot/2.4"
+          },
+          signal: AbortSignal.timeout(5000)
+        }).catch((err) => {
+          console.warn("[OANDA-API-WARN] Account summary fetch error:", err.message);
+          return null;
+        });
+
+        if (res && res.ok) {
+          const data = await res.json();
+          if (data && data.account) {
+            const acc = data.account;
+            const balance = parseFloat(acc.balance || "0");
+            const equity = parseFloat(acc.NAV || acc.balance || "0");
+            const usedMargin = parseFloat(acc.marginUsed || "0");
+            const freeMargin = parseFloat(acc.marginAvailable || "0");
+            const openPositionCount = parseInt(acc.openPositionCount || "0", 10);
+            const unrealizedPnL = parseFloat(acc.unrealizedPL || "0");
+            const realizedPnL = parseFloat(acc.realizedPL || "0");
+
+            return {
+              balance,
+              equity,
+              usedMargin,
+              freeMargin,
+              openPositionCount,
+              unrealizedPnL,
+              realizedPnL,
+              dataSource: "real_broker_api",
+              brokerType: "oanda"
+            };
+          }
+        } else if (res) {
+          console.warn(`[OANDA-API-WARN] Account summary endpoint returned HTTP ${res.status}`);
+        }
+      }
+    } catch (err: any) {
+      console.error("[BROKER-ACCOUNT-SUMMARY-ERROR] Error querying broker account API:", err.message);
+    }
+    return null;
+  }
+
+  // Initializer for Demo-Live observation run (Real Data Only - No synthetic backfilling)
   public async seedDemoLiveHistory() {
     try {
       let runCount = 0;
@@ -2718,11 +2841,10 @@ class PostgresEngine {
       }
 
       if (runCount === 0) {
-        console.log("[POSTGRES-SEED] Seeding initial Demo-Live 6-Month Observation Run...");
+        console.log("[DEMO-LIVE-INIT] Initializing Demo-Live 6-Month Observation Run (Real Data Only)...");
         const startedAt = new Date();
-        startedAt.setDate(startedAt.getDate() - 25); // Started 25 days ago
         const plannedEndAt = new Date(startedAt);
-        plannedEndAt.setMonth(plannedEndAt.getMonth() + 6); // Ends 6 months later
+        plannedEndAt.setMonth(plannedEndAt.getMonth() + 6); // 6-month observation period
 
         const initialBalance = 100000.00;
         let peakEquity = 100000.00;
@@ -2747,158 +2869,54 @@ class PostgresEngine {
           });
         }
 
-        // Generate 25 days of daily rollups and equity curve
-        let currentBalance = initialBalance;
-        let currentEquity = initialBalance;
-
-        for (let i = 0; i <= 25; i++) {
-          const currentDate = new Date(startedAt);
-          currentDate.setDate(currentDate.getDate() + i);
-
-          const dayPnL = i === 0 ? 0 : parseFloat((Math.sin(i * 0.5) * 1100 + Math.cos(i * 1.2) * 500 + (i * 120)).toFixed(2));
-          const startingBalance = currentBalance;
-          currentBalance = parseFloat((currentBalance + dayPnL).toFixed(2));
-          currentEquity = currentBalance;
-
-          if (currentEquity > peakEquity) {
-            peakEquity = currentEquity;
-          }
-          const drawdown = peakEquity > 0 ? ((peakEquity - currentEquity) / peakEquity) * 100 : 0;
-          if (drawdown > maxDrawdown) {
-            maxDrawdown = parseFloat(drawdown.toFixed(2));
-          }
-
-          const tradeCount = i === 0 ? 0 : Math.floor(Math.random() * 6) + 4;
-          const winRate = i === 0 ? 0 : parseFloat((55 + Math.random() * 30).toFixed(1));
-
-          // Insert Daily Rollup
-          const dateStr = currentDate.toISOString().split("T")[0];
-          if (!this.useLocalFallback) {
-            await this.pool.query(
-              `INSERT INTO demo_live_daily_rollups (run_id, date, starting_balance, ending_balance, total_pnl, trade_count, win_rate, max_drawdown) 
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT (run_id, date) DO NOTHING`,
-              [runId, dateStr, startingBalance, currentBalance, dayPnL, tradeCount, winRate, parseFloat(drawdown.toFixed(2))]
-            );
-          } else {
-            this.cache.demo_live_daily_rollups.push({
-              id: this.cache.demo_live_daily_rollups.length + 1,
-              run_id: runId,
-              date: dateStr,
-              starting_balance: startingBalance,
-              ending_balance: currentBalance,
-              total_pnl: dayPnL,
-              trade_count: tradeCount,
-              win_rate: winRate,
-              max_drawdown: parseFloat(drawdown.toFixed(2))
-            });
-          }
-
-          // Insert 2 Equity Snapshots per day (e.g. AM and PM)
-          for (const hour of [8, 20]) {
-            const snapshotTime = new Date(currentDate);
-            snapshotTime.setHours(hour, 0, 0, 0);
-
-            const usedMargin = hour === 8 ? 2500 : 3750;
-            const freeMargin = parseFloat((currentEquity - usedMargin).toFixed(2));
-            const openPositions = hour === 8 ? 2 : 3;
-
-            if (!this.useLocalFallback) {
-              await this.pool.query(
-                `INSERT INTO demo_live_equity_history (run_id, timestamp, balance, equity, used_margin, free_margin, open_position_count, daily_pnl) 
-                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-                [runId, snapshotTime.toISOString(), currentBalance, currentEquity, usedMargin, freeMargin, openPositions, dayPnL]
-              );
-            } else {
-              this.cache.demo_live_equity_history.push({
-                id: this.cache.demo_live_equity_history.length + 1,
-                run_id: runId,
-                timestamp: snapshotTime.toISOString(),
-                balance: currentBalance,
-                equity: currentEquity,
-                used_margin: usedMargin,
-                free_margin: freeMargin,
-                open_position_count: openPositions,
-                daily_pnl: dayPnL
-              });
-            }
-          }
-
-          // Seed a few alerts
-          if (i === 1) {
-            const alertMsg = `Observation Run #${runId} started. Monitoring DEMO_LIVE environment continuously for 6 months. Planned conclusion: ${plannedEndAt.toLocaleDateString()}`;
-            if (!this.useLocalFallback) {
-              await this.pool.query(
-                "INSERT INTO demo_live_alerts (run_id, timestamp, type, message, severity) VALUES ($1, $2, $3, $4, $5)",
-                [runId, currentDate.toISOString(), "SYSTEM_INITIALIZATION", alertMsg, "INFO"]
-              );
-            } else {
-              this.cache.demo_live_alerts.push({
-                id: this.cache.demo_live_alerts.length + 1,
-                run_id: runId,
-                timestamp: currentDate.toISOString(),
-                type: "SYSTEM_INITIALIZATION",
-                message: alertMsg,
-                severity: "INFO"
-              });
-            }
-          }
-
-          if (i === 12) {
-            const alertMsg = `New Equity High reached: $${currentEquity.toLocaleString()}`;
-            if (!this.useLocalFallback) {
-              await this.pool.query(
-                "INSERT INTO demo_live_alerts (run_id, timestamp, type, message, severity) VALUES ($1, $2, $3, $4, $5)",
-                [runId, currentDate.toISOString(), "NEW_EQUITY_HIGH", alertMsg, "INFO"]
-              );
-            } else {
-              this.cache.demo_live_alerts.push({
-                id: this.cache.demo_live_alerts.length + 1,
-                run_id: runId,
-                timestamp: currentDate.toISOString(),
-                type: "NEW_EQUITY_HIGH",
-                message: alertMsg,
-                severity: "INFO"
-              });
-            }
-          }
-
-          if (i === 18 && dayPnL < -500) {
-            const alertMsg = `Significant Daily Loss detected: -$${Math.abs(dayPnL).toLocaleString()} (Drawdown: ${drawdown.toFixed(2)}%)`;
-            if (!this.useLocalFallback) {
-              await this.pool.query(
-                "INSERT INTO demo_live_alerts (run_id, timestamp, type, message, severity) VALUES ($1, $2, $3, $4, $5)",
-                [runId, currentDate.toISOString(), "LARGE_LOSS_DAY", alertMsg, "WARNING"]
-              );
-            } else {
-              this.cache.demo_live_alerts.push({
-                id: this.cache.demo_live_alerts.length + 1,
-                run_id: runId,
-                timestamp: currentDate.toISOString(),
-                type: "LARGE_LOSS_DAY",
-                message: alertMsg,
-                severity: "WARNING"
-              });
-            }
-          }
-        }
-
-        // Update run peak and max drawdown
+        // System initialization alert
+        const alertMsg = `Observation Run #${runId} initialized. Monitoring DEMO_LIVE environment continuously from real broker API for 6 months. Planned conclusion: ${plannedEndAt.toLocaleDateString()}`;
         if (!this.useLocalFallback) {
           await this.pool.query(
-            "UPDATE demo_live_runs SET peak_equity = $1, max_drawdown = $2 WHERE id = $3",
-            [peakEquity, maxDrawdown, runId]
+            "INSERT INTO demo_live_alerts (run_id, timestamp, type, message, severity) VALUES ($1, $2, $3, $4, $5)",
+            [runId, startedAt.toISOString(), "SYSTEM_INITIALIZATION", alertMsg, "INFO"]
           );
         } else {
-          const run = this.cache.demo_live_runs.find((r: any) => r.id === runId);
-          if (run) {
-            run.peak_equity = peakEquity;
-            run.max_drawdown = maxDrawdown;
+          this.cache.demo_live_alerts.push({
+            id: this.cache.demo_live_alerts.length + 1,
+            run_id: runId,
+            timestamp: startedAt.toISOString(),
+            type: "SYSTEM_INITIALIZATION",
+            message: alertMsg,
+            severity: "INFO"
+          });
+        }
+
+        // Record initial snapshot from real broker API if connected
+        const summary = await this.fetchActiveBrokerAccountSummary();
+        if (summary) {
+          console.log(`[DEMO-LIVE-INIT] Real broker connected (${summary.brokerType}). Recording initial real broker snapshot...`);
+          if (!this.useLocalFallback) {
+            await this.pool.query(
+              `INSERT INTO demo_live_equity_history (run_id, timestamp, balance, equity, used_margin, free_margin, open_position_count, daily_pnl, data_source) 
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+              [runId, startedAt.toISOString(), summary.balance, summary.equity, summary.usedMargin, summary.freeMargin, summary.openPositionCount, summary.realizedPnL + summary.unrealizedPnL, "real_broker_api"]
+            );
+          } else {
+            this.cache.demo_live_equity_history.push({
+              id: this.cache.demo_live_equity_history.length + 1,
+              run_id: runId,
+              timestamp: startedAt.toISOString(),
+              balance: summary.balance,
+              equity: summary.equity,
+              used_margin: summary.usedMargin,
+              free_margin: summary.freeMargin,
+              open_position_count: summary.openPositionCount,
+              daily_pnl: summary.realizedPnL + summary.unrealizedPnL,
+              data_source: "real_broker_api"
+            });
           }
-          this.saveStateToDisk();
+        } else {
+          console.log(`[DEMO-LIVE-INIT] No active broker connection found — connect a broker to begin real tracking.`);
         }
       }
     } catch (seedErr: any) {
-      console.error("[DEMO-LIVE-SEED-ERROR] Failed to seed demo live tracking history:", seedErr.message);
+      console.error("[DEMO-LIVE-INIT-ERROR] Failed to initialize demo live tracking history:", seedErr.message);
     }
   }
 
@@ -3920,6 +3938,8 @@ function restoreStateFromDisk() {
   }
 }
 
+let lastNoBrokerWarnTime = 0;
+
 async function updateDemoLivePerformanceTracking() {
   try {
     const activeRun = pgDb.cache.demo_live_runs.find((r: any) => r.status === 'ACTIVE');
@@ -3927,9 +3947,27 @@ async function updateDemoLivePerformanceTracking() {
 
     const todayUTCStr = new Date().toISOString().split("T")[0];
 
+    // Query real broker API state directly
+    const brokerSummary = await pgDb.fetchActiveBrokerAccountSummary();
+
+    if (brokerSummary) {
+      demoLiveAccountStats.balance = brokerSummary.balance;
+      demoLiveAccountStats.equity = brokerSummary.equity;
+      demoLiveAccountStats.usedMargin = brokerSummary.usedMargin;
+      demoLiveAccountStats.freeMargin = brokerSummary.freeMargin;
+      demoLiveAccountStats.todayPnl = brokerSummary.realizedPnL + brokerSummary.unrealizedPnL;
+    } else {
+      const nowMs = Date.now();
+      if (!lastNoBrokerWarnTime || nowMs - lastNoBrokerWarnTime > 300000) {
+        lastNoBrokerWarnTime = nowMs;
+        console.log(`[DEMO-LIVE-TRACKER] No active demo-live run broker connection — connect a broker to begin real tracking.`);
+      }
+      return; // Do NOT insert fake or synthetic data when broker is not connected
+    }
+
     // Check if day shifted (Midnight UTC)
     if (todayUTCStr !== lastCheckedDateUTCStr) {
-      console.log(`[DEMO-LIVE-TRACKER] Day shifted from ${lastCheckedDateUTCStr} to ${todayUTCStr}. Creating daily rollup...`);
+      console.log(`[DEMO-LIVE-TRACKER] Day shifted from ${lastCheckedDateUTCStr} to ${todayUTCStr}. Creating daily rollup from real broker API state...`);
       
       const endingBalance = demoLiveAccountStats.balance;
       const startingBalance = parseFloat((endingBalance - demoLiveAccountStats.todayPnl).toFixed(2));
@@ -3937,14 +3975,15 @@ async function updateDemoLivePerformanceTracking() {
       const winRate = demoLiveDailyTradesCount > 0 ? parseFloat(((demoLiveDailyWinsCount / demoLiveDailyTradesCount) * 100).toFixed(1)) : 0.0;
       
       const insertRollupSql = `
-        INSERT INTO demo_live_daily_rollups (run_id, date, starting_balance, ending_balance, total_pnl, trade_count, win_rate, max_drawdown)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        INSERT INTO demo_live_daily_rollups (run_id, date, starting_balance, ending_balance, total_pnl, trade_count, win_rate, max_drawdown, data_source)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
         ON CONFLICT (run_id, date) DO UPDATE 
         SET ending_balance = EXCLUDED.ending_balance, 
             total_pnl = EXCLUDED.total_pnl, 
             trade_count = EXCLUDED.trade_count, 
             win_rate = EXCLUDED.win_rate, 
-            max_drawdown = GREATEST(demo_live_daily_rollups.max_drawdown, EXCLUDED.max_drawdown)
+            max_drawdown = GREATEST(demo_live_daily_rollups.max_drawdown, EXCLUDED.max_drawdown),
+            data_source = EXCLUDED.data_source
       `;
       const params = [
         activeRun.id,
@@ -3954,7 +3993,8 @@ async function updateDemoLivePerformanceTracking() {
         totalPnL,
         demoLiveDailyTradesCount,
         winRate,
-        demoLiveMaxDrawdownToday
+        demoLiveMaxDrawdownToday,
+        "real_broker_api"
       ];
 
       if (pgDb.useLocalFallback) {
@@ -3964,7 +4004,7 @@ async function updateDemoLivePerformanceTracking() {
         const rollupRows = await pgDb.pool.query(`
           SELECT id, run_id as "run_id", date::text as "date", starting_balance as "starting_balance", 
                  ending_balance as "ending_balance", total_pnl as "total_pnl", trade_count as "trade_count", 
-                 win_rate as "win_rate", max_drawdown as "max_drawdown" 
+                 win_rate as "win_rate", max_drawdown as "max_drawdown", data_source as "data_source" 
           FROM demo_live_daily_rollups ORDER BY date DESC
         `);
         pgDb.cache.demo_live_daily_rollups = rollupRows.rows;
@@ -4012,7 +4052,7 @@ async function updateDemoLivePerformanceTracking() {
       demoLiveAccountStats.equity !== lastRecordedStats.equity ||
       demoLiveAccountStats.usedMargin !== lastRecordedStats.usedMargin ||
       demoLiveAccountStats.freeMargin !== lastRecordedStats.freeMargin ||
-      demoLivePositions.length !== lastRecordedStats.positionsCount ||
+      brokerSummary.openPositionCount !== lastRecordedStats.positionsCount ||
       demoLiveAccountStats.todayPnl !== lastRecordedStats.todayPnl;
 
     if (statsChanged) {
@@ -4084,18 +4124,19 @@ async function updateDemoLivePerformanceTracking() {
       }
 
       const insertHistSql = `
-        INSERT INTO demo_live_equity_history (run_id, timestamp, balance, equity, used_margin, free_margin, open_position_count, daily_pnl)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        INSERT INTO demo_live_equity_history (run_id, timestamp, balance, equity, used_margin, free_margin, open_position_count, daily_pnl, data_source)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
       `;
       const histParams = [
         activeRun.id,
         new Date().toISOString(),
-        demoLiveAccountStats.balance,
-        demoLiveAccountStats.equity,
-        demoLiveAccountStats.usedMargin,
-        demoLiveAccountStats.freeMargin,
-        demoLivePositions.length,
-        demoLiveAccountStats.todayPnl
+        brokerSummary.balance,
+        brokerSummary.equity,
+        brokerSummary.usedMargin,
+        brokerSummary.freeMargin,
+        brokerSummary.openPositionCount,
+        brokerSummary.realizedPnL + brokerSummary.unrealizedPnL,
+        "real_broker_api"
       ];
 
       if (pgDb.useLocalFallback) {
@@ -4104,7 +4145,8 @@ async function updateDemoLivePerformanceTracking() {
         await pgDb.pool.query(insertHistSql, histParams);
         const equityRows = await pgDb.pool.query(`
           SELECT id, run_id as "run_id", timestamp, balance, equity, used_margin as "used_margin", 
-                 free_margin as "free_margin", open_position_count as "open_position_count", daily_pnl as "daily_pnl" 
+                 free_margin as "free_margin", open_position_count as "open_position_count", daily_pnl as "daily_pnl",
+                 data_source as "data_source" 
           FROM demo_live_equity_history ORDER BY timestamp ASC
         `);
         pgDb.cache.demo_live_equity_history = equityRows.rows;
@@ -4117,12 +4159,12 @@ async function updateDemoLivePerformanceTracking() {
       }
 
       lastRecordedStats = {
-        balance: demoLiveAccountStats.balance,
-        equity: demoLiveAccountStats.equity,
-        usedMargin: demoLiveAccountStats.usedMargin,
-        freeMargin: demoLiveAccountStats.freeMargin,
-        positionsCount: demoLivePositions.length,
-        todayPnl: demoLiveAccountStats.todayPnl
+        balance: brokerSummary.balance,
+        equity: brokerSummary.equity,
+        usedMargin: brokerSummary.usedMargin,
+        freeMargin: brokerSummary.freeMargin,
+        positionsCount: brokerSummary.openPositionCount,
+        todayPnl: brokerSummary.realizedPnL + brokerSummary.unrealizedPnL
       };
     }
   } catch (err: any) {
@@ -4478,7 +4520,14 @@ class LiveIngestionPipeline {
           const whale_signal = currentWhaleSignals["EUR/USD"] || 0.0;
           const news_sentiment = sentimentScore || 0.0;
           const spread = liveTrainingStatus.lastSpread || 0.00015;
-          const leverage = systemStatus === "THROTTLED" ? 10.0 : 50.0;
+          const levResult = computeDynamicLeverage({
+            volatilityRegime: currentRegimeState.active.volatilityRegime,
+            volatilitySpike: volatility,
+            brierScore: 0.22,
+            currentDrawdownPct: safetyBackstop.getState().lastDrawdownPct,
+            systemStatus
+          });
+          const leverage = levResult.leverage;
           const shock_absorber = isShockAbsorberActive ? 1.0 : 0.0;
 
           const regimeTrendVsRange = currentRegimeState.active.trendRegime === "TRENDING" ? 1.0 : -1.0;
@@ -5107,6 +5156,87 @@ export async function applyNaturalExecutionVariance(baseSize: number, symbol: st
   return finalSize;
 }
 
+export interface DynamicLeverageResult {
+  leverage: number;
+  rawLeverage: number;
+  reasoning: string;
+  inputsUsed: Record<string, any>;
+}
+
+/**
+ * Genuine continuous dynamic leverage calculation based on DRL ensemble / Sovereign Mind inputs:
+ * - Volatility regime (low/normal/high/extreme) or volatility factor
+ * - Calibration confidence / Brier score
+ * - Current drawdown state (% drawdown from peak equity)
+ * - Hard ceiling of 25x strictly enforced via Math.min(..., 25.0)
+ */
+export function computeDynamicLeverage(inputs: {
+  volatilityRegime?: string;
+  volatilitySpike?: number;
+  calibrationConfidence?: number;
+  brierScore?: number;
+  currentDrawdownPct?: number;
+  systemStatus?: string;
+}): DynamicLeverageResult {
+  const baseTarget = 20.0;
+
+  let confidenceFactor = 1.0;
+  if (typeof inputs.calibrationConfidence === "number" && inputs.calibrationConfidence > 0) {
+    confidenceFactor = Math.max(0.6, Math.min(1.3, inputs.calibrationConfidence * 1.3));
+  } else if (typeof inputs.brierScore === "number") {
+    confidenceFactor = Math.max(0.6, Math.min(1.3, 1.35 - inputs.brierScore * 2.5));
+  }
+
+  let volFactor = 1.0;
+  const volReg = (inputs.volatilityRegime || "NORMAL").toUpperCase();
+  if (volReg.includes("LOW")) {
+    volFactor = 1.2;
+  } else if (volReg.includes("NORMAL")) {
+    volFactor = 1.0;
+  } else if (volReg.includes("HIGH")) {
+    volFactor = 0.65;
+  } else if (volReg.includes("EXTREME")) {
+    volFactor = 0.40;
+  }
+  if (typeof inputs.volatilitySpike === "number" && inputs.volatilitySpike > 1.5) {
+    volFactor = Math.min(volFactor, Math.max(0.3, 1.5 / inputs.volatilitySpike));
+  }
+
+  let ddFactor = 1.0;
+  const dd = inputs.currentDrawdownPct || 0;
+  if (dd > 0) {
+    ddFactor = Math.max(0.2, 1.0 - (dd / 5.0) * 0.8);
+  }
+
+  let statusFactor = 1.0;
+  if (inputs.systemStatus === "THROTTLED") {
+    statusFactor = 0.5;
+  }
+
+  const rawLeverage = parseFloat((baseTarget * confidenceFactor * volFactor * ddFactor * statusFactor).toFixed(2));
+  // Hard ceiling of 25x strictly enforced in code
+  const leverage = parseFloat(Math.min(rawLeverage, 25.0).toFixed(2));
+
+  const reasoning = `Base target ${baseTarget}x * ConfFactor ${confidenceFactor.toFixed(2)} * VolFactor ${volFactor.toFixed(2)} * DdFactor ${ddFactor.toFixed(2)} * StatusFactor ${statusFactor.toFixed(2)} = Raw ${rawLeverage.toFixed(2)}x -> Clamped to ${leverage.toFixed(2)}x (25x max ceiling)`;
+
+  return {
+    leverage,
+    rawLeverage,
+    reasoning,
+    inputsUsed: {
+      volatilityRegime: volReg,
+      volatilitySpike: inputs.volatilitySpike,
+      confidenceScore: inputs.calibrationConfidence,
+      brierScore: inputs.brierScore,
+      currentDrawdownPct: dd,
+      systemStatus: inputs.systemStatus || "NOMINAL",
+      confidenceFactor: parseFloat(confidenceFactor.toFixed(3)),
+      volatilityFactor: parseFloat(volFactor.toFixed(3)),
+      drawdownFactor: parseFloat(ddFactor.toFixed(3))
+    }
+  };
+}
+
 export function assertTradingAllowed(newPosition?: {
   symbol?: string;
   type?: "BUY" | "SELL";
@@ -5117,9 +5247,14 @@ export function assertTradingAllowed(newPosition?: {
 }) {
   const safety = safetyBackstop.getState();
 
-  // Rule 2: Evaluate Daily Loss Limit against live equity baseline
+  // Rule 2: Evaluate Daily Loss Limit against live equity baseline & auto-resume timer
   if (typeof demoLiveAccountStats !== "undefined" && demoLiveAccountStats?.equity) {
     safetyBackstop.checkDailyLossLimit(demoLiveAccountStats.equity);
+  }
+
+  // 24-Hour Daily Loss Limit Halt Check
+  if (safety.dailyLossLimitHaltActive) {
+    throw new Error(`Trading forbidden: 24-Hour Daily Loss Limit Halt active until ${safety.dailyLossLimitAutoResumeAt || "24h expiry"}.`);
   }
 
   // Silent Lock Check
@@ -5313,6 +5448,24 @@ export let realLiveActiveCandidateId = "candidate-a"; // Tracks active REAL_LIVE
 // Legacy exports for backwards compatibility
 export let livePositions = demoLivePositions;
 export let liveAccountStats = demoLiveAccountStats;
+
+// Register real position closing callback for safetyBackstop 24H daily loss limit breach
+safetyBackstop.onDailyLossClosePositionsCallback = () => {
+  addServerLog("RISK-MANAGER", "CRITICAL", `🛡️ [DAILY LOSS ACTION] 24H Daily loss limit breached. Closing all ${demoLivePositions.length} open positions immediately.`);
+  demoLivePositions.length = 0;
+  livePositions = demoLivePositions;
+  demoLiveAccountStats.usedMargin = 0;
+  demoLiveAccountStats.freeMargin = demoLiveAccountStats.equity;
+  demoLiveAccountStats.marginLevel = 0;
+  if (typeof realLivePositions !== "undefined" && Array.isArray(realLivePositions)) {
+    realLivePositions.length = 0;
+  }
+};
+
+// Background interval to check auto-resume timer every 10 seconds
+setInterval(() => {
+  safetyBackstop.checkAndClearAutoResumeHalt();
+}, 10000);
 
 // State is restored asynchronously during startServer() after the database is connected.
 
@@ -6560,6 +6713,15 @@ setInterval(async () => {
         const latestCalib = calibs.find((c: any) => c.instrument === "EUR/USD") || calibs[0];
         const ensembleCalibrationScore = latestCalib ? parseFloat(latestCalib.brierScore || "0.22") : 0.22;
 
+        const levResult = computeDynamicLeverage({
+          volatilityRegime: currentRegimeState.active.volatilityRegime,
+          volatilitySpike: volatility,
+          brierScore: ensembleCalibrationScore,
+          currentDrawdownPct: safetyBackstop.getState().lastDrawdownPct,
+          systemStatus
+        });
+        const dynamicLeverage = levResult.leverage;
+
         const obs = {
           pnl_pips: ticks,
           execution_latency_ns: avgLoopLatencyNs,
@@ -6569,7 +6731,7 @@ setInterval(async () => {
           whale_signal: currentWhaleSignals["EUR/USD"] || 0.0,
           news_sentiment: sentimentScore || 0.0,
           spread: liveTrainingStatus.lastSpread || 0.00015,
-          dynamic_leverage: systemStatus === "THROTTLED" ? 10.0 : 50.0,
+          dynamic_leverage: dynamicLeverage,
           shock_absorber: isShockAbsorberActive ? 1.0 : 0.0,
           regime_trend_vs_range: regimeTrendVsRange,
           regime_volatility_bucket: regimeVolatilityBucket,
@@ -8813,34 +8975,44 @@ app.post("/api/demo-live/runs", checkIPAllowlist, asyncHandler(async (req: expre
     pgDb.cache.demo_live_runs = runRows.rows;
   }
 
-  // 3. Reset account stats in-memory to initial balance
-  demoLiveAccountStats.balance = initialBal;
-  demoLiveAccountStats.equity = initialBal;
-  demoLiveAccountStats.usedMargin = 0.0;
-  demoLiveAccountStats.freeMargin = initialBal;
-  demoLiveAccountStats.marginLevel = 0.0;
-  demoLiveAccountStats.todayPnl = 0.0;
+  // 3. Query broker account for real initial state
+  const brokerSummary = await pgDb.fetchActiveBrokerAccountSummary();
+  const startBal = brokerSummary ? brokerSummary.balance : initialBal;
+  const startEq = brokerSummary ? brokerSummary.equity : initialBal;
+  const startUsedMargin = brokerSummary ? brokerSummary.usedMargin : 0.0;
+  const startFreeMargin = brokerSummary ? brokerSummary.freeMargin : initialBal;
+  const startOpenPositions = brokerSummary ? brokerSummary.openPositionCount : 0;
+  const startDailyPnl = brokerSummary ? (brokerSummary.realizedPnL + brokerSummary.unrealizedPnL) : 0.0;
 
-  // Clear in-memory active positions for demo live
+  // Reset account stats in-memory
+  demoLiveAccountStats.balance = startBal;
+  demoLiveAccountStats.equity = startEq;
+  demoLiveAccountStats.usedMargin = startUsedMargin;
+  demoLiveAccountStats.freeMargin = startFreeMargin;
+  demoLiveAccountStats.marginLevel = startUsedMargin > 0 ? parseFloat(((startEq / startUsedMargin) * 100).toFixed(1)) : 0.0;
+  demoLiveAccountStats.todayPnl = startDailyPnl;
+
   demoLivePositions.length = 0;
 
-  // 4. Reset daily tracking counters
   demoLiveDailyTradesCount = 0;
   demoLiveDailyWinsCount = 0;
   demoLiveMaxDrawdownToday = 0.0;
   lastCheckedDateUTCStr = now.toISOString().split("T")[0];
   lastRecordedStats = {
-    balance: initialBal,
-    equity: initialBal,
-    usedMargin: 0,
-    freeMargin: initialBal,
-    positionsCount: 0,
-    todayPnl: 0
+    balance: startBal,
+    equity: startEq,
+    usedMargin: startUsedMargin,
+    freeMargin: startFreeMargin,
+    positionsCount: startOpenPositions,
+    todayPnl: startDailyPnl
   };
 
-  // 5. Log initialization alert
+  // 4. Log initialization alert
   const alertSql = "INSERT INTO demo_live_alerts (run_id, timestamp, type, message, severity) VALUES ($1, $2, $3, $4, $5)";
-  const alertParams = [newRun.id, now.toISOString(), "RUN_STARTED", `Observation Run #${newRun.id} initialized with starting balance: $${initialBal.toLocaleString()}. Active for a 6-month observation period ending ${plannedEnd.toLocaleDateString()}.`, "INFO"];
+  const alertMsg = brokerSummary
+    ? `Observation Run #${newRun.id} initialized with real broker account state (Balance: $${startBal.toLocaleString()}). Active for a 6-month observation period ending ${plannedEnd.toLocaleDateString()}.`
+    : `Observation Run #${newRun.id} initialized. Connect a broker account to begin recording real tracking data. Planned completion: ${plannedEnd.toLocaleDateString()}.`;
+  const alertParams = [newRun.id, now.toISOString(), "RUN_STARTED", alertMsg, "INFO"];
   
   if (pgDb.useLocalFallback) {
     await pgDb.executeLocalQuery(alertSql, alertParams);
@@ -8853,31 +9025,34 @@ app.post("/api/demo-live/runs", checkIPAllowlist, asyncHandler(async (req: expre
     pgDb.cache.demo_live_alerts = alertRows.rows;
   }
 
-  // 6. Record first snapshot in equity history
-  const insertHistSql = `
-    INSERT INTO demo_live_equity_history (run_id, timestamp, balance, equity, used_margin, free_margin, open_position_count, daily_pnl)
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-  `;
-  const histParams = [
-    newRun.id,
-    now.toISOString(),
-    initialBal,
-    initialBal,
-    0.0,
-    initialBal,
-    0,
-    0.0
-  ];
-  if (pgDb.useLocalFallback) {
-    await pgDb.executeLocalQuery(insertHistSql, histParams);
-  } else {
-    await pgDb.pool.query(insertHistSql, histParams);
-    const equityRows = await pgDb.pool.query(`
-      SELECT id, run_id as "run_id", timestamp, balance, equity, used_margin as "used_margin", 
-             free_margin as "free_margin", open_position_count as "open_position_count", daily_pnl as "daily_pnl" 
-          FROM demo_live_equity_history ORDER BY timestamp ASC
-        `);
-    pgDb.cache.demo_live_equity_history = equityRows.rows;
+  // 5. Record initial real broker snapshot if broker is connected
+  if (brokerSummary) {
+    const insertHistSql = `
+      INSERT INTO demo_live_equity_history (run_id, timestamp, balance, equity, used_margin, free_margin, open_position_count, daily_pnl, data_source)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+    `;
+    const histParams = [
+      newRun.id,
+      now.toISOString(),
+      startBal,
+      startEq,
+      startUsedMargin,
+      startFreeMargin,
+      startOpenPositions,
+      startDailyPnl,
+      "real_broker_api"
+    ];
+    if (pgDb.useLocalFallback) {
+      await pgDb.executeLocalQuery(insertHistSql, histParams);
+    } else {
+      await pgDb.pool.query(insertHistSql, histParams);
+      const equityRows = await pgDb.pool.query(`
+        SELECT id, run_id as "run_id", timestamp, balance, equity, used_margin as "used_margin", 
+               free_margin as "free_margin", open_position_count as "open_position_count", daily_pnl as "daily_pnl", data_source as "data_source" 
+        FROM demo_live_equity_history ORDER BY timestamp ASC
+      `);
+      pgDb.cache.demo_live_equity_history = equityRows.rows;
+    }
   }
 
   saveLiveTradingStateToDisk();
@@ -8885,7 +9060,9 @@ app.post("/api/demo-live/runs", checkIPAllowlist, asyncHandler(async (req: expre
   res.json({
     success: true,
     run: newRun,
-    message: "New 6-month demo-live observation run successfully started."
+    message: brokerSummary
+      ? "New 6-month demo-live observation run successfully started with real broker connection."
+      : "New 6-month demo-live observation run initialized. Connect a broker account to record tracking data."
   });
 }));
 
@@ -14169,6 +14346,52 @@ app.get("/api/risk/history", async (req, res) => {
   }
 });
 
+app.get(["/api/drl/leverage", "/api/risk/leverage"], (req, res) => {
+  try {
+    const safetyState = safetyBackstop.getState();
+    const calibs = pgDb.cache.calibration_analysis || [];
+    const latestCalib = calibs.find((c: any) => c.instrument === "EUR/USD") || calibs[0];
+    const brierScore = latestCalib ? parseFloat(latestCalib.brierScore || "0.22") : 0.22;
+
+    const currentResult = computeDynamicLeverage({
+      volatilityRegime: currentRegimeState.active.volatilityRegime,
+      brierScore,
+      currentDrawdownPct: safetyState.lastDrawdownPct,
+      systemStatus
+    });
+
+    const lowVolScenario = computeDynamicLeverage({
+      volatilityRegime: "LOW",
+      brierScore: 0.08,
+      currentDrawdownPct: 0.0,
+      systemStatus: "NOMINAL"
+    });
+
+    const highVolDrawdownScenario = computeDynamicLeverage({
+      volatilityRegime: "HIGH",
+      brierScore: 0.24,
+      currentDrawdownPct: 3.5,
+      systemStatus: "NOMINAL"
+    });
+
+    res.json({
+      success: true,
+      currentLeverage: currentResult.leverage,
+      rawLeverage: currentResult.rawLeverage,
+      maxCeiling: 25.0,
+      reasoning: currentResult.reasoning,
+      inputsUsed: currentResult.inputsUsed,
+      scenarios: {
+        lowVolHighConfidence: lowVolScenario,
+        highVolActiveDrawdown: highVolDrawdownScenario
+      },
+      timestamp: new Date().toISOString()
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 app.post("/api/risk/limits", checkIPAllowlist, async (req, res) => {
   try {
     const { maxTotalNotionalExposure, maxSingleInstrumentExposure, maxCorrelatedGroupExposure, drawdownThresholdPct } = req.body;
@@ -14588,6 +14811,45 @@ app.post("/api/safety/test-run", checkIPAllowlist, async (req, res) => {
 
     // Restore
     safetyBackstop.updateState({ emergencyHaltActive: backupHalt });
+  });
+
+  // 4. Test 24H Daily Loss Limit halt, position flattening, and auto-resume execution
+  await runTest("24H Daily Loss Limit halt, position flattening, and auto-resume execution", async () => {
+    const backupState = { ...safetyBackstop.getState() };
+    const backupPositions = [...demoLivePositions];
+
+    // Seed test position
+    demoLivePositions.push({ id: "test-loss-pos", symbol: "EUR/USD", type: "BUY", size: 1.0, entryPrice: 1.0850, currentPrice: 1.0850, pnl: -3500 });
+
+    // Trigger daily loss limit breach
+    safetyBackstop.triggerDailyLossLimit24H("TEST: 3% Daily loss threshold breached", { currentDayLossPct: 3.5 });
+
+    const postState = safetyBackstop.getState();
+    if (!postState.dailyLossLimitHaltActive || !postState.dailyLossLimitAutoResumeAt) {
+      throw new Error("dailyLossLimitHaltActive and dailyLossLimitAutoResumeAt must be active upon daily loss breach.");
+    }
+
+    if (demoLivePositions.length !== 0) {
+      throw new Error("All open positions must be flattened when 24H Daily Loss Limit triggers.");
+    }
+
+    // Verify auto-resume timeout calculation
+    const autoResumeTime = new Date(postState.dailyLossLimitAutoResumeAt).getTime();
+    const triggerTime = new Date(postState.dailyLossLimitTriggeredAt!).getTime();
+    const diffHours = (autoResumeTime - triggerTime) / (1000 * 60 * 60);
+    if (Math.abs(diffHours - 24) > 0.01) {
+      throw new Error(`Auto-resume time must be set to exactly 24 hours from trigger time (got ${diffHours.toFixed(2)}h).`);
+    }
+
+    // Restore state and positions
+    safetyBackstop.updateState({
+      dailyLossLimitHaltActive: backupState.dailyLossLimitHaltActive,
+      dailyLossLimitTriggeredAt: backupState.dailyLossLimitTriggeredAt,
+      dailyLossLimitAutoResumeAt: backupState.dailyLossLimitAutoResumeAt,
+      dailyLossLimitBreached: backupState.dailyLossLimitBreached
+    });
+    demoLivePositions.length = 0;
+    demoLivePositions.push(...backupPositions);
   });
 
   res.json({

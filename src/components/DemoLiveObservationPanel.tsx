@@ -34,6 +34,7 @@ interface EquitySnapshot {
   free_margin: number;
   open_position_count: number;
   daily_pnl: number;
+  data_source?: string;
 }
 
 interface DailyRollup {
@@ -46,6 +47,7 @@ interface DailyRollup {
   trade_count: number;
   win_rate: number;
   max_drawdown: number;
+  data_source?: string;
 }
 
 interface DemoLiveAlert {

@@ -429,12 +429,14 @@ func (db *DB) Initialize(ctx context.Context) error {
 			used_margin NUMERIC NOT NULL,
 			free_margin NUMERIC NOT NULL,
 			open_position_count INT NOT NULL DEFAULT 0,
-			daily_pnl NUMERIC NOT NULL DEFAULT 0
+			daily_pnl NUMERIC NOT NULL DEFAULT 0,
+			data_source VARCHAR(50) NOT NULL DEFAULT 'real_broker_api'
 		)
 	`
 	if _, err := db.Pool.Exec(ctx, demoLiveEquitySQL); err != nil {
 		return err
 	}
+	_, _ = db.Pool.Exec(ctx, "ALTER TABLE demo_live_equity_history ADD COLUMN IF NOT EXISTS data_source VARCHAR(50) NOT NULL DEFAULT 'real_broker_api'")
 	_, _ = db.Pool.Exec(ctx, "CREATE INDEX IF NOT EXISTS idx_demo_live_equity_run_time ON demo_live_equity_history(run_id, timestamp DESC)")
 
 	demoLiveRollupsSQL := `
@@ -448,12 +450,14 @@ func (db *DB) Initialize(ctx context.Context) error {
 			trade_count INT NOT NULL DEFAULT 0,
 			win_rate NUMERIC NOT NULL DEFAULT 0,
 			max_drawdown NUMERIC NOT NULL DEFAULT 0,
+			data_source VARCHAR(50) NOT NULL DEFAULT 'real_broker_api',
 			CONSTRAINT uq_demo_live_rollup_run_date UNIQUE (run_id, date)
 		)
 	`
 	if _, err := db.Pool.Exec(ctx, demoLiveRollupsSQL); err != nil {
 		return err
 	}
+	_, _ = db.Pool.Exec(ctx, "ALTER TABLE demo_live_daily_rollups ADD COLUMN IF NOT EXISTS data_source VARCHAR(50) NOT NULL DEFAULT 'real_broker_api'")
 
 	demoLiveAlertsSQL := `
 		CREATE TABLE IF NOT EXISTS demo_live_alerts (
@@ -620,6 +624,15 @@ func (db *DB) Initialize(ctx context.Context) error {
 			)
 		}
 	}
+
+	// Audit and remove any fabricated/fake entries in github_techniques
+	_, _ = db.Pool.Exec(ctx, `
+		DELETE FROM github_techniques 
+		WHERE id LIKE 'tech-%' 
+		   OR repo_url LIKE '%finra-darkpool-signal%' 
+		   OR title ILIKE '%FINRA%'
+		   OR status = 'VERIFIED'
+	`)
 
 	// Seed initial github_techniques if empty
 	var gtCount int

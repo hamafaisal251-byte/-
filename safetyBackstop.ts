@@ -53,6 +53,9 @@ export interface SafetyState {
   currentDayLossPct: number;
   lastDailyResetUtc: string;
   dailyLossLimitBreached: boolean;
+  dailyLossLimitHaltActive: boolean;
+  dailyLossLimitTriggeredAt: string | null;
+  dailyLossLimitAutoResumeAt: string | null;
 
   // Rule 3: Segregate profit from principal
   useCompoundedSizing: boolean; // default false (principal only)
@@ -87,7 +90,7 @@ export interface SafetyState {
   triggerHistory: {
     id: string;
     timestamp: string;
-    type: "SAFE_MODE" | "SILENT_LOCK" | "EMERGENCY_HALT" | "SYSTEM";
+    type: "SAFE_MODE" | "SILENT_LOCK" | "EMERGENCY_HALT" | "DAILY_LOSS_LIMIT_24H" | "SYSTEM";
     event: string;
     reason: string;
     details: any;
@@ -123,6 +126,9 @@ const DEFAULT_STATE: SafetyState = {
   currentDayLossPct: 0.0,
   lastDailyResetUtc: new Date().toISOString().split("T")[0],
   dailyLossLimitBreached: false,
+  dailyLossLimitHaltActive: false,
+  dailyLossLimitTriggeredAt: null,
+  dailyLossLimitAutoResumeAt: null,
 
   useCompoundedSizing: false, // Segregated sizing by default
   principalCapital: 100000.00,
@@ -183,6 +189,7 @@ class SafetyBackstopManager {
   private state: SafetyState = { ...DEFAULT_STATE };
   private isLoaded = false;
   public onSaveCallback?: (state: SafetyState) => void;
+  public onDailyLossClosePositionsCallback?: () => void;
 
   constructor() {
     this.load();
@@ -216,8 +223,76 @@ class SafetyBackstopManager {
     return this.state;
   }
 
+  public triggerDailyLossLimit24H(reason: string, details: any = {}) {
+    this.load();
+    const triggeredAt = new Date().toISOString();
+    const autoResumeAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+
+    this.state.dailyLossLimitBreached = true;
+    this.state.dailyLossLimitHaltActive = true;
+    this.state.dailyLossLimitTriggeredAt = triggeredAt;
+    this.state.dailyLossLimitAutoResumeAt = autoResumeAt;
+
+    this.addNotification(`🛑 [DAILY LOSS LIMIT 24H] Trading halted for 24 hours until ${autoResumeAt}. All open positions flattened. New trade entries strictly blocked.`);
+    this.logTrigger("DAILY_LOSS_LIMIT_24H", "Daily Loss Limit 24H Halt Engaged", reason, {
+      ...details,
+      triggeredAt,
+      autoResumeAt
+    });
+
+    telegramNotifier.sendCriticalEvent("dailyLossLimit", "Daily Loss 24H Limit Engaged", reason, {
+      "Trigger Reason": reason,
+      "Triggered At": triggeredAt,
+      "Auto Resume Scheduled": autoResumeAt
+    });
+
+    // Execute real position closing immediately
+    if (this.onDailyLossClosePositionsCallback) {
+      try {
+        this.onDailyLossClosePositionsCallback();
+      } catch (err) {
+        console.error("[SAFETY-BACKSTOP] Error executing position closing callback:", err);
+      }
+    }
+
+    this.save();
+  }
+
+  public checkAndClearAutoResumeHalt(): boolean {
+    this.load();
+    if (!this.state.dailyLossLimitHaltActive || !this.state.dailyLossLimitAutoResumeAt) {
+      return false;
+    }
+
+    const now = Date.now();
+    const resumeTime = new Date(this.state.dailyLossLimitAutoResumeAt).getTime();
+
+    if (now >= resumeTime) {
+      console.log(`[DAILY LOSS LIMIT 24H] 24-Hour timeout elapsed (${this.state.dailyLossLimitAutoResumeAt}). Automatically resuming trading...`);
+      this.state.dailyLossLimitHaltActive = false;
+      this.state.dailyLossLimitTriggeredAt = null;
+      this.state.dailyLossLimitAutoResumeAt = null;
+      this.state.dailyLossLimitBreached = false;
+
+      this.addNotification(`✅ [DAILY LOSS LIMIT 24H] 24-Hour cooling period completed. Daily loss trading halt automatically disengaged.`);
+      this.logTrigger("DAILY_LOSS_LIMIT_24H", "24H Daily Loss Limit Auto-Resume", "Exact 24-hour timeout elapsed. Trading automatically resumed.", {
+        clearedAt: new Date().toISOString()
+      });
+
+      telegramNotifier.sendCriticalEvent("dailyLossLimit", "Daily Loss 24H Halt Auto-Cleared", "24-hour cooling period completed. Trading automatically resumed.");
+      this.save();
+      return true;
+    }
+
+    return false;
+  }
+
   public checkDailyLossLimit(currentEquity: number) {
     this.load();
+
+    // Check if auto-resume time has passed
+    this.checkAndClearAutoResumeHalt();
+
     const todayUtc = new Date().toISOString().split("T")[0];
 
     // Reset daily loss metrics at midnight UTC boundary
@@ -227,15 +302,9 @@ class SafetyBackstopManager {
       this.state.dayStartEquity = currentEquity;
       this.state.currentDayLossPct = 0.0;
       
-      if (this.state.dailyLossLimitBreached) {
+      if (this.state.dailyLossLimitBreached && !this.state.dailyLossLimitHaltActive) {
         this.state.dailyLossLimitBreached = false;
-        if (this.state.silentLockActive && (this.state.silentLockTriggerReason || "").includes("DAILY_LOSS_LIMIT")) {
-          this.state.silentLockActive = false;
-          this.state.silentLockTriggerReason = null;
-          this.state.silentLockTriggeredAt = null;
-          this.addNotification(`✅ [DAILY LOSS LIMIT] New UTC trading day started (${todayUtc}). Daily loss limit reset and daily Silent Lock disengaged.`);
-          this.logTrigger("SILENT_LOCK", "Daily Loss Limit Disengaged", `Automatic reset at midnight UTC boundary (${todayUtc}).`);
-        }
+        this.addNotification(`✅ [DAILY LOSS LIMIT] New UTC trading day started (${todayUtc}). Daily loss metrics reset.`);
       }
       this.save();
       return;
@@ -250,12 +319,11 @@ class SafetyBackstopManager {
       this.state.currentDayLossPct = 0.0;
     }
 
-    // Trigger daily loss limit breach if threshold crossed
+    // Trigger 24H daily loss limit breach if threshold crossed
     const limitPct = this.state.dailyLossLimitPct || 3.0;
-    if (this.state.currentDayLossPct >= limitPct && !this.state.dailyLossLimitBreached) {
-      this.state.dailyLossLimitBreached = true;
-      const reason = `DAILY_LOSS_LIMIT: Daily loss of ${this.state.currentDayLossPct.toFixed(2)}% breached 3% limit (Start: $${this.state.dayStartEquity.toFixed(2)}, Current: $${currentEquity.toFixed(2)})`;
-      this.triggerSilentLock(reason, {
+    if (this.state.currentDayLossPct >= limitPct && !this.state.dailyLossLimitHaltActive) {
+      const reason = `DAILY_LOSS_LIMIT_24H: Daily loss of ${this.state.currentDayLossPct.toFixed(2)}% breached ${limitPct}% limit (Start: $${this.state.dayStartEquity.toFixed(2)}, Current: $${currentEquity.toFixed(2)})`;
+      this.triggerDailyLossLimit24H(reason, {
         dayStartEquity: this.state.dayStartEquity,
         currentEquity,
         lossPct: this.state.currentDayLossPct,
@@ -307,7 +375,7 @@ class SafetyBackstopManager {
     console.log(`[SAFETY-NOTIFICATION] ${message}`);
   }
 
-  public logTrigger(type: "SAFE_MODE" | "SILENT_LOCK" | "EMERGENCY_HALT" | "SYSTEM", event: string, reason: string, details: any = {}) {
+  public logTrigger(type: "SAFE_MODE" | "SILENT_LOCK" | "EMERGENCY_HALT" | "DAILY_LOSS_LIMIT_24H" | "SYSTEM", event: string, reason: string, details: any = {}) {
     this.load();
     const logItem = {
       id: `trig-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,

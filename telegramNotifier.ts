@@ -313,7 +313,7 @@ class TelegramNotificationService {
    * 1. CRITICAL EVENT IMMEDIATE NOTIFICATION HANDLER
    */
   public sendCriticalEvent(
-    eventType: "silentLock" | "emergencyHalt" | "safeMode" | "candidateReview" | "equityMilestone" | "watchdogAlert" | "ciFailure",
+    eventType: "silentLock" | "emergencyHalt" | "safeMode" | "candidateReview" | "equityMilestone" | "watchdogAlert" | "ciFailure" | "dailyLossLimit",
     title: string,
     details: string,
     metrics?: Record<string, any>
@@ -322,6 +322,7 @@ class TelegramNotificationService {
     
     let emoji = "⚠️";
     if (eventType === "silentLock") emoji = "🛑";
+    if (eventType === "dailyLossLimit") emoji = "⏱️";
     if (eventType === "emergencyHalt") emoji = "🚨";
     if (eventType === "safeMode") emoji = "🛡️";
     if (eventType === "candidateReview") emoji = "🧬";

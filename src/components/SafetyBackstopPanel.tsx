@@ -11,7 +11,8 @@ import {
   Sliders, 
   Cpu, 
   Layers, 
-  Activity 
+  Activity,
+  Clock 
 } from 'lucide-react';
 
 import TelegramNotificationPanel from './TelegramNotificationPanel';
@@ -19,7 +20,7 @@ import TelegramNotificationPanel from './TelegramNotificationPanel';
 interface TriggerHistoryItem {
   id: string;
   timestamp: string;
-  type: "SAFE_MODE" | "SILENT_LOCK" | "EMERGENCY_HALT" | "SYSTEM";
+  type: "SAFE_MODE" | "SILENT_LOCK" | "EMERGENCY_HALT" | "DAILY_LOSS_LIMIT_24H" | "SYSTEM";
   event: string;
   reason: string;
   details: any;
@@ -39,6 +40,11 @@ interface SafetyState {
   silentLockActive: boolean;
   silentLockTriggerReason: string | null;
   silentLockTriggeredAt: string | null;
+  dailyLossLimitHaltActive?: boolean;
+  dailyLossLimitTriggeredAt?: string | null;
+  dailyLossLimitAutoResumeAt?: string | null;
+  dailyLossLimitPct?: number;
+  currentDayLossPct?: number;
   emergencyHaltActive: boolean;
   emergencyHaltPolicy: "FLATTEN_ALL" | "FREEZE_NEW_ONLY";
   drawdownThresholdPct: number;
@@ -191,7 +197,7 @@ export default function SafetyBackstopPanel() {
     <div className="space-y-6" id="safety-backstop-wrapper">
       
       {/* Overview Status Alerts Row */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4" id="safety-status-grid">
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-4" id="safety-status-grid">
         
         {/* Watchdog Process Heartbeat Card */}
         <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl flex flex-col justify-between relative overflow-hidden">
@@ -265,6 +271,33 @@ export default function SafetyBackstopPanel() {
           </div>
           <div className="border-t border-slate-800/80 mt-3 pt-2 text-[9px] font-mono text-slate-500">
             Limit: {safetyState.drawdownThresholdPct}% of peak equity
+          </div>
+        </div>
+
+        {/* 24-Hour Daily Loss Limit Card */}
+        <div className="bg-slate-900 border border-slate-800 p-4 rounded-xl flex flex-col justify-between relative overflow-hidden">
+          <div className={`absolute top-0 right-0 w-32 h-32 ${safetyState.dailyLossLimitHaltActive ? 'bg-orange-500/10' : 'bg-slate-500/5'} rounded-full filter blur-xl`}></div>
+          <div>
+            <div className="flex justify-between items-center mb-1">
+              <span className="text-[10px] font-mono text-slate-500 tracking-wider uppercase">24H Daily Loss Limit</span>
+              <span className={`px-2 py-0.5 rounded text-[8px] font-mono font-bold ${
+                safetyState.dailyLossLimitHaltActive ? 'bg-orange-950 text-orange-400 animate-pulse' : 'bg-slate-800 text-slate-400'
+              }`}>
+                {safetyState.dailyLossLimitHaltActive ? '24H HALT' : 'NOMINAL'}
+              </span>
+            </div>
+            <h3 className="text-sm font-bold text-slate-100 flex items-center gap-2">
+              <Clock className="w-4 h-4 text-orange-400" />
+              سنوری زیانی ڕۆژانە
+            </h3>
+            <p className="text-[11px] text-slate-400 mt-2 font-sans line-clamp-2">
+              {safetyState.dailyLossLimitHaltActive 
+                ? `Auto-resumes at ${formatDate(safetyState.dailyLossLimitAutoResumeAt || null)}` 
+                : `Positions auto-flatten & trading halts for 24 hours upon breaching ${safetyState.dailyLossLimitPct || 3}% daily loss.`}
+            </p>
+          </div>
+          <div className="border-t border-slate-800/80 mt-3 pt-2 text-[9px] font-mono text-slate-500">
+            {safetyState.dailyLossLimitHaltActive ? `Triggered: ${formatDate(safetyState.dailyLossLimitTriggeredAt || null)}` : 'Auto-resumes strictly after 24h'}
           </div>
         </div>
 

@@ -2,17 +2,17 @@
   "safeModeActive": false,
   "safeModeTriggerReason": null,
   "safeModeTriggeredAt": null,
-  "silentLockActive": false,
-  "silentLockTriggerReason": null,
-  "silentLockTriggeredAt": null,
+  "silentLockActive": true,
+  "silentLockTriggerReason": "Max drawdown limit breached! Peak Equity: $105617.88, Current Equity: $10002.80 (90.53% drawdown >= 5% limit). Soft-halt engaged.",
+  "silentLockTriggeredAt": "2026-07-26T08:46:26.550Z",
   "emergencyHaltActive": false,
   "emergencyHaltPolicy": "FLATTEN_ALL",
   "drawdownThresholdPct": 5,
   "globalMinConfidenceThreshold": 0.65,
   "dailyLossLimitPct": 3,
-  "dayStartEquity": 104465.42,
-  "currentDayLossPct": 0,
-  "lastDailyResetUtc": "2026-07-25",
+  "dayStartEquity": 104830.4,
+  "currentDayLossPct": 0.41,
+  "lastDailyResetUtc": "2026-07-26",
   "dailyLossLimitBreached": false,
   "useCompoundedSizing": false,
   "principalCapital": 100000,
@@ -24,13 +24,13 @@
       "tradesCount": 48,
       "demonstratedEdgeScore": 0.85,
       "allocationStatus": "FULL",
-      "note": "Statistically significant edge demonstrated. Liquidity: 82/100 (LOW_PROXY).",
+      "note": "Statistically significant edge demonstrated. Liquidity: 82/100 (LOW_PROXY).. Liquidity: 80/100 (LOW_PROXY).. Liquidity: 82/100 (LOW_PROXY).. Liquidity: 82/100 (LOW_PROXY).. Liquidity: 82/100 (LOW_PROXY).. Liquidity: 82/100 (LOW_PROXY).",
       "liquidityScore": 82,
       "dataSourceType": "TICK_PROXY_ONLY",
       "liquidityConfidence": "LOW_PROXY",
       "liquidityMultiplier": 0.89,
-      "avgSpreadPips": 1.51,
-      "avgRealizedSlippagePips": 0.68
+      "avgSpreadPips": 1.49,
+      "avgRealizedSlippagePips": 0.67
     },
     "GBP/USD": {
       "winRate": 58.1,
@@ -38,12 +38,12 @@
       "tradesCount": 36,
       "demonstratedEdgeScore": 0.72,
       "allocationStatus": "FULL",
-      "note": "Positive Sharpe and edge confirmed. Liquidity: 83/100 (LOW_PROXY).",
+      "note": "Positive Sharpe and edge confirmed. Liquidity: 83/100 (LOW_PROXY).. Liquidity: 80/100 (LOW_PROXY).. Liquidity: 83/100 (LOW_PROXY).. Liquidity: 83/100 (LOW_PROXY).. Liquidity: 83/100 (LOW_PROXY).. Liquidity: 83/100 (LOW_PROXY).",
       "liquidityScore": 83,
       "dataSourceType": "TICK_PROXY_ONLY",
       "liquidityConfidence": "LOW_PROXY",
       "liquidityMultiplier": 0.9,
-      "avgSpreadPips": 1.47,
+      "avgSpreadPips": 1.46,
       "avgRealizedSlippagePips": 0.66
     },
     "USD/JPY": {
@@ -52,7 +52,7 @@
       "tradesCount": 29,
       "demonstratedEdgeScore": 0.58,
       "allocationStatus": "FULL",
-      "note": "Moderate positive edge. Liquidity: 78/100 (LOW_PROXY).",
+      "note": "Moderate positive edge. Liquidity: 78/100 (LOW_PROXY).. Liquidity: 78/100 (LOW_PROXY).. Liquidity: 78/100 (LOW_PROXY).. Liquidity: 78/100 (LOW_PROXY).. Liquidity: 78/100 (LOW_PROXY).. Liquidity: 78/100 (LOW_PROXY).",
       "liquidityScore": 78,
       "dataSourceType": "TICK_PROXY_ONLY",
       "liquidityConfidence": "LOW_PROXY",
@@ -66,7 +66,7 @@
       "tradesCount": 22,
       "demonstratedEdgeScore": 0.25,
       "allocationStatus": "FULL",
-      "note": "Sub-threshold Sharpe. Allocation scaled down to 40%. Liquidity: 74/100 (LOW_PROXY).",
+      "note": "Sub-threshold Sharpe. Allocation scaled down to 40%. Liquidity: 74/100 (LOW_PROXY).. Liquidity: 74/100 (LOW_PROXY).. Liquidity: 74/100 (LOW_PROXY).. Liquidity: 74/100 (LOW_PROXY).. Liquidity: 74/100 (LOW_PROXY).. Liquidity: 74/100 (LOW_PROXY).",
       "liquidityScore": 74,
       "dataSourceType": "TICK_PROXY_ONLY",
       "liquidityConfidence": "LOW_PROXY",
@@ -80,13 +80,13 @@
       "tradesCount": 52,
       "demonstratedEdgeScore": 0.92,
       "allocationStatus": "FULL",
-      "note": "High statistical edge demonstrated. Liquidity: 72/100 (HIGH).",
-      "liquidityScore": 72,
+      "note": "High statistical edge demonstrated. Liquidity: 72/100 (HIGH).. Liquidity: 73/100 (HIGH).. Liquidity: 73/100 (HIGH).. Liquidity: 73/100 (HIGH).. Liquidity: 73/100 (HIGH).. Liquidity: 73/100 (HIGH).",
+      "liquidityScore": 73,
       "dataSourceType": "FULL_DATA",
       "liquidityConfidence": "HIGH",
-      "liquidityMultiplier": 0.83,
-      "avgSpreadPips": 1.88,
-      "avgRealizedSlippagePips": 0.85
+      "liquidityMultiplier": 0.84,
+      "avgSpreadPips": 1.83,
+      "avgRealizedSlippagePips": 0.82
     },
     "ETH/USD": {
       "winRate": 50,
@@ -94,7 +94,7 @@
       "tradesCount": 10,
       "demonstratedEdgeScore": 0.5,
       "allocationStatus": "REDUCED",
-      "note": "Initialized. Liquidity: 63/100 (HIGH).",
+      "note": "Initialized. Liquidity: 63/100 (HIGH).. Liquidity: 63/100 (HIGH).. Liquidity: 63/100 (HIGH).. Liquidity: 63/100 (HIGH).. Liquidity: 63/100 (HIGH).. Liquidity: 63/100 (HIGH).",
       "liquidityScore": 63,
       "dataSourceType": "FULL_DATA",
       "liquidityConfidence": "HIGH",
@@ -108,7 +108,7 @@
       "tradesCount": 10,
       "demonstratedEdgeScore": 0.5,
       "allocationStatus": "FULL",
-      "note": "Initialized. Liquidity: 70/100 (LOW_PROXY).",
+      "note": "Initialized. Liquidity: 70/100 (LOW_PROXY).. Liquidity: 70/100 (LOW_PROXY).. Liquidity: 70/100 (LOW_PROXY).. Liquidity: 70/100 (LOW_PROXY).. Liquidity: 70/100 (LOW_PROXY).. Liquidity: 70/100 (LOW_PROXY).",
       "liquidityScore": 70,
       "dataSourceType": "TICK_PROXY_ONLY",
       "liquidityConfidence": "LOW_PROXY",
@@ -122,7 +122,7 @@
       "tradesCount": 10,
       "demonstratedEdgeScore": 0.5,
       "allocationStatus": "FULL",
-      "note": "Initialized. Liquidity: 80/100 (LOW_PROXY).",
+      "note": "Initialized. Liquidity: 80/100 (LOW_PROXY).. Liquidity: 80/100 (LOW_PROXY).. Liquidity: 80/100 (LOW_PROXY).. Liquidity: 80/100 (LOW_PROXY).. Liquidity: 80/100 (LOW_PROXY).. Liquidity: 80/100 (LOW_PROXY).",
       "liquidityScore": 80,
       "dataSourceType": "TICK_PROXY_ONLY",
       "liquidityConfidence": "LOW_PROXY",
@@ -179,11 +179,23 @@
   "maxTotalNotionalExposure": 500000,
   "maxSingleInstrumentExposure": 300000,
   "maxCorrelatedGroupExposure": 400000,
-  "watchdogLastHeartbeat": "2026-07-25T15:33:34.516Z",
+  "watchdogLastHeartbeat": "2026-07-26T08:55:42.157Z",
   "watchdogStatus": "NOMINAL",
   "lastDrawdownPct": 0,
   "lastRollbackEvent": null,
   "triggerHistory": [
+    {
+      "id": "trig-1785055586582-fm1sc",
+      "timestamp": "2026-07-26T08:46:26.582Z",
+      "type": "SILENT_LOCK",
+      "event": "Silent Lock Activated",
+      "reason": "Max drawdown limit breached! Peak Equity: $105617.88, Current Equity: $10002.80 (90.53% drawdown >= 5% limit). Soft-halt engaged.",
+      "details": {
+        "peakEquity": 105617.88,
+        "currentEquity": 10002.8,
+        "drawdownPct": 90.52925508446108
+      }
+    },
     {
       "id": "hist-init",
       "timestamp": "2026-07-23T20:49:21.658Z",
@@ -198,5 +210,12 @@
     "emailAlerts": true,
     "smsAlerts": false
   },
-  "notifications": []
+  "notifications": [
+    {
+      "id": "notif-1785055586566-hysnz",
+      "timestamp": "2026-07-26T08:46:26.566Z",
+      "message": "🛑 [SILENT LOCK] Hard Soft-Halt ENGAGED: Max drawdown limit breached! Peak Equity: $105617.88, Current Equity: $10002.80 (90.53% drawdown >= 5% limit). Soft-halt engaged.. All new position entries and evolution candidate promotions are strictly blocked.",
+      "read": false
+    }
+  ]
 }
