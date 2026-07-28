@@ -7,7 +7,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { 
   Target, ShieldAlert, CheckCircle2, XCircle, RefreshCw, Terminal, 
   Sliders, Play, Sparkles, Lightbulb, Zap, Brain, Settings,
-  Flame, LineChart, Activity, Award, Check, Clock, Bookmark, Github
+  Flame, LineChart, Activity, Award, Check, Clock, Bookmark, Github, Code
 } from 'lucide-react';
 import { EvolutionCandidate } from '../types/quant';
 
@@ -139,6 +139,83 @@ export default function EvolutionLab({ candidates, setCandidates, selectedId, se
   const [saveTrainedStatus, setSaveTrainedStatus] = useState<boolean>(false);
   const [autoTrainingMode, setAutoTrainingMode] = useState<boolean>(true);
   const trainLogRef = useRef<HTMLDivElement>(null);
+
+  // Phase 4 Autonomous Code Evolution & Self-Healing States
+  const [proposedCodeSnippet, setProposedCodeSnippet] = useState<string>(
+    `func (s *Strategy) CalculateAlpha(spread float64) float64 {\n\tif spread <= 0 { return 0.0 }\n\treturn math.Max(0.0, spread * 1.84)\n}`
+  );
+  const [hotPatches, setHotPatches] = useState<any[]>([]);
+  const [isPatching, setIsPatching] = useState<boolean>(false);
+  const [patchSuccessMsg, setPatchSuccessMsg] = useState<string>('');
+
+  const [simulatedStackTrace, setSimulatedStackTrace] = useState<string>(
+    "panic: runtime error: index out of range [12] with length 10 in CalculateVWAPSlippage()"
+  );
+  const [healingLogs, setHealingLogs] = useState<any[]>([]);
+  const [isHealing, setIsHealing] = useState<boolean>(false);
+
+  const fetchPhase4Data = async () => {
+    try {
+      const [patchesRes, healRes] = await Promise.all([
+        fetch('/api/evolution/patches'),
+        fetch('/api/evolution/healing-logs')
+      ]);
+      if (patchesRes.ok) {
+        const pData = await patchesRes.json();
+        if (pData.success) setHotPatches(pData.patches || []);
+      }
+      if (healRes.ok) {
+        const hData = await healRes.json();
+        if (hData.success) setHealingLogs(hData.logs || []);
+      }
+    } catch (err) {}
+  };
+
+  useEffect(() => {
+    fetchPhase4Data();
+  }, []);
+
+  const handleApplyHotPatch = async () => {
+    setIsPatching(true);
+    setPatchSuccessMsg('');
+    try {
+      const res = await fetch('/api/evolution/hot-patch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ strategyId: 'HFT_ALPHA_COMPASS', proposedCode: proposedCodeSnippet })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setPatchSuccessMsg(`⚡ Code Hot-Swapped Live! AST Verified. Sharpe Ratio: ${data.candidate.sandboxScore}`);
+        fetchPhase4Data();
+      } else {
+        alert(`Hot patch failed: ${data.error || 'AST error'}`);
+      }
+    } catch (err: any) {
+      alert(`Network error: ${err.message}`);
+    } finally {
+      setIsPatching(false);
+    }
+  };
+
+  const handleRunSelfHealing = async () => {
+    setIsHealing(true);
+    try {
+      const res = await fetch('/api/evolution/self-heal', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ stackTrace: simulatedStackTrace })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        fetchPhase4Data();
+      }
+    } catch (err: any) {
+      alert(`Self healing error: ${err.message}`);
+    } finally {
+      setIsHealing(false);
+    }
+  };
 
   // Poll real backend live ingestion pipeline status
   const [backendTrainingStatus, setBackendTrainingStatus] = useState<any>({
@@ -1554,6 +1631,139 @@ export default function EvolutionLab({ candidates, setCandidates, selectedId, se
           </div>
         </div>
       )}
+
+      {/* PHASE 4: AUTONOMOUS CODE EVOLUTION & SELF-HEALING PIPELINE */}
+      <div id="phase4-code-evolution-panel" className="p-5 bg-slate-950 border border-slate-800 rounded-xl space-y-4 font-mono">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-slate-800 pb-3">
+          <div className="flex items-center gap-2">
+            <div className="p-2 bg-emerald-950/80 border border-emerald-500/40 rounded text-emerald-400">
+              <Zap className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-slate-100 uppercase tracking-wider flex items-center gap-2">
+                <span>DYNAMIC CODE SYNTHESIS, HOT-PATCHING & SELF-HEALING</span>
+                <span className="px-2 py-0.5 text-[10px] bg-emerald-950 text-emerald-400 border border-emerald-500/40 rounded font-bold">
+                  PHASE 4 ACTIVE
+                </span>
+              </h3>
+              <p className="text-[10px] text-slate-400 font-sans">AST Syntax Verification, Live Process Hot-Swapping & Automated Exception Remediation</p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] px-2.5 py-1 bg-slate-900 border border-slate-800 rounded text-emerald-400 font-bold flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              AST VERIFIER: ONLINE
+            </span>
+          </div>
+        </div>
+
+        {/* Hot-Patching & Self-Healing Dual Workspace */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {/* Section 1: Dynamic Code Hot-Patching */}
+          <div className="p-4 bg-slate-900/60 border border-slate-800/80 rounded-lg space-y-3">
+            <div className="flex justify-between items-center border-b border-slate-800/80 pb-2">
+              <span className="text-xs font-bold text-slate-200 flex items-center gap-1.5 uppercase">
+                <Code className="w-4 h-4 text-emerald-400" />
+                1. Candidate Code Hot-Patching
+              </span>
+              <span className="text-[10px] text-slate-500">NO RESTART REQUIRED</span>
+            </div>
+
+            <textarea
+              value={proposedCodeSnippet}
+              onChange={(e) => setProposedCodeSnippet(e.target.value)}
+              rows={4}
+              className="w-full bg-slate-950 border border-slate-800 rounded p-2.5 text-xs font-mono text-slate-200 focus:outline-none focus:border-emerald-500"
+              placeholder="Paste candidate Go/TS strategy code for AST validation and hot-swapping..."
+            />
+
+            <div className="flex justify-between items-center gap-2">
+              <button
+                onClick={handleApplyHotPatch}
+                disabled={isPatching}
+                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-xs font-bold transition-all cursor-pointer flex items-center gap-2 disabled:opacity-50"
+              >
+                <Play className={`w-3.5 h-3.5 ${isPatching ? 'animate-spin' : ''}`} />
+                <span>{isPatching ? "AST Validating & Swapping..." : "Execute Hot-Patch Swap"}</span>
+              </button>
+              {patchSuccessMsg && (
+                <span className="text-[10px] font-bold text-emerald-400 animate-pulse">{patchSuccessMsg}</span>
+              )}
+            </div>
+
+            {/* Active Patches Feed */}
+            {hotPatches.length > 0 && (
+              <div className="space-y-1.5 pt-2 border-t border-slate-800/80">
+                <span className="text-[10px] text-slate-400 font-bold uppercase block">Active Hot-Patches in Memory:</span>
+                <div className="space-y-1 max-h-28 overflow-y-auto pr-1">
+                  {hotPatches.map((p, idx) => (
+                    <div key={idx} className="p-2 bg-slate-950 rounded border border-slate-800/80 flex justify-between items-center text-[10px]">
+                      <div>
+                        <span className="text-emerald-400 font-bold block">{p.patchId} ({p.strategyId})</span>
+                        <span className="text-slate-500">{p.targetFile}</span>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-slate-300 font-bold block">Sharpe: {p.sandboxScore} (+{p.netAlphaImprove})</span>
+                        <span className="text-emerald-400 font-bold">{p.status}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Section 2: Automated Bug Remediation & AST Self-Healing */}
+          <div className="p-4 bg-slate-900/60 border border-slate-800/80 rounded-lg space-y-3">
+            <div className="flex justify-between items-center border-b border-slate-800/80 pb-2">
+              <span className="text-xs font-bold text-slate-200 flex items-center gap-1.5 uppercase">
+                <ShieldAlert className="w-4 h-4 text-rose-400" />
+                2. Automated Bug Remediation
+              </span>
+              <span className="text-[10px] text-slate-500">AST SYNTAX REPAIR</span>
+            </div>
+
+            <input
+              type="text"
+              value={simulatedStackTrace}
+              onChange={(e) => setSimulatedStackTrace(e.target.value)}
+              className="w-full bg-slate-950 border border-slate-800 rounded p-2 text-xs font-mono text-rose-300 focus:outline-none focus:border-rose-500"
+              placeholder="Simulated stack trace or runtime exception log..."
+            />
+
+            <div className="flex justify-between items-center gap-2">
+              <button
+                onClick={handleRunSelfHealing}
+                disabled={isHealing}
+                className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded text-xs font-bold transition-all cursor-pointer flex items-center gap-2 disabled:opacity-50"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isHealing ? 'animate-spin' : ''}`} />
+                <span>{isHealing ? "Synthesizing Fix..." : "Simulate Exception & Auto-Heal"}</span>
+              </button>
+            </div>
+
+            {/* Self-Healing Feed */}
+            {healingLogs.length > 0 && (
+              <div className="space-y-1.5 pt-2 border-t border-slate-800/80">
+                <span className="text-[10px] text-slate-400 font-bold uppercase block">Self-Healing Remediation History:</span>
+                <div className="space-y-1 max-h-28 overflow-y-auto pr-1">
+                  {healingLogs.map((log, idx) => (
+                    <div key={idx} className="p-2 bg-slate-950 rounded border border-slate-800/80 space-y-1 text-[10px]">
+                      <div className="flex justify-between items-center">
+                        <span className="text-rose-400 font-bold">{log.eventId}</span>
+                        <span className="text-emerald-400 font-bold px-1.5 py-0.5 bg-emerald-950 border border-emerald-500/30 rounded">{log.status}</span>
+                      </div>
+                      <p className="text-slate-300 font-sans">{log.rootCause}</p>
+                      <pre className="text-[9px] text-slate-400 bg-slate-900 p-1.5 rounded overflow-x-auto">{log.automatedPatch}</pre>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
 
       {/* AI Live Model Continuous Training Engine Panel */}
       <div id="ai-live-training-panel" className="p-5 bg-gradient-to-r from-slate-950 via-slate-950 to-purple-950/20 border border-slate-800 rounded-xl space-y-5">

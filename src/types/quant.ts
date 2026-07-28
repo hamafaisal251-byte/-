@@ -20,7 +20,7 @@ export interface SystemMetrics {
 
 export interface TelemetryLog {
   timestamp: string;
-  source: 'GO-BACKPLANE' | 'CPP-ENGINE' | 'FPGA-DMA' | 'EVOLUTION-LAB' | 'RISK-MANAGER';
+  source: 'GO-BACKPLANE' | 'CPP-ENGINE' | 'FPGA-DMA' | 'EVOLUTION-LAB' | 'RISK-MANAGER' | 'FIX-ENGINE' | 'MICROSTRUCTURE';
   level: 'INFO' | 'WARNING' | 'CRITICAL' | 'SUCCESS';
   message: string;
 }

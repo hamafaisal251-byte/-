@@ -11,7 +11,13 @@ import {
   BarChart3, 
   Grid, 
   Info, 
-  AlertTriangle 
+  AlertTriangle,
+  Play,
+  FileText,
+  Download,
+  Flame,
+  CheckCircle2,
+  RefreshCw
 } from "lucide-react";
 import { 
   ResponsiveContainer, 
@@ -23,6 +29,20 @@ import {
   Tooltip, 
   Legend 
 } from "recharts";
+
+interface StressResult {
+  scenarioId: string;
+  scenarioName: string;
+  simulationsCount: number;
+  normalVar99: number;
+  evtVar999: number;
+  expectedShortfall999: number;
+  maxSimulatedDrawdown: number;
+  survivalProbability: number;
+  liquidityBufferPass: boolean;
+  quantiles: Record<string, number>;
+  timestamp: string;
+}
 
 interface RiskLimits {
   maxTotalNotionalExposure: number;
@@ -82,6 +102,55 @@ export default function PortfolioRiskPanel() {
 
   const [saving, setSaving] = useState<boolean>(false);
   const [saveSuccess, setSaveSuccess] = useState<boolean>(false);
+
+  // Phase 3 States
+  const [stressScenario, setStressScenario] = useState<string>("BLACK_MONDAY_1987");
+  const [stressResult, setStressResult] = useState<StressResult | null>(null);
+  const [isTesting, setIsTesting] = useState<boolean>(false);
+  const [auditReport, setAuditReport] = useState<any | null>(null);
+  const [exportingAudit, setExportingAudit] = useState<boolean>(false);
+
+  const handleRunStressTest = async () => {
+    setIsTesting(true);
+    try {
+      const res = await fetch("/api/risk/stress-test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ scenarioId: stressScenario, simulations: 10000 })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setStressResult(data.result);
+      }
+    } catch (err: any) {
+      alert(`Stress test failed: ${err.message}`);
+    } finally {
+      setIsTesting(false);
+    }
+  };
+
+  const handleExportAuditReport = async () => {
+    setExportingAudit(true);
+    try {
+      const res = await fetch("/api/compliance/regulatory-export");
+      const data = await res.json();
+      if (data.success) {
+        setAuditReport(data.report);
+        // Download as JSON file
+        const blob = new Blob([JSON.stringify(data.report, null, 2)], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `MIFID_II_CFTC_AUDIT_${Date.now()}.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+      }
+    } catch (err: any) {
+      alert(`Export failed: ${err.message}`);
+    } finally {
+      setExportingAudit(false);
+    }
+  };
 
   const fetchRiskData = async () => {
     try {
@@ -202,11 +271,125 @@ export default function PortfolioRiskPanel() {
           </p>
         </div>
         <div className="flex gap-2">
+          <button
+            onClick={handleExportAuditReport}
+            disabled={exportingAudit}
+            className="px-3.5 py-2 bg-slate-950 border border-slate-800 hover:border-slate-700 text-slate-200 rounded-lg text-xs font-mono font-bold flex items-center gap-2 transition-all cursor-pointer disabled:opacity-50"
+            dir="ltr"
+          >
+            <Download className={`w-4 h-4 text-sky-400 ${exportingAudit ? 'animate-bounce' : ''}`} />
+            <span>MiFID II / CFTC Audit Export</span>
+          </button>
           <div className="p-2 px-3 bg-slate-950 border border-slate-800 rounded-lg text-center font-mono">
             <span className="text-[10px] text-slate-500 block uppercase font-bold">STATE REFRESH</span>
             <span className="text-emerald-400 text-xs font-black animate-pulse">● ACTIVE POLLING</span>
           </div>
         </div>
+      </div>
+
+      {/* PHASE 3: MONTE CARLO EVT STRESS TESTING PANEL */}
+      <div id="evt-stress-test-panel" className="p-5 bg-slate-900/80 border border-slate-800 rounded-xl space-y-4 font-mono">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-slate-800 pb-3">
+          <div className="flex items-center gap-2.5">
+            <div className="p-2 bg-rose-950/60 border border-rose-500/40 rounded text-rose-400">
+              <Flame className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-slate-100 uppercase tracking-wider flex items-center gap-2">
+                <span>MONTE CARLO 10,000-PATH EVT STRESS TEST</span>
+                <span className="px-2 py-0.5 text-[10px] bg-rose-950 text-rose-400 border border-rose-500/40 rounded font-bold">
+                  PHASE 3 HEAVY-TAIL TAIL VaR 99.9%
+                </span>
+              </h3>
+              <p className="text-[10px] text-slate-400 font-sans">Extreme Value Theory (Generalized Pareto Distribution) Tail Risk Analysis under Crisis Market Conditions</p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2.5">
+            <select
+              value={stressScenario}
+              onChange={(e) => setStressScenario(e.target.value)}
+              className="bg-slate-950 border border-slate-800 rounded px-3 py-1.5 text-xs text-slate-200 font-bold focus:outline-none focus:border-rose-500 cursor-pointer"
+            >
+              <option value="BLACK_MONDAY_1987">1987 Black Monday (-22.6% Crash)</option>
+              <option value="CHF_UNPEG_2015">2015 Swiss Franc Unpeg (-30% Gap)</option>
+              <option value="COVID_CRUNCH_2020">2020 COVID Liquidity Squeeze</option>
+              <option value="FLASH_CRASH_2010">2010 Flash Crash Algo Loop</option>
+            </select>
+
+            <button
+              onClick={handleRunStressTest}
+              disabled={isTesting}
+              className="px-4 py-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded text-xs font-bold transition-all cursor-pointer flex items-center gap-2 disabled:opacity-50"
+            >
+              <Play className={`w-3.5 h-3.5 ${isTesting ? 'animate-spin' : ''}`} />
+              <span>{isTesting ? "Running 10k Paths..." : "Simulate Stress Test"}</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Stress Test Results View */}
+        {stressResult && (
+          <div className="space-y-3 pt-1">
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-xs">
+              <div className="bg-slate-950 p-2.5 rounded border border-slate-800">
+                <span className="text-[10px] text-slate-500 block uppercase">Scenario</span>
+                <span className="font-bold text-slate-200 text-xs block my-0.5">{stressResult.scenarioName}</span>
+                <span className="text-[9px] text-slate-400">{stressResult.simulationsCount.toLocaleString()} Monte Carlo Paths</span>
+              </div>
+
+              <div className="bg-slate-950 p-2.5 rounded border border-slate-800">
+                <span className="text-[10px] text-slate-500 block uppercase">Normal VaR 99.0%</span>
+                <span className="font-bold text-amber-400 text-sm block my-0.5">{stressResult.normalVar99}%</span>
+                <span className="text-[9px] text-slate-400">Standard Gaussian model</span>
+              </div>
+
+              <div className="bg-slate-950 p-2.5 rounded border border-slate-800">
+                <span className="text-[10px] text-slate-500 block uppercase">EVT Tail VaR 99.9%</span>
+                <span className="font-bold text-rose-400 text-sm block my-0.5">{stressResult.evtVar999}%</span>
+                <span className="text-[9px] text-rose-400/80">Extreme Value Pareto Tail</span>
+              </div>
+
+              <div className="bg-slate-950 p-2.5 rounded border border-slate-800">
+                <span className="text-[10px] text-slate-500 block uppercase">Expected Shortfall (CVaR)</span>
+                <span className="font-bold text-purple-400 text-sm block my-0.5">{stressResult.expectedShortfall999}%</span>
+                <span className="text-[9px] text-slate-400">Mean Tail Loss Beyond 99.9%</span>
+              </div>
+
+              <div className="bg-slate-950 p-2.5 rounded border border-slate-800">
+                <span className="text-[10px] text-slate-500 block uppercase">Survival Rate</span>
+                <span className={`font-bold text-sm block my-0.5 ${stressResult.survivalProbability >= 99.0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                  {stressResult.survivalProbability}%
+                </span>
+                <span className="text-[9px] text-slate-400">
+                  Liquidity Buffer: <strong className={stressResult.liquidityBufferPass ? "text-emerald-400" : "text-rose-400"}>{stressResult.liquidityBufferPass ? "ADEQUATE" : "DEFICIT"}</strong>
+                </span>
+              </div>
+            </div>
+
+            {/* Quantiles Bar */}
+            <div className="bg-slate-950 p-2.5 rounded border border-slate-800/80 flex flex-wrap justify-between items-center text-[11px] gap-2">
+              <span className="text-slate-400 font-bold uppercase">Quantile Tail Distribution:</span>
+              <div className="flex gap-4">
+                <span className="text-slate-300">P50: <strong className="text-slate-100">{stressResult.quantiles.p50}%</strong></span>
+                <span className="text-slate-300">P90: <strong className="text-amber-300">{stressResult.quantiles.p90}%</strong></span>
+                <span className="text-slate-300">P95: <strong className="text-amber-400">{stressResult.quantiles.p95}%</strong></span>
+                <span className="text-slate-300">P99: <strong className="text-rose-400">{stressResult.quantiles.p99}%</strong></span>
+                <span className="text-rose-400 font-bold">P99.9 (EVT): {stressResult.quantiles["p99.9"]}%</span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {auditReport && (
+          <div className="p-3 bg-sky-950/30 border border-sky-500/30 rounded text-xs text-sky-300 flex justify-between items-center">
+            <span className="flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-sky-400" />
+              <span>MiFID II & Dodd-Frank Audit Report exported successfully. PTP Clock Sync: <strong>{auditReport.clockSyncPTPUs * 1000} ns</strong> (Pass: {auditReport.clockSyncPass ? "Yes" : "No"}). Best Execution Score: <strong>{auditReport.bestExecutionScore}%</strong></span>
+            </span>
+            <span className="text-[10px] text-slate-400 font-mono">HASH: {auditReport.auditHash}</span>
+          </div>
+        )}
       </div>
 
       {/* Data Quality & Correlation Stability Status */}

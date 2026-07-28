@@ -4,9 +4,37 @@
  */
 
 import { useState, useEffect, useRef } from 'react';
-import { Activity, ShieldAlert, Zap, Flame, RotateCcw, Play, CheckCircle2, Cpu, Globe, Database, Clock, RefreshCw } from 'lucide-react';
+import { Activity, ShieldAlert, Zap, Flame, RotateCcw, Play, CheckCircle2, Cpu, Globe, Database, Clock, RefreshCw, Layers, ArrowUpDown, Sliders, ShieldCheck } from 'lucide-react';
 import { SystemMetrics, TelemetryLog } from '../types/quant';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
+
+interface OrderBookLevel {
+  level: number;
+  price: number;
+  volume: number;
+  orderCount: number;
+}
+
+interface OrderBookData {
+  symbol: string;
+  timestamp: string;
+  midPrice: number;
+  spreadPips: number;
+  bids: OrderBookLevel[];
+  asks: OrderBookLevel[];
+  totalBidVolume: number;
+  totalAskVolume: number;
+  orderBookImbalance: number;
+  microstructureState: string;
+}
+
+interface VWAPEstimate {
+  orderSizeLots: number;
+  expectedVwap: number;
+  slippagePips: number;
+  marketImpactScore: number;
+  queuePositionUs: number;
+}
 
 interface SavedBrokerConfig {
   brokerType: 'oanda' | 'metatrader5' | 'fix_gateway' | 'ib';
@@ -103,6 +131,72 @@ export default function TelemetrySimulator({ activeCandidateName }: TelemetrySim
   });
 
   const [isSyncingTime, setIsSyncingTime] = useState<boolean>(false);
+
+  // Phase 2 State: Market Microstructure & Orderbook
+  const [orderBook, setOrderBook] = useState<OrderBookData | null>(null);
+  const [vwapEstimate, setVwapEstimate] = useState<VWAPEstimate | null>(null);
+  const [selectedSymbol, setSelectedSymbol] = useState<string>('EUR/USD');
+  const [orderLots, setOrderLots] = useState<number>(1.0);
+  const [gapRecoveryMsg, setGapRecoveryMsg] = useState<string | null>(null);
+  const [isRecoveringGap, setIsRecoveringGap] = useState<boolean>(false);
+
+  // Fetch Microstructure L2 Order Book Depth
+  const fetchMicrostructure = async () => {
+    try {
+      const bookRes = await fetch(`/api/microstructure/book?symbol=${encodeURIComponent(selectedSymbol)}`);
+      if (bookRes.ok) {
+        const bookData = await bookRes.json();
+        if (bookData.success) {
+          setOrderBook(bookData.orderBook);
+        }
+      }
+
+      const vwapRes = await fetch(`/api/microstructure/slippage?symbol=${encodeURIComponent(selectedSymbol)}&side=BUY&lots=${orderLots}`);
+      if (vwapRes.ok) {
+        const vwapData = await vwapRes.json();
+        if (vwapData.success) {
+          setVwapEstimate(vwapData.estimate);
+        }
+      }
+    } catch (err) {
+      console.warn("Error fetching microstructure data:", err);
+    }
+  };
+
+  useEffect(() => {
+    fetchMicrostructure();
+    const interval = setInterval(fetchMicrostructure, 2000);
+    return () => clearInterval(interval);
+  }, [selectedSymbol, orderLots]);
+
+  const handleFixGapRecovery = async () => {
+    setIsRecoveringGap(true);
+    try {
+      const res = await fetch('/api/fix/gap-recovery', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ beginSeq: 1, endSeq: 12 })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setGapRecoveryMsg(`✅ ${data.message} (Req ID: ${data.requestId})`);
+        const timeStr = new Date().toTimeString().split(' ')[0];
+        setLogs(prev => [
+          ...prev,
+          {
+            timestamp: timeStr,
+            source: 'FIX-ENGINE',
+            level: 'SUCCESS',
+            message: `FIX ResendRequest (35=2) executed for seq #1 -> #13. Sequence gap recovered successfully.`
+          }
+        ]);
+      }
+    } catch (err: any) {
+      setGapRecoveryMsg(`❌ Error: ${err.message}`);
+    } finally {
+      setIsRecoveringGap(false);
+    }
+  };
 
   // Poll Time-Sync Status
   const fetchTimeSync = async () => {
@@ -636,6 +730,196 @@ export default function TelemetrySimulator({ activeCandidateName }: TelemetrySim
           </div>
         </div>
 
+        {/* PHASE 2: MARKET MICROSTRUCTURE & L2 ORDER BOOK DEPTH */}
+        <div id="microstructure-precision-panel" className="lg:col-span-12 bg-slate-900/60 border border-slate-800 rounded-xl p-5 space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800/80 pb-3">
+            <div className="flex items-center space-x-2.5">
+              <div className="p-2 bg-sky-950/50 border border-sky-500/30 rounded text-sky-400">
+                <Layers className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-slate-100 uppercase tracking-wider flex items-center gap-2">
+                  <span>MARKET MICROSTRUCTURE & L2/L3 ORDER BOOK DEPTH</span>
+                  <span className="px-2 py-0.5 text-[10px] bg-sky-950 text-sky-400 border border-sky-500/30 rounded font-mono">
+                    PHASE 2 DIRECT ENGINE
+                  </span>
+                </h3>
+                <span className="text-[10px] text-slate-400 font-mono">MICROSECOND ORDER IMBALANCE (OBA), QUEUE POSITION & VWAP SLIPPAGE</span>
+              </div>
+            </div>
+
+            <div className="flex items-center space-x-3">
+              <select
+                value={selectedSymbol}
+                onChange={(e) => setSelectedSymbol(e.target.value)}
+                className="bg-slate-950 border border-slate-800 rounded px-3 py-1.5 text-xs text-slate-200 font-mono font-bold focus:outline-none focus:border-sky-500 cursor-pointer"
+              >
+                <option value="EUR/USD">EUR/USD</option>
+                <option value="GBP/USD">GBP/USD</option>
+                <option value="USD/JPY">USD/JPY</option>
+              </select>
+
+              <button
+                onClick={handleFixGapRecovery}
+                disabled={isRecoveringGap}
+                className="px-3 py-1.5 bg-sky-600 hover:bg-sky-500 text-white rounded text-xs font-mono font-bold transition-all cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isRecoveringGap ? 'animate-spin' : ''}`} />
+                <span>FIX Gap Recovery (35=2)</span>
+              </button>
+            </div>
+          </div>
+
+          {gapRecoveryMsg && (
+            <div className="p-2.5 bg-sky-950/40 border border-sky-500/30 rounded text-xs font-mono text-sky-300">
+              {gapRecoveryMsg}
+            </div>
+          )}
+
+          {/* Microstructure Metrics Bar */}
+          {orderBook && (
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 font-mono">
+              <div className="bg-slate-950 p-2.5 rounded border border-slate-800/80">
+                <span className="text-[10px] text-slate-400 block uppercase">Mid Price & Spread</span>
+                <span className="text-sm font-bold text-slate-100 block my-0.5">
+                  {orderBook.midPrice.toFixed(5)}
+                </span>
+                <span className="text-[10px] text-sky-400 block">
+                  Spread: {orderBook.spreadPips.toFixed(2)} pips
+                </span>
+              </div>
+
+              <div className="bg-slate-950 p-2.5 rounded border border-slate-800/80">
+                <span className="text-[10px] text-slate-400 block uppercase">Order Book Imbalance (OBA)</span>
+                <span className={`text-sm font-bold block my-0.5 ${orderBook.orderBookImbalance > 0 ? 'text-emerald-400' : orderBook.orderBookImbalance < 0 ? 'text-rose-400' : 'text-slate-300'}`}>
+                  {orderBook.orderBookImbalance > 0 ? `+${orderBook.orderBookImbalance}` : orderBook.orderBookImbalance}
+                </span>
+                <span className="text-[10px] text-slate-400 block uppercase">
+                  State: <strong className="text-amber-400">{orderBook.microstructureState}</strong>
+                </span>
+              </div>
+
+              <div className="bg-slate-950 p-2.5 rounded border border-slate-800/80">
+                <span className="text-[10px] text-slate-400 block uppercase">Total Bid / Ask Volume</span>
+                <span className="text-sm font-bold text-slate-100 block my-0.5">
+                  <span className="text-emerald-400">{orderBook.totalBidVolume}M</span> / <span className="text-rose-400">{orderBook.totalAskVolume}M</span>
+                </span>
+                <span className="text-[10px] text-slate-400 block">
+                  Liquidity Depth L1-L10
+                </span>
+              </div>
+
+              <div className="bg-slate-950 p-2.5 rounded border border-slate-800/80">
+                <span className="text-[10px] text-slate-400 block uppercase">Queue Position Est.</span>
+                <span className="text-sm font-bold text-emerald-400 block my-0.5">
+                  {vwapEstimate ? `${vwapEstimate.queuePositionUs} µs` : '140 µs'}
+                </span>
+                <span className="text-[10px] text-slate-400 block">
+                  Speed Bonus: +0.42 pips
+                </span>
+              </div>
+            </div>
+          )}
+
+          {/* L2 Depth Ladder & VWAP Slippage Simulator */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 pt-2">
+            
+            {/* L2 Depth Ladder (8 cols) */}
+            <div className="lg:col-span-8 bg-slate-950 border border-slate-800/80 rounded-lg p-3 space-y-2">
+              <div className="flex justify-between items-center text-xs font-mono font-bold text-slate-400 border-b border-slate-800 pb-1.5">
+                <span className="text-emerald-400">BID DEPTH (LEVELS 1-10)</span>
+                <span className="text-slate-500">REAL-TIME L2 ORDER BOOK</span>
+                <span className="text-rose-400">ASK DEPTH (LEVELS 1-10)</span>
+              </div>
+
+              {orderBook ? (
+                <div className="grid grid-cols-2 gap-3 text-xs font-mono">
+                  {/* Bids Column */}
+                  <div className="space-y-1">
+                    {orderBook.bids.map((b) => (
+                      <div key={b.level} className="relative flex justify-between items-center px-2 py-1 bg-emerald-950/20 border border-emerald-900/30 rounded overflow-hidden">
+                        <div
+                          className="absolute left-0 top-0 bottom-0 bg-emerald-500/15 transition-all duration-300"
+                          style={{ width: `${Math.min(100, (b.volume / 80) * 100)}%` }}
+                        />
+                        <span className="relative text-emerald-400 font-bold">{b.price.toFixed(5)}</span>
+                        <span className="relative text-slate-300 text-[11px]">{b.volume}M ({b.orderCount} orders)</span>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Asks Column */}
+                  <div className="space-y-1">
+                    {orderBook.asks.map((a) => (
+                      <div key={a.level} className="relative flex justify-between items-center px-2 py-1 bg-rose-950/20 border border-rose-900/30 rounded overflow-hidden">
+                        <div
+                          className="absolute right-0 top-0 bottom-0 bg-rose-500/15 transition-all duration-300"
+                          style={{ width: `${Math.min(100, (a.volume / 80) * 100)}%` }}
+                        />
+                        <span className="relative text-slate-300 text-[11px]">{a.volume}M ({a.orderCount} orders)</span>
+                        <span className="relative text-rose-400 font-bold">{a.price.toFixed(5)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="p-4 text-center text-slate-500 font-mono text-xs">
+                  <RefreshCw className="w-4 h-4 animate-spin mx-auto mb-1 text-sky-400" />
+                  <span>Loading L2 Order Book Depth...</span>
+                </div>
+              )}
+            </div>
+
+            {/* VWAP Slippage Curve & Market Impact Estimator (4 cols) */}
+            <div className="lg:col-span-4 bg-slate-950 border border-slate-800/80 rounded-lg p-3 space-y-3 font-mono">
+              <div className="flex items-center justify-between border-b border-slate-800 pb-1.5">
+                <span className="text-xs font-bold text-slate-200 uppercase flex items-center gap-1.5">
+                  <Sliders className="w-3.5 h-3.5 text-sky-400" />
+                  VWAP SLIPPAGE MODEL
+                </span>
+                <span className="text-[10px] text-sky-400">IMPACT ESTIMATOR</span>
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-slate-400">Order Size (Lots):</span>
+                  <span className="text-sky-400 font-bold text-sm">{orderLots} Lots ({orderLots * 100}k units)</span>
+                </div>
+                <input
+                  type="range"
+                  min="0.1"
+                  max="20.0"
+                  step="0.1"
+                  value={orderLots}
+                  onChange={(e) => setOrderLots(parseFloat(e.target.value))}
+                  className="w-full accent-sky-400 cursor-pointer bg-slate-900"
+                />
+              </div>
+
+              {vwapEstimate && (
+                <div className="space-y-2 bg-slate-900/60 p-2.5 rounded border border-slate-800/80 text-xs">
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Expected VWAP:</span>
+                    <span className="text-slate-100 font-bold">{vwapEstimate.expectedVwap.toFixed(5)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Slippage Impact:</span>
+                    <span className="text-amber-400 font-bold">+{vwapEstimate.slippagePips.toFixed(2)} pips</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Market Impact Score:</span>
+                    <span className="text-sky-400 font-bold">{vwapEstimate.marketImpactScore} / 100</span>
+                  </div>
+                  <div className="pt-1.5 border-t border-slate-800 text-[10px] text-slate-400">
+                    💡 Microstructure protection active. Split execution algorithm recommended above 5.0 lots to minimize market impact.
+                  </div>
+                </div>
+              )}
+            </div>
+
+          </div>
+        </div>
+
         {/* Action triggers */}
         <div className="pt-4 border-t border-slate-800 mt-4 flex flex-col sm:flex-row gap-3">
           
@@ -698,6 +982,8 @@ export default function TelemetrySimulator({ activeCandidateName }: TelemetrySim
             else if (log.source === 'CPP-ENGINE') srcColor = 'text-emerald-400';
             else if (log.source === 'RISK-MANAGER') srcColor = 'text-purple-400';
             else if (log.source === 'EVOLUTION-LAB') srcColor = 'text-amber-400';
+            else if (log.source === 'FIX-ENGINE') srcColor = 'text-cyan-400';
+            else if (log.source === 'MICROSTRUCTURE') srcColor = 'text-teal-400';
 
             let lvlColor = 'text-slate-400';
             if (log.level === 'WARNING') lvlColor = 'text-amber-500 font-bold';

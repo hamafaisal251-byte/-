@@ -104,6 +104,12 @@ func SetupRouter(h *Handler) *gin.Engine {
 		protected.GET("/api/fix/status", h.GetFIXStatus)
 		protected.POST("/api/fix/connect", h.ConnectFIX)
 		protected.POST("/api/fix/disconnect", h.DisconnectFIX)
+		protected.POST("/api/fix/gap-recovery", h.RecoverFIXGap)
+		protected.POST("/api/fix/sbe-parse", h.ParseSBEFrame)
+
+		// PHASE 2: MARKET MICROSTRUCTURE & L2/L3 ORDER BOOK
+		protected.GET("/api/microstructure/book", h.GetMicrostructureBook)
+		protected.GET("/api/microstructure/slippage", h.GetVWAPSlippage)
 
 		protected.GET("/api/arbitrage/state", h.GetArbitrageState)
 		protected.POST("/api/arbitrage/compliance", h.UpdateArbitrageCompliance)
@@ -112,7 +118,25 @@ func SetupRouter(h *Handler) *gin.Engine {
 		protected.GET("/api/arbitrage/logs", h.GetArbitrageLogs)
 		protected.POST("/api/arbitrage/clear", h.ClearArbitrage)
 
+		// PHASE 3: MULTI-ASSET & STATISTICAL ARBITRAGE
+		protected.GET("/api/arbitrage/triangular", h.GetTriangularArbitrage)
+		protected.GET("/api/arbitrage/statarb", h.GetStatArbPairs)
+
+		// PHASE 3: INSTITUTIONAL RISK & REGULATORY COMPLIANCE
 		protected.GET("/api/risk/portfolio", h.GetPortfolioRisk)
+		protected.POST("/api/risk/stress-test", h.RunStressTest)
+		protected.GET("/api/compliance/regulatory-export", h.GetRegulatoryAuditReport)
+
+		// PHASE 4: AUTONOMOUS CODE EVOLUTION & SELF-HEALING PIPELINE
+		protected.POST("/api/evolution/hot-patch", h.SynthesizeHotPatch)
+		protected.GET("/api/evolution/patches", h.GetHotPatches)
+		protected.POST("/api/evolution/self-heal", h.TriggerSelfHealing)
+		protected.GET("/api/evolution/healing-logs", h.GetSelfHealingLogs)
+
+		// PHASE 5: MULTI-REGION BROKER FAILOVER & PQC ZERO-TRUST SECURITY
+		protected.GET("/api/system/phase5-status", h.GetPhase5Status)
+		protected.POST("/api/system/failover", h.TriggerFailover)
+		protected.POST("/api/system/pqc-key-rotate", h.RotatePQCKeys)
 
 		// --- NEW PORTED GO BACKEND ENDPOINTS ---
 

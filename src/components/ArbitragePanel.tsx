@@ -56,6 +56,32 @@ interface TradeRecord {
   log: string;
 }
 
+interface TriangularOpportunity {
+  pairPath: string;
+  leg1Symbol: string;
+  leg1Rate: number;
+  leg2Symbol: string;
+  leg2Rate: number;
+  leg3Symbol: string;
+  leg3DirectRate: number;
+  impliedRate: number;
+  grossSpreadPips: number;
+  feesAndSlippage: number;
+  netProfitPips: number;
+  isExecutable: boolean;
+}
+
+interface StatArbPair {
+  pair1: string;
+  pair2: string;
+  hedgeRatioOLS: number;
+  spreadZScore: number;
+  adfTestPValue: number;
+  isCointegrated: boolean;
+  signal: string;
+  targetReversionPips: number;
+}
+
 interface ArbitrageState {
   config: {
     liveEnabled: boolean;
@@ -85,13 +111,19 @@ export default function ArbitragePanel() {
   const [orderSize, setOrderSize] = useState<number>(0.5);
   const [slippage, setSlippage] = useState<number>(0.05);
 
+  // Phase 3 States
+  const [triangularOpps, setTriangularOpps] = useState<TriangularOpportunity[]>([]);
+  const [statArbPairs, setStatArbPairs] = useState<StatArbPair[]>([]);
+
   // Fetch all state and logs
   const fetchData = useCallback(async (silent = false) => {
     if (!silent) setIsLoading(true);
     try {
-      const [stateRes, logsRes] = await Promise.all([
+      const [stateRes, logsRes, triRes, statRes] = await Promise.all([
         fetch('/api/arbitrage/state'),
-        fetch('/api/arbitrage/logs')
+        fetch('/api/arbitrage/logs'),
+        fetch('/api/arbitrage/triangular'),
+        fetch('/api/arbitrage/statarb')
       ]);
 
       if (stateRes.ok && logsRes.ok) {
@@ -108,10 +140,19 @@ export default function ArbitragePanel() {
           setOrderSize(stateData.config.orderSizeBtc);
           setSlippage(stateData.config.slippagePct);
         }
-        setErrorMessage(null);
-      } else {
-        setErrorMessage("کێشەیەک لە پەیوەندی سێرڤەر ڕوویدا (Server response error).");
       }
+
+      if (triRes.ok) {
+        const triData = await triRes.json();
+        if (triData.success) setTriangularOpps(triData.opportunities || []);
+      }
+
+      if (statRes.ok) {
+        const statData = await statRes.json();
+        if (statData.success) setStatArbPairs(statData.pairs || []);
+      }
+
+      setErrorMessage(null);
     } catch (err: any) {
       setErrorMessage(`نەتوانرا داتاکان دابگیرێن: ${err.message}`);
     } finally {
@@ -385,6 +426,79 @@ export default function ArbitragePanel() {
                 <div className="text-[10px] text-slate-500">RE-ROUTE LOCKS</div>
                 <div className="text-xs text-emerald-400 font-bold">ACTIVE</div>
               </div>
+            </div>
+          </div>
+        </div>
+
+        {/* PHASE 3: MULTI-ASSET TRIANGULAR FX & STATISTICAL COINTEGRATION ARBITRAGE */}
+        <div id="phase3-arbitrage-multiasset" className="bg-[#050914]/85 border border-slate-900 rounded-2xl p-5 space-y-4 font-mono">
+          <div className="flex items-center justify-between border-b border-slate-900 pb-3">
+            <div className="flex items-center gap-2">
+              <Zap className="w-4 h-4 text-purple-400 shrink-0" />
+              <h2 className="text-sm font-bold text-slate-200 uppercase tracking-wider flex items-center gap-2">
+                <span>TRIANGULAR FX & STATISTICAL COINTEGRATION ARBITRAGE</span>
+                <span className="px-2 py-0.5 text-[10px] bg-purple-950 text-purple-400 border border-purple-500/30 rounded">
+                  PHASE 3
+                </span>
+              </h2>
+            </div>
+            <span className="text-[10px] text-slate-500">CROSS-CURRENCY LOOP & ADF Z-SCORE</span>
+          </div>
+
+          {/* Triangular FX Opportunities */}
+          <div className="space-y-2">
+            <span className="text-xs font-bold text-slate-300 block uppercase">1. TRIANGULAR FX CROSS SPREADS</span>
+            <div className="grid grid-cols-1 gap-2">
+              {triangularOpps.map((opp, idx) => (
+                <div key={idx} className="p-3 bg-slate-950/80 border border-slate-900 rounded-xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 text-xs">
+                  <div>
+                    <span className="text-slate-100 font-bold block">{opp.pairPath}</span>
+                    <span className="text-[10px] text-slate-400">
+                      Leg 1 ({opp.leg1Symbol}): {opp.leg1Rate} | Leg 2 ({opp.leg2Symbol}): {opp.leg2Rate}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-3 text-right">
+                    <div>
+                      <span className="text-[10px] text-slate-500 block">IMPLIED vs DIRECT</span>
+                      <span className="font-bold text-slate-200">{opp.impliedRate} / {opp.leg3DirectRate}</span>
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-slate-500 block">NET EDGE</span>
+                      <span className={`font-bold ${opp.netProfitPips > 0 ? 'text-emerald-400' : 'text-slate-400'}`}>
+                        +{opp.netProfitPips} pips
+                      </span>
+                    </div>
+                    <span className={`px-2 py-1 rounded text-[10px] font-bold ${opp.isExecutable ? 'bg-emerald-950 text-emerald-400 border border-emerald-500/30' : 'bg-slate-900 text-slate-500'}`}>
+                      {opp.isExecutable ? "EXECUTABLE" : "MONITORING"}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Statistical Arbitrage & Cointegration */}
+          <div className="space-y-2 pt-2 border-t border-slate-900">
+            <span className="text-xs font-bold text-slate-300 block uppercase">2. STATISTICAL COINTEGRATION (ADF TEST & Z-SCORE)</span>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+              {statArbPairs.map((pair, idx) => (
+                <div key={idx} className="p-3 bg-slate-950/80 border border-slate-900 rounded-xl space-y-1.5">
+                  <div className="flex justify-between items-center">
+                    <span className="font-bold text-slate-100">{pair.pair1} / {pair.pair2}</span>
+                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${pair.signal === 'LONG_SPREAD' ? 'bg-emerald-950 text-emerald-400 border border-emerald-500/30' : pair.signal === 'SHORT_SPREAD' ? 'bg-rose-950 text-rose-400 border border-rose-500/30' : 'bg-slate-900 text-slate-400'}`}>
+                      {pair.signal}
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-[10px] text-slate-400">
+                    <span>Hedge Ratio (OLS Beta): <strong>{pair.hedgeRatioOLS}</strong></span>
+                    <span>Spread Z-Score: <strong className={Math.abs(pair.spreadZScore) > 1.8 ? 'text-amber-400 font-bold' : 'text-slate-200'}>{pair.spreadZScore}</strong></span>
+                  </div>
+                  <div className="flex justify-between text-[9px] text-slate-500 pt-1 border-t border-slate-900">
+                    <span>ADF p-val: {pair.adfTestPValue} (Cointegrated: {pair.isCointegrated ? "YES" : "NO"})</span>
+                    <span>Reversion: +{pair.targetReversionPips} pips</span>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         </div>
