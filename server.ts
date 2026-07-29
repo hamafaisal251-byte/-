@@ -138,7 +138,7 @@ import { analyticsRouter } from "./src/routes/analyticsRoutes";
 
 export const app = express();
 app.set("trust proxy", 1);
-const PORT = 3000;
+const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
 // Enable basic CORS headers and request parsing
 app.use(express.json());
