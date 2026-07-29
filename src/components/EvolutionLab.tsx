@@ -710,7 +710,7 @@ export default function EvolutionLab({ candidates, setCandidates, selectedId, se
           writeLog('========================================================');
           writeLog('[VALGRIND-INIT] Executing compiled reward DSO inside memory analyzer...');
           writeLog('[VALGRIND] Command: valgrind --tool=memcheck --leak-check=full --error-exitcode=99 ...');
-          writeLog('[SIMULATOR] Streaming 500,000 historical Forex tick updates to candidate module...');
+          writeLog('[TICK-REPLAY] Streaming 500,000 historical Forex tick updates to candidate module...');
 
           if (candidate.failureReason && candidate.failureReason.includes('VALGRIND')) {
             writeLog('⚠️ [VALGRIND] Invalid memory usage or leaked byte pointers detected!');
