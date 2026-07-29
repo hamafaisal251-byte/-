@@ -129,6 +129,13 @@ export function getSyncedTime(): number {
   return Date.now() + (lastClockOffsetMs || 0);
 }
 
+import { safetyRouter } from "./src/routes/safetyRoutes";
+import { healthRouter } from "./src/routes/healthRoutes";
+import { brokerRouter } from "./src/routes/brokerRoutes";
+import { evolutionRouter } from "./src/routes/evolutionRoutes";
+import { positionRouter } from "./src/routes/positionRoutes";
+import { analyticsRouter } from "./src/routes/analyticsRoutes";
+
 export const app = express();
 app.set("trust proxy", 1);
 const PORT = 3000;
@@ -136,10 +143,19 @@ const PORT = 3000;
 // Enable basic CORS headers and request parsing
 app.use(express.json());
 
+// Mount modular sub-system routers (Refactored & Split Server Architecture)
+app.use("/api/safety", safetyRouter);
+app.use("/api", healthRouter);
+app.use("/api/brokers", brokerRouter);
+app.use("/api/evolution", evolutionRouter);
+app.use("/api/positions", positionRouter);
+app.use("/api/analytics", analyticsRouter);
+
 // ============================================================================
 // PROMETHEUS METRICS INSTRUMENTATION (prom-client)
 // ============================================================================
-client.collectDefaultMetrics({ register: client.register, timeout: 5000 });
+client.register.clear();
+client.collectDefaultMetrics({ register: client.register });
 
 export const promHttpRequestsTotal = new client.Counter({
   name: "http_requests_total",
