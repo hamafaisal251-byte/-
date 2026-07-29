@@ -3597,7 +3597,7 @@ export const pgDb = new PostgresEngine();
 telegramNotifier.setDbRef(pgDb);
 
 // IP Allowlist Validator Middleware
-const checkIPAllowlist = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+export const checkIPAllowlist = (req: express.Request, res: express.Response, next: express.NextFunction) => {
   // Always allow GET read-only requests for dashboard UI rendering
   if (req.method === "GET") {
     return next();
@@ -3751,7 +3751,7 @@ app.use((req, res, next) => {
 // ============================================================================
 // ASYNC ROUTE WRAPPER & INPUT VALIDATION SCHEMAS
 // ============================================================================
-const asyncHandler = (fn: Function) => (req: express.Request, res: express.Response, next: express.NextFunction) => {
+export const asyncHandler = (fn: Function) => (req: express.Request, res: express.Response, next: express.NextFunction) => {
   Promise.resolve(fn(req, res, next)).catch(next);
 };
 
@@ -3798,11 +3798,11 @@ const SYSTEM_VERSION = "1.5.0";
 let isShuttingDown = false;
 let activeRequests = 0;
 
-let systemStatus: "NOMINAL" | "THROTTLED" | "EMERGENCY_HALT" = "NOMINAL";
+export let systemStatus: "NOMINAL" | "THROTTLED" | "EMERGENCY_HALT" = "NOMINAL";
 let isShockAbsorberActive = false;
 let shockAbsorberLevel = 0.12;
 let totalPnL = 3420.50; // persistent state across sessions
-let errorCount = 0;
+export let errorCount = 0;
 
 let currentRegimeState = {
   // Confirmed active regime (smoothed across 3 periods)
@@ -4189,7 +4189,7 @@ async function updateDemoLivePerformanceTracking() {
   }
 }
 
-function saveLiveTradingStateToDisk() {
+export function saveLiveTradingStateToDisk() {
   saveLiveTradingStateToDb();
 }
 let activeOrdersCount = 4;
@@ -4681,7 +4681,7 @@ function getFormattedTime(): string {
   return now.toTimeString().split(' ')[0] + '.' + String(now.getMilliseconds()).padStart(3, '0');
 }
 
-function addServerLog(source: TelemetryLog['source'], level: TelemetryLog['level'], message: string) {
+export function addServerLog(source: TelemetryLog['source'], level: TelemetryLog['level'], message: string) {
   serverLogs.push({ timestamp: getFormattedTime(), source, level, message });
   if (serverLogs.length > 200) {
     serverLogs.shift();
@@ -5431,7 +5431,7 @@ setInterval(() => {
   pollRealPublicMarketRates().catch(() => {});
 }, 5000);
 
-let liveRates: {
+export let liveRates: {
   eurUsd: number | string;
   gbpUsd: number | string;
   usdJpy: number | string;
@@ -7132,272 +7132,8 @@ app.get("/api/gemini/research/logs", (req, res) => {
   res.json({ success: true, logs: researchLogsList });
 });
 
-// E. Get Broker Connections (Credentials sanitized/masked)
-app.get("/api/brokers/connections", (req, res) => {
-  const rawConns = pgDb.query("SELECT * FROM broker_connections") || [];
-  
-  // Sanitize and mask secrets
-  const sanitized = rawConns.map((c: any) => {
-    let maskedToken = "";
-    if (c.apiTokenEnc) {
-      const decrypted = decrypt(c.apiTokenEnc);
-      maskedToken = decrypted.length > 4 ? "••••••••" + decrypted.slice(-4) : "••••";
-    }
+// E. Broker connections managed via brokerRouter mounted at /api/brokers
 
-    let maskedSecret = "";
-    if (c.secretKeyEnc) {
-      const decrypted = decrypt(c.secretKeyEnc);
-      maskedSecret = decrypted.length > 4 ? "••••••••" + decrypted.slice(-4) : "";
-    }
-
-    return {
-      id: c.id,
-      brokerType: c.brokerType,
-      apiUrl: c.apiUrl,
-      accountId: c.accountId,
-      status: c.status,
-      lastTestedTime: c.lastTestedTime,
-      errorMessage: c.error_message,
-      targetCompId: c.targetCompId,
-      senderCompId: c.senderCompId,
-      environment: c.environment || 'DEMO_LIVE',
-      maskedToken,
-      maskedSecret
-    };
-  });
-  res.json({ success: true, connections: sanitized });
-});
-
-// F. Connect and Verify a Broker (with secure backend AES-256 encryption in Postgres)
-app.post("/api/brokers/connect", checkIPAllowlist, asyncHandler(async (req: express.Request, res: express.Response) => {
-  const { brokerType, apiUrl, accountId, apiToken, secretKey, passphrase, targetCompId, senderCompId, environment } = req.body;
-
-  if (!brokerType || !accountId || (!apiToken && !secretKey)) {
-    return res.status(400).json({ error: "تکایە هەموو زانیارییەکان بنێرە بۆ گرێدان بە برۆکەر" });
-  }
-
-  addServerLog("RISK-MANAGER", "INFO", `تاقیکردنەوەی گرێدانی نوێ لەگەڵ برۆکەری: ${brokerType}...`);
-
-  try {
-    let isValid = false;
-    let errorMsg = "";
-
-    const tokenLower = (apiToken || "").toLowerCase();
-    const secretLower = (secretKey || "").toLowerCase();
-    const isDemo = tokenLower.includes("demo") || tokenLower.includes("test") || tokenLower.includes("simulated") ||
-                  secretLower.includes("demo") || secretLower.includes("test") || secretLower.includes("simulated") ||
-                  accountId.toLowerCase().includes("sandbox") || accountId.toLowerCase().includes("demo") ||
-                  apiToken === "SIMULATED-SOVEREIGN-KEY";
-
-    const finalEnv = environment || (isDemo ? "DEMO_LIVE" : "REAL_LIVE");
-
-    if (isDemo) {
-      isValid = true;
-      addServerLog("RISK-MANAGER", "SUCCESS", `گرێدانی دێمۆ پەسەندکرا بۆ بڕۆکەری: ${brokerType.toUpperCase()}`);
-    } else {
-      // Real API validation calls
-      if (brokerType === "oanda") {
-        const urlToTest = `${apiUrl.replace(/\/$/, "")}/accounts`;
-        const testResponse = await fetch(urlToTest, {
-          method: "GET",
-          headers: {
-            "Authorization": `Bearer ${apiToken}`,
-            "Content-Type": "application/json"
-          }
-        });
-        if (testResponse.ok) {
-          isValid = true;
-        } else {
-          const errText = await testResponse.text();
-          errorMsg = `OANDA Validation Failed: ${testResponse.status} - ${errText}`;
-        }
-      } else if (brokerType === "binance") {
-        try {
-          const timestamp = Date.now();
-          const queryString = `timestamp=${timestamp}`;
-          const signature = crypto.createHmac("sha256", secretKey).update(queryString).digest("hex");
-          const testUrl = `${apiUrl || "https://api.binance.com"}/api/v3/account?${queryString}&signature=${signature}`;
-          
-          const testResponse = await fetch(testUrl, {
-            method: "GET",
-            headers: { "X-MBX-APIKEY": apiToken }
-          });
-          if (testResponse.ok) {
-            isValid = true;
-          } else {
-            const errText = await testResponse.text();
-            errorMsg = `Binance API Validation Failed: ${testResponse.status} - ${errText}`;
-          }
-        } catch (e: any) {
-          errorMsg = `Binance API Error: ${e.message}`;
-        }
-      } else if (brokerType === "coinbase") {
-        try {
-          const method = "GET";
-          const path = "/api/v3/brokerage/accounts";
-          const cbTimestamp = Math.floor(Date.now() / 1000).toString();
-          const message = cbTimestamp + method + path;
-          const cbSignature = crypto.createHmac("sha256", secretKey).update(message).digest("hex");
-          const cbUrl = `${apiUrl || "https://api.coinbase.com"}${path}`;
-          
-          const testResponse = await fetch(cbUrl, {
-            method: "GET",
-            headers: {
-              "CB-ACCESS-KEY": apiToken,
-              "CB-ACCESS-SIGN": cbSignature,
-              "CB-ACCESS-TIMESTAMP": cbTimestamp,
-              "Content-Type": "application/json"
-            }
-          });
-          if (testResponse.ok) {
-            isValid = true;
-          } else {
-            const errText = await testResponse.text();
-            errorMsg = `Coinbase Advanced API Validation Failed: ${testResponse.status} - ${errText}`;
-          }
-        } catch (e: any) {
-          errorMsg = `Coinbase API Error: ${e.message}`;
-        }
-      } else if (brokerType === "kraken") {
-        try {
-          const krakenPath = "/0/private/Balance";
-          const nonce = Date.now().toString();
-          const postData = `nonce=${nonce}`;
-          const krakenHash = crypto.createHash("sha256").update(nonce + postData).digest("binary" as any);
-          const krakenSecretDecoded = Buffer.from(secretKey, "base64");
-          const krakenSignature = crypto.createHmac("sha512", krakenSecretDecoded)
-            .update(krakenPath + krakenHash, "binary" as any)
-            .digest("base64");
-          const krakenUrl = `${apiUrl || "https://api.kraken.com"}${krakenPath}`;
-          
-          const testResponse = await fetch(krakenUrl, {
-            method: "POST",
-            headers: {
-              "API-Key": apiToken,
-              "API-Sign": krakenSignature,
-              "Content-Type": "application/x-www-form-urlencoded"
-            },
-            body: postData
-          });
-          if (testResponse.ok) {
-            isValid = true;
-          } else {
-            const errText = await testResponse.text();
-            errorMsg = `Kraken API Validation Failed: ${testResponse.status} - ${errText}`;
-          }
-        } catch (e: any) {
-          errorMsg = `Kraken API Error: ${e.message}`;
-        }
-      } else if (brokerType === "metatrader5") {
-        const testUrl = `${apiUrl.replace(/\/$/, "")}/api/account/summary`;
-        const testResponse = await fetch(testUrl, {
-          headers: { "Authorization": `Bearer ${apiToken}` }
-        }).catch(() => null);
-        
-        if (testResponse && testResponse.ok) {
-          isValid = true;
-        } else {
-          errorMsg = "MT4/MT5 REST WebAPI bridge unreachable or unauthorized.";
-        }
-      } else if (brokerType === "ib") {
-        const testUrl = `${apiUrl || "https://localhost:29191"}/v1/api/portfolio/accounts`;
-        const testResponse = await fetch(testUrl, {
-          headers: { "Authorization": `Bearer ${apiToken}` }
-        }).catch(() => null);
-        
-        if (testResponse && testResponse.ok) {
-          isValid = true;
-        } else {
-          errorMsg = "Interactive Brokers local TWS Gateway/Client Portal unreachable.";
-        }
-      } else if (brokerType === "fix_gateway") {
-        isValid = true; 
-        fixEngine.configureSession(targetCompId, senderCompId);
-        fixEngine.logon();
-      } else {
-        // Query custom connectors
-        const customRows = await pgDb.queryAsync("SELECT * FROM custom_connectors WHERE id = $1 OR name = $2", [brokerType, brokerType]);
-        if (customRows && customRows.length > 0) {
-          const connector = customRows[0];
-          try {
-            const auth_config = connector.auth_config || {};
-            const decryptedApiKey = auth_config.apiKeyEnc ? decrypt(auth_config.apiKeyEnc) : (apiToken || auth_config.apiKey || "");
-            const decryptedSecretKey = auth_config.secretKeyEnc ? decrypt(auth_config.secretKeyEnc) : (secretKey || auth_config.secretKey || "");
-            const decryptedPassword = auth_config.passwordEnc ? decrypt(auth_config.passwordEnc) : (passphrase || auth_config.password || "");
-
-            const testConnector = {
-              ...connector,
-              auth_config: {
-                ...auth_config,
-                apiKey: decryptedApiKey,
-                secretKey: decryptedSecretKey,
-                password: decryptedPassword
-              }
-            };
-            const testResult = await executeCustomConnectorEndpoint(testConnector, "test_connection", { accountId });
-            isValid = true;
-          } catch (e: any) {
-            errorMsg = `تێستی گرێدانی نوێی Custom Connector '${connector.name}' سەرکەوتوو نەبوو: ${e.message}`;
-          }
-        } else {
-          errorMsg = `برۆکەری نەناسراو یان کێشەی گرێدان: ${brokerType}`;
-        }
-      }
-    }
-
-    if (!isValid) {
-      throw new Error(errorMsg || "ناسنامەی برۆکەر یان ناونیشان هەڵەیە.");
-    }
-
-    // Encrypt sensitive credential tokens using AES-256-CBC
-    const apiTokenEnc = apiToken ? encrypt(apiToken) : "";
-    const secretKeyEnc = secretKey ? encrypt(secretKey) : "";
-    const passphraseEnc = passphrase ? encrypt(passphrase) : "";
-
-    const record = pgDb.query(
-      `INSERT INTO broker_connections (id, broker_type, api_url, account_id, api_token_encrypted, secret_key_encrypted, passphrase_encrypted, target_comp_id, sender_comp_id, status, last_tested_time, error_message, environment) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
-      [
-        `conn-${brokerType}-${Date.now()}`,
-        brokerType,
-        apiUrl || "",
-        accountId,
-        apiTokenEnc,
-        secretKeyEnc,
-        passphraseEnc,
-        targetCompId || "",
-        senderCompId || "",
-        "CONNECTED",
-        new Date().toISOString(),
-        "",
-        finalEnv
-      ]
-    );
-
-    addServerLog("RISK-MANAGER", "SUCCESS", `گرێدانی بڕۆکەری ${brokerType.toUpperCase()} بە سەرکەوتوویی لەگەڵ داتابەیس بەسترا (AES-256 encrypted).`);
-    res.json({ success: true, connection: record });
-  } catch (err: any) {
-    console.error("[BROKER-CONNECT-ERROR]", err);
-    addServerLog("RISK-MANAGER", "CRITICAL", `هەڵە لە لێکۆڵینەوەی برۆکەری ${brokerType}: ${err.message}`);
-    res.status(400).json({ success: false, error: err.message || "ناتوانرێت بەستەر دروستبکرێت بەهۆی نەگونجاوی لایەنی دڵنیایی." });
-  }
-}));
-
-// G. Disconnect a Broker
-app.post("/api/brokers/disconnect", checkIPAllowlist, asyncHandler(async (req: express.Request, res: express.Response) => {
-  const { brokerType, accountId } = req.body;
-  if (!brokerType || !accountId) {
-    return res.status(400).json({ error: "Broker type and Account ID are required." });
-  }
-
-  pgDb.query("DELETE FROM broker_connections WHERE broker_type = $1 AND account_id = $2", [brokerType, accountId]);
-  
-  if (brokerType === "fix_gateway") {
-    fixEngine.logout();
-  }
-
-  addServerLog("RISK-MANAGER", "INFO", `گرێدانی پۆرتفۆلیۆی بڕۆکەری ${brokerType.toUpperCase()} پچڕێندرا.`);
-  res.json({ success: true });
-}));
 
 // ============================================================================
 // NEWS & ECONOMIC CALENDAR DATABASE PLATFORM (STAGE 2)
@@ -9379,194 +9115,8 @@ app.get("/api/drl/telemetry", asyncHandler(async (req: express.Request, res: exp
   }
 }));
 
-app.get("/api/positions", (req, res) => {
-  const env = (req.query.environment as string) || "DEMO_LIVE";
-  if (env === "REAL_LIVE") {
-    res.json({ success: true, positions: realLivePositions, accountStats: realLiveAccountStats, environment: env });
-  } else {
-    res.json({ success: true, positions: demoLivePositions, accountStats: demoLiveAccountStats, environment: env });
-  }
-});
+// Position management endpoints handled by positionRouter mounted at /api/positions
 
-app.post("/api/positions/order", checkIPAllowlist, asyncHandler(async (req: express.Request, res: express.Response) => {
-  const { symbol, type, size, environment } = req.body;
-
-  if (!environment || (environment !== "DEMO_LIVE" && environment !== "REAL_LIVE")) {
-    return res.status(400).json({ success: false, error: "Explicit environment ('DEMO_LIVE' or 'REAL_LIVE') is required. No fallback permitted." });
-  }
-
-  try {
-    assertTradingAllowed();
-  } catch (err: any) {
-    return res.status(400).json({ success: false, error: err.message });
-  }
-
-  // Pre-trade Drawdown & Risk Enforcement
-  const estimatedNotional = (parseFloat(size) || 1) * 10000;
-  const estimatedRiskUsd = estimatedNotional * 0.02;
-  const currentEquity = demoLiveAccountStats.equity || 100000;
-  const drawdownCheck = safetyBackstop.checkDrawdown(estimatedRiskUsd, currentEquity);
-  if (!drawdownCheck.allowed) {
-    return res.status(400).json({
-      success: false,
-      error: `Pre-trade Drawdown Guard Blocked Order: ${drawdownCheck.reason}`
-    });
-  }
-
-  // Validate REAL_LIVE active connection
-  if (environment === "REAL_LIVE") {
-    const realBrokerRows = await pgDb.queryAsync("SELECT * FROM broker_connections WHERE status = 'CONNECTED' AND environment = 'REAL_LIVE'");
-    if (!realBrokerRows || realBrokerRows.length === 0) {
-      return res.status(400).json({ success: false, error: "No active REAL_LIVE broker connection found. Orders are blocked on REAL_LIVE." });
-    }
-  }
-
-  // Fetch active strategy parameters for Shock Absorber check
-  const strategies = pgDb.query("SELECT * FROM instrument_strategies") || {};
-  const config = strategies[symbol];
-
-  let finalSize = parseFloat(size);
-  const currentVolatility = systemStatus === "THROTTLED" ? 4.5 : 0.8;
-
-  // 1. Shock Absorber sizing reduction / pause
-  if (config?.shockAbsorberEnabled && currentVolatility > 3.0) {
-    const factor = Math.exp(-0.4 * (currentVolatility - 3.0));
-    finalSize = parseFloat((finalSize * factor).toFixed(2));
-    
-    pgDb.query("INSERT INTO strategy_audit_logs", [
-      null, symbol, "Shock Absorber", currentVolatility.toString(),
-      `Volatility spike detected (${currentVolatility}). Scaled position down from ${size} to ${finalSize} lots (Factor: ${factor.toFixed(2)}).`,
-      JSON.stringify({ originalSize: size, currentVolatility }),
-      JSON.stringify({ finalSize })
-    ]);
-    addServerLog("RISK-MANAGER", "WARNING", `🛡️ [Shock Absorber] Dampened new order size from ${size} to ${finalSize} lots due to volatility spike (${currentVolatility}).`);
-  }
-
-  if (config?.shockAbsorberEnabled && currentVolatility > 4.5) {
-    pgDb.query("INSERT INTO strategy_audit_logs", [
-      null, symbol, "Shock Absorber", currentVolatility.toString(),
-      `Order BLOCKED by Shock Absorber due to extreme volatility: ${currentVolatility}.`,
-      JSON.stringify({ size, currentVolatility }),
-      JSON.stringify({ action: "BLOCKED" })
-    ]);
-    addServerLog("RISK-MANAGER", "CRITICAL", `🛡️ [Shock Absorber] Volatility spike extreme (${currentVolatility}). Order BLOCKED.`);
-    promTradesExecutedTotal.inc({ broker: "RISK_ENGINE", symbol, side: type, outcome: "BLOCKED_SHOCK_ABSORBER" });
-    return res.status(400).json({ success: false, error: "Trading blocked by Shock Absorber due to extreme volatility." });
-  }
-
-  // 1b. Liquidity Vacuum & Spread Anomaly Protection
-  const baselineSpreads: Record<string, number> = {
-    "EUR/USD": 0.00008,
-    "GBP/USD": 0.00012,
-    "USD/JPY": 0.012,
-    "BTC/USD": 4.5
-  };
-  const symbolSpreadBaseline = baselineSpreads[symbol] || 0.0001;
-  const simulatedCurrentSpread = currentVolatility > 4.0 ? symbolSpreadBaseline * 5.2 : symbolSpreadBaseline * (1.0 + Math.random() * 0.4);
-
-  if (simulatedCurrentSpread > symbolSpreadBaseline * 4.5) {
-    pgDb.query("INSERT INTO strategy_audit_logs", [
-      null, symbol, "Liquidity Vacuum Guard", simulatedCurrentSpread.toString(),
-      `Order BLOCKED by Liquidity Vacuum Guard: Bid-ask spread (${simulatedCurrentSpread.toFixed(5)}) exceeds 4.5x baseline (${symbolSpreadBaseline}).`,
-      JSON.stringify({ symbol, simulatedCurrentSpread, baseline: symbolSpreadBaseline }),
-      JSON.stringify({ action: "BLOCKED_LIQUIDITY_VACUUM" })
-    ]);
-    addServerLog("RISK-MANAGER", "CRITICAL", `🌊 [Liquidity Vacuum Guard] Spread spike detected for ${symbol} (${simulatedCurrentSpread.toFixed(5)}). Order BLOCKED.`);
-    promTradesExecutedTotal.inc({ broker: "RISK_ENGINE", symbol, side: type, outcome: "BLOCKED_LIQUIDITY_VACUUM" });
-    return res.status(400).json({ success: false, error: "Trading blocked by Liquidity Vacuum Protection: Bid-ask spread spiked beyond safe threshold." });
-  }
-
-  // 2. Dynamic SL calculation (ATR or fixed-percent depending on config)
-  let entryPrice = symbol === "BTC/USD" ? liveRates.btcUsd : (symbol === "GBP/USD" ? getNumericRate(liveRates.gbpUsd, 1.27350) : getNumericRate(liveRates.eurUsd, 1.08520));
-  
-  // Implied ATR based on rolling ticks
-  let diffs: number[] = [];
-  const symbolTicks = rollingTicks[symbol] || [];
-  for (let i = 1; i < symbolTicks.length; i++) {
-    diffs.push(Math.abs(symbolTicks[i].price - symbolTicks[i-1].price));
-  }
-  const atr = diffs.length > 0 ? (diffs.reduce((sum, d) => sum + d, 0) / diffs.length) : (symbol === "BTC/USD" ? 4.5 : 0.00012);
-
-  let sl = type === "BUY" ? entryPrice * 0.99 : entryPrice * 1.01;
-  let tp = type === "BUY" ? entryPrice * 1.02 : entryPrice * 0.98;
-
-  if (config?.dynamicSlEnabled) {
-    const slDistance = atr * 2.5;
-    sl = type === "BUY" ? entryPrice - slDistance : entryPrice + slDistance;
-    tp = type === "BUY" ? entryPrice + (atr * 5.0) : entryPrice - (atr * 5.0);
-  }
-
-  const newPos = {
-    id: `pos-${environment === "REAL_LIVE" ? "real" : "demo"}-${Date.now()}`,
-    symbol,
-    type,
-    size: finalSize,
-    entryPrice,
-    currentPrice: entryPrice,
-    sl: parseFloat(sl.toFixed(symbol === "BTC/USD" ? 2 : 5)),
-    tp: parseFloat(tp.toFixed(symbol === "BTC/USD" ? 2 : 5)),
-    pnl: 0.0
-  };
-
-  try {
-    assertTradingAllowed({ symbol, type, size: finalSize, entryPrice });
-  } catch (err: any) {
-    return res.status(400).json({ success: false, error: err.message });
-  }
-
-  if (environment === "REAL_LIVE") {
-    realLivePositions.push(newPos);
-    realLiveAccountStats.usedMargin += finalSize * 1250;
-    realLiveAccountStats.freeMargin = realLiveAccountStats.equity - realLiveAccountStats.usedMargin;
-    addServerLog("RISK-MANAGER", "SUCCESS", `🚨 [REAL_LIVE CAPITAL] Order executed on real account! Size: ${finalSize} lots for ${symbol}.`);
-    promTradesExecutedTotal.inc({ broker: "OANDA_REAL", symbol, side: type, outcome: "EXECUTED" });
-  } else {
-    demoLivePositions.push(newPos);
-    demoLiveAccountStats.usedMargin += finalSize * 1250;
-    demoLiveAccountStats.freeMargin = demoLiveAccountStats.equity - demoLiveAccountStats.usedMargin;
-    addServerLog("CPP-ENGINE", "SUCCESS", `🎯 [DEMO_LIVE] Order executed on demo account. Size: ${finalSize} lots for ${symbol}.`);
-    promTradesExecutedTotal.inc({ broker: "OANDA_DEMO", symbol, side: type, outcome: "EXECUTED" });
-  }
-
-  saveLiveTradingStateToDisk();
-  res.json({ success: true, position: newPos });
-}));
-
-app.post("/api/positions/close", checkIPAllowlist, asyncHandler(async (req: express.Request, res: express.Response) => {
-  const { id, environment } = req.body;
-
-  if (!environment || (environment !== "DEMO_LIVE" && environment !== "REAL_LIVE")) {
-    return res.status(400).json({ success: false, error: "Explicit environment ('DEMO_LIVE' or 'REAL_LIVE') is required to close position." });
-  }
-
-  const currentPositions = environment === "REAL_LIVE" ? realLivePositions : demoLivePositions;
-  const currentStats = environment === "REAL_LIVE" ? realLiveAccountStats : demoLiveAccountStats;
-
-  const closedPos = currentPositions.find(p => p.id === id);
-  if (!closedPos) {
-    return res.status(404).json({ success: false, error: `Position ${id} not found in ${environment} environment.` });
-  }
-
-  if (environment === "REAL_LIVE") {
-    realLivePositions = realLivePositions.filter(p => p.id !== id);
-  } else {
-    demoLivePositions = demoLivePositions.filter(p => p.id !== id);
-    recordDemoLiveTradeClose(closedPos.pnl);
-  }
-  
-  // Realize PnL
-  currentStats.balance = parseFloat((currentStats.balance + closedPos.pnl).toFixed(2));
-  currentStats.usedMargin = parseFloat(Math.max(0, currentStats.usedMargin - (closedPos.size * 1250)).toFixed(2));
-  
-  const updatedPositions = environment === "REAL_LIVE" ? realLivePositions : demoLivePositions;
-  currentStats.equity = parseFloat((currentStats.balance + updatedPositions.reduce((sum, p) => sum + p.pnl, 0)).toFixed(2));
-  currentStats.freeMargin = parseFloat((currentStats.equity - currentStats.usedMargin).toFixed(2));
-  currentStats.marginLevel = currentStats.usedMargin > 0 ? parseFloat(((currentStats.equity / currentStats.usedMargin) * 100).toFixed(1)) : 0;
-
-  addServerLog("CPP-ENGINE", "INFO", `[${environment}] Closed position ${id}. PnL: $${closedPos.pnl.toFixed(2)}.`);
-  saveLiveTradingStateToDisk();
-  res.json({ success: true, id });
-}));
 
 // Execution Quality & Post-Trade Attribution Endpoint
 app.get(["/api/execution/attribution", "/api/v1/execution/attribution"], checkIPAllowlist, asyncHandler(async (req: express.Request, res: express.Response) => {
@@ -14682,92 +14232,8 @@ app.get("/api/arbitrage/statarb", (req, res) => {
   });
 });
 
-// PHASE 4: AUTONOMOUS CODE EVOLUTION, HOT-PATCHING & SELF-HEALING ENDPOINTS
-const inMemoryHotPatches: any[] = [];
-const inMemoryHealingLogs: any[] = [];
+// PHASE 4: AUTONOMOUS CODE EVOLUTION managed via evolutionRouter mounted at /api/evolution
 
-app.post("/api/evolution/hot-patch", checkIPAllowlist, (req, res) => {
-  const { strategyId = "HFT_ALPHA_COMPASS", proposedCode = "func (s *Strategy) CalculateAlpha(spread float64) float64 { return math.Max(0.0, spread * 1.84) }" } = req.body || {};
-  
-  const isAstValid = proposedCode.includes("{") && proposedCode.includes("}") && (proposedCode.includes("func") || proposedCode.includes("function") || proposedCode.includes("const"));
-  
-  if (!isAstValid) {
-    return res.status(400).json({ success: false, error: "AST Syntax Validation Failed. Patch rejected." });
-  }
-
-  const baselineScore = 1.84;
-  const sandboxScore = +(baselineScore + 0.35 + (Math.random() * 0.40)).toFixed(2);
-  const netAlphaImprove = +(sandboxScore - baselineScore).toFixed(2);
-  const patchId = `patch-${Date.now()}`;
-
-  const patch = {
-    patchId,
-    strategyId,
-    author: "SOVEREIGN-AUTO-EVOLUTION-AGENT",
-    targetFile: "internal/trading/strategy.go",
-    proposedCode,
-    astVerified: true,
-    sandboxScore,
-    baselineScore,
-    netAlphaImprove,
-    status: "HOT_PATCHED",
-    createdAt: new Date().toISOString()
-  };
-
-  inMemoryHotPatches.unshift(patch);
-  addServerLog("EVOLUTION-LAB", "SUCCESS", `[HOT-PATCH SWAP] Strategy ${strategyId} hot-swapped without process restart! PatchID: ${patchId} | Sharpe +${netAlphaImprove}`);
-
-  res.json({
-    success: true,
-    candidate: patch,
-    message: "Code candidate AST verified, sandbox tested, and hot-patched live without process restart."
-  });
-});
-
-app.get("/api/evolution/patches", (req, res) => {
-  res.json({ success: true, patches: inMemoryHotPatches });
-});
-
-app.post("/api/evolution/self-heal", checkIPAllowlist, (req, res) => {
-  const { stackTrace = "panic: runtime error: index out of range [12] with length 10 in CalculateVWAPSlippage()" } = req.body || {};
-  
-  let rootCause = "Null Pointer Dereference / Slice Out-of-Bounds in High-Frequency Order Matching";
-  if (stackTrace.includes("index out of range")) {
-    rootCause = "Index Out of Range in Level 2 Book Depth Interpolation";
-  } else if (stackTrace.includes("divide by zero")) {
-    rootCause = "Division by Zero in Market Impact Slippage Calculation";
-  }
-
-  const automatedPatch = `func SafelyCalculateSlippage(volume float64) float64 {
-	if volume <= 0 {
-		return 0.0001
-	}
-	return math.Min(1.5, 0.05 + (volume * 0.002))
-}`;
-
-  const event = {
-    eventId: `heal-${Date.now()}`,
-    timestamp: new Date().toISOString(),
-    stackTrace,
-    rootCause,
-    automatedPatch,
-    astValid: true,
-    status: "HEALED"
-  };
-
-  inMemoryHealingLogs.unshift(event);
-  addServerLog("EVOLUTION-LAB", "SUCCESS", `[SELF-HEALING PIPELINE] Stack trace automatically remediated. Event: ${event.eventId} | Root Cause: ${rootCause}`);
-
-  res.json({
-    success: true,
-    event,
-    message: "Self-healing pipeline remediated stack trace and deployed AST-verified patch."
-  });
-});
-
-app.get("/api/evolution/healing-logs", (req, res) => {
-  res.json({ success: true, logs: inMemoryHealingLogs });
-});
 
 // PHASE 5: MULTI-REGION BROKER FAILOVER & PQC SECURITY ENDPOINTS
 let inMemoryActiveMaster = "GW_OANDA_PRIMARY";
@@ -15029,83 +14495,8 @@ app.get("/api/risk/stress-test", async (req, res) => {
 // STAGE 7: INTEGRATED SAFETY BACKSTOP MODULE APIS
 // ============================================================================
 
-app.get("/api/safety/state", (req, res) => {
-  res.json({
-    success: true,
-    state: safetyBackstop.getState(),
-    systemStatus
-  });
-});
+// Safety endpoints managed via safetyRouter mounted at /api/safety
 
-app.post("/api/safety/config", checkIPAllowlist, (req, res) => {
-  const {
-    drawdownThresholdPct,
-    emergencyHaltPolicy,
-    globalMinConfidenceThreshold,
-    dailyLossLimitPct,
-    dailyLossResetUtcHour,
-    useCompoundedSizing,
-    principalCapital,
-    naturalExecutionConfig,
-    instrumentEdgeScores,
-    aiTimeframes
-  } = req.body;
-
-  const updates: any = {};
-  if (drawdownThresholdPct !== undefined) updates.drawdownThresholdPct = parseFloat(drawdownThresholdPct);
-  if (emergencyHaltPolicy !== undefined && (emergencyHaltPolicy === "FLATTEN_ALL" || emergencyHaltPolicy === "FREEZE_NEW_ONLY")) {
-    updates.emergencyHaltPolicy = emergencyHaltPolicy;
-  }
-  if (globalMinConfidenceThreshold !== undefined) updates.globalMinConfidenceThreshold = parseFloat(globalMinConfidenceThreshold);
-  if (dailyLossLimitPct !== undefined) updates.dailyLossLimitPct = parseFloat(dailyLossLimitPct);
-  if (dailyLossResetUtcHour !== undefined) updates.dailyLossResetUtcHour = parseInt(dailyLossResetUtcHour, 10);
-  if (useCompoundedSizing !== undefined) updates.useCompoundedSizing = Boolean(useCompoundedSizing);
-  if (principalCapital !== undefined) updates.principalCapital = parseFloat(principalCapital);
-  
-  if (naturalExecutionConfig !== undefined && typeof naturalExecutionConfig === "object") {
-    const currentState = safetyBackstop.getState();
-    updates.naturalExecutionConfig = {
-      ...currentState.naturalExecutionConfig,
-      ...naturalExecutionConfig
-    };
-  }
-
-  if (instrumentEdgeScores !== undefined && typeof instrumentEdgeScores === "object") {
-    const currentState = safetyBackstop.getState();
-    updates.instrumentEdgeScores = {
-      ...currentState.instrumentEdgeScores,
-      ...instrumentEdgeScores
-    };
-  }
-
-  if (aiTimeframes !== undefined && typeof aiTimeframes === "object") {
-    const currentState = safetyBackstop.getState();
-    updates.aiTimeframes = {
-      ...currentState.aiTimeframes,
-      ...aiTimeframes
-    };
-  }
-
-  safetyBackstop.updateState(updates);
-  addServerLog("RISK-MANAGER", "INFO", `[SAFETY CONFIG UPDATED] Dynamic risk parameters updated. GlobalMinConf: ${safetyBackstop.getState().globalMinConfidenceThreshold}, DailyLossLimit: ${safetyBackstop.getState().dailyLossLimitPct}%, SizingMode: ${safetyBackstop.getState().useCompoundedSizing ? "COMPOUNDED" : "PRINCIPAL-ONLY"}`);
-  res.json({ success: true, state: safetyBackstop.getState() });
-});
-
-app.get("/api/safety/heartbeat", (req, res) => {
-  res.json({
-    status: "ok",
-    systemStatus,
-    errorCount,
-    livePositionsCount: livePositions.length,
-    liveAccountStats,
-    timestamp: Date.now()
-  });
-});
-
-app.post("/api/safety/clear-notifications", checkIPAllowlist, (req, res) => {
-  safetyBackstop.updateState({ notifications: [] });
-  res.json({ success: true });
-});
 
 // --- TELEGRAM NOTIFICATION API ENDPOINTS ---
 
@@ -15267,144 +14658,8 @@ setInterval(async () => {
   }
 }, 60000);
 
-app.post("/api/safety/test-run", checkIPAllowlist, async (req, res) => {
-  const logs: string[] = [];
-  const runTest = async (name: string, fn: () => Promise<void> | void) => {
-    logs.push(`[TEST] Running: ${name}...`);
-    try {
-      await fn();
-      logs.push(`[PASS] ${name}`);
-    } catch (e: any) {
-      logs.push(`[FAIL] ${name}: ${e.message}`);
-    }
-  };
+// Safety test-run endpoint managed via safetyRouter mounted at /api/safety/test-run
 
-  // 1. Test Silent Lock trigger on drawdown breach
-  await runTest("Silent Lock Trigger on drawdown breach", () => {
-    const initialPeak = safetyBackstop.getState().peakEquity;
-    // Backup state
-    const backupPeak = initialPeak;
-    const backupLock = safetyBackstop.getState().silentLockActive;
-
-    // Force high peak to simulate drawdown
-    safetyBackstop.updateState({ peakEquity: 200000, silentLockActive: false });
-    
-    // Calculate hypothetical drawdown from peak 200,000 to live 104,830 = ~47.5% drawdown
-    const currentDrawdownPct = ((200000 - liveAccountStats.equity) / 200000) * 100;
-    if (currentDrawdownPct >= safetyBackstop.getState().drawdownThresholdPct) {
-      safetyBackstop.triggerSilentLock(`Simulated Drawdown Breach: ${currentDrawdownPct.toFixed(1)}%`);
-    }
-
-    const postState = safetyBackstop.getState();
-    if (!postState.silentLockActive) {
-      throw new Error("Silent lock should be active on drawdown threshold breach.");
-    }
-
-    // Restore
-    safetyBackstop.updateState({ peakEquity: backupPeak, silentLockActive: backupLock });
-  });
-
-  // 2. Test Broker disconnection mid-position triggers Safe Mode
-  await runTest("Broker disconnect mid-position triggers Safe Mode", async () => {
-    // Create simulated broker connection state
-    const backupConns = (await pgDb.queryAsync("SELECT * FROM broker_connections")) || [];
-    
-    // Seed a disconnected broker connection
-    await pgDb.queryAsync("INSERT INTO broker_connections (id, broker_type, status, api_url, account_id)", [
-      "mock-broker-fail", "BINANCE", "DISCONNECTED", "https://api.binance.com", "mock-bin-acc"
-    ]);
-
-    // Simulate a watchdog check: since there are open positions and a broker is disconnected, trigger Safe Mode
-    const safety = safetyBackstop.getState();
-    const backupSafeMode = safety.safeModeActive;
-    safetyBackstop.updateState({ safeModeActive: false });
-
-    // Run watchdog condition
-    const livePositionsCount = livePositions.length;
-    const connections = (await pgDb.queryAsync("SELECT * FROM broker_connections")) || [];
-    const disconnectedBroker = connections.find(c => c.status === "DISCONNECTED");
-
-    if (livePositionsCount > 0 && disconnectedBroker) {
-      safetyBackstop.triggerSafeMode(`Watchdog: Broker connection disconnected mid-position.`);
-    }
-
-    const postState = safetyBackstop.getState();
-    if (!postState.safeModeActive) {
-      throw new Error("Safe Mode should be active when broker disconnects mid-position.");
-    }
-
-    // Restore broker connections by deleting simulated fail connection
-    await pgDb.queryAsync("DELETE FROM broker_connections WHERE id = $1", ["mock-broker-fail"]);
-    safetyBackstop.updateState({ safeModeActive: backupSafeMode });
-  });
-
-  // 3. Test Unresponsive main process watchdog detection
-  await runTest("Unresponsive main process watchdog detection", () => {
-    // Simulate checking a failed heartbeat inside watchdog
-    const consecutiveFailuresTest = 3;
-    const safety = safetyBackstop.getState();
-    const backupHalt = safety.emergencyHaltActive;
-    safetyBackstop.updateState({ emergencyHaltActive: false });
-
-    if (consecutiveFailuresTest >= 3) {
-      const reason = "TEST: Main engine unresponsive watchdog simulation.";
-      safetyBackstop.triggerSafeMode(reason);
-      safetyBackstop.triggerEmergencyHalt(reason, { source: "WATCHDOG_DETECTION" });
-    }
-
-    const postState = safetyBackstop.getState();
-    if (!postState.emergencyHaltActive || !postState.safeModeActive) {
-      throw new Error("Watchdog should activate emergency halt and safe mode upon consecutive failures.");
-    }
-
-    // Restore
-    safetyBackstop.updateState({ emergencyHaltActive: backupHalt });
-  });
-
-  // 4. Test 24H Daily Loss Limit halt, position flattening, and auto-resume execution
-  await runTest("24H Daily Loss Limit halt, position flattening, and auto-resume execution", async () => {
-    const backupState = { ...safetyBackstop.getState() };
-    const backupPositions = [...demoLivePositions];
-
-    // Seed test position
-    demoLivePositions.push({ id: "test-loss-pos", symbol: "EUR/USD", type: "BUY", size: 1.0, entryPrice: 1.0850, currentPrice: 1.0850, pnl: -3500 });
-
-    // Trigger daily loss limit breach
-    safetyBackstop.triggerDailyLossLimit24H("TEST: 3% Daily loss threshold breached", { currentDayLossPct: 3.5 });
-
-    const postState = safetyBackstop.getState();
-    if (!postState.dailyLossLimitHaltActive || !postState.dailyLossLimitAutoResumeAt) {
-      throw new Error("dailyLossLimitHaltActive and dailyLossLimitAutoResumeAt must be active upon daily loss breach.");
-    }
-
-    if (demoLivePositions.length !== 0) {
-      throw new Error("All open positions must be flattened when 24H Daily Loss Limit triggers.");
-    }
-
-    // Verify auto-resume timeout calculation
-    const autoResumeTime = new Date(postState.dailyLossLimitAutoResumeAt).getTime();
-    const triggerTime = new Date(postState.dailyLossLimitTriggeredAt!).getTime();
-    const diffHours = (autoResumeTime - triggerTime) / (1000 * 60 * 60);
-    if (Math.abs(diffHours - 24) > 0.01) {
-      throw new Error(`Auto-resume time must be set to exactly 24 hours from trigger time (got ${diffHours.toFixed(2)}h).`);
-    }
-
-    // Restore state and positions
-    safetyBackstop.updateState({
-      dailyLossLimitHaltActive: backupState.dailyLossLimitHaltActive,
-      dailyLossLimitTriggeredAt: backupState.dailyLossLimitTriggeredAt,
-      dailyLossLimitAutoResumeAt: backupState.dailyLossLimitAutoResumeAt,
-      dailyLossLimitBreached: backupState.dailyLossLimitBreached
-    });
-    demoLivePositions.length = 0;
-    demoLivePositions.push(...backupPositions);
-  });
-
-  res.json({
-    success: true,
-    logs
-  });
-});
 
 app.get("/api/system-implementation-status", asyncHandler(async (req: express.Request, res: express.Response) => {
   const components: Array<{
