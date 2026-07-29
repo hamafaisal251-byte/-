@@ -334,6 +334,45 @@ class SafetyBackstopManager {
     }
   }
 
+  public checkDrawdown(proposedTradeRiskUsd: number, currentEquity: number): { allowed: boolean; reason?: string; drawdownPct?: number } {
+    this.load();
+    if (this.state.emergencyHaltActive) {
+      return { allowed: false, reason: "Emergency Halt is active." };
+    }
+    if (this.state.silentLockActive) {
+      return { allowed: false, reason: "Silent Lock soft-halt is active." };
+    }
+    if (this.state.dailyLossLimitHaltActive) {
+      return { allowed: false, reason: "Daily Loss Limit 24H trading halt is active." };
+    }
+
+    const peak = Math.max(this.state.peakEquity || 100000, currentEquity);
+    this.state.peakEquity = peak;
+    const currentDrawdownPct = peak > 0 ? ((peak - currentEquity) / peak) * 100 : 0;
+    this.state.lastDrawdownPct = parseFloat(currentDrawdownPct.toFixed(2));
+
+    const threshold = this.state.drawdownThresholdPct || 5.0;
+
+    if (currentDrawdownPct >= threshold) {
+      const reason = `Max drawdown breached: current drawdown ${currentDrawdownPct.toFixed(2)}% exceeds max threshold (${threshold}%)`;
+      this.triggerSilentLock(reason);
+      return { allowed: false, reason, drawdownPct: currentDrawdownPct };
+    }
+
+    const projectedEquity = currentEquity - Math.abs(proposedTradeRiskUsd || 0);
+    const projectedDrawdownPct = peak > 0 ? ((peak - projectedEquity) / peak) * 100 : 0;
+
+    if (projectedDrawdownPct >= threshold) {
+      return {
+        allowed: false,
+        reason: `Pre-trade risk check failed: projected trade drawdown (${projectedDrawdownPct.toFixed(2)}%) would breach max limit (${threshold}%)`,
+        drawdownPct: projectedDrawdownPct
+      };
+    }
+
+    return { allowed: true, drawdownPct: currentDrawdownPct };
+  }
+
   public save() {
     try {
       const tmpPath = `${this.filepath}.tmp.${Date.now()}`;

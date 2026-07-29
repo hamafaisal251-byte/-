@@ -49,14 +49,8 @@ func LoadConfig() *Config {
 	}
 
 	masterKey := os.Getenv("MASTER_ENCRYPTION_KEY")
-	if masterKey == "" {
-		masterKey = "sovereign-master-recovery-key-2026-v2-quant"
-	}
 
 	apiMutateKey := os.Getenv("API_MUTATE_KEY")
-	if apiMutateKey == "" {
-		apiMutateKey = "SOV-MUTATE-DEFAULT-KEY"
-	}
 
 	port := os.Getenv("PORT")
 	if port == "" {

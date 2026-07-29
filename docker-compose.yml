@@ -43,8 +43,8 @@ services:
     environment:
       - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/sovereign_db
       - REDIS_URL=redis://redis:6379
-      - MASTER_ENCRYPTION_KEY=sovereign-master-recovery-key-2026-v2-quant
-      - API_MUTATE_KEY=SOV-MUTATE-DEFAULT-KEY
+      - MASTER_ENCRYPTION_KEY=${MASTER_ENCRYPTION_KEY}
+      - API_MUTATE_KEY=${API_MUTATE_KEY}
       - NODE_ENV=production
       - PORT=3000
       - SENTRY_DSN=${SENTRY_DSN}

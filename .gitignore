@@ -16,8 +16,14 @@ get-pip.py
 !package.json
 !package-lock.json
 !tsconfig.json
-!staged_pr.json
-!postgres_state.json
-!safety_state.json
-!architectural_invariants.json
-!telegram_config.json
+!components.json
+!firebase-blueprint.json
+!firebase-applet-config.json
+# Dynamic runtime state & secret config files strictly ignored
+postgres_state.json
+json_db_state.json
+safety_state.json
+staged_pr.json
+architectural_invariants.json
+telegram_config.json
+*.state.json

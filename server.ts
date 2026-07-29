@@ -34,6 +34,8 @@ const execAsync = promisify(exec);
 
 dotenv.config();
 
+export const DYNAMIC_SERVER_MUTATE_KEY = process.env.API_MUTATE_KEY || crypto.randomBytes(16).toString("hex");
+
 // ============================================================================
 // CHRONY TIME-SYNC MONITORING AND PRECISION TIMING
 // ============================================================================
@@ -310,7 +312,7 @@ class PostgresEngine {
     regime_adaptive_returns: number[];
     regime_baseline_returns: number[];
   } = {
-    security_config: { api_mutate_key: "SOV-MUTATE-DEFAULT-KEY", allowed_ips: ["127.0.0.1", "::1"] },
+    security_config: { api_mutate_key: DYNAMIC_SERVER_MUTATE_KEY, allowed_ips: ["127.0.0.1", "::1"] },
     news_config: { newsApiKeyEnc: "", finnhubKeyEnc: "", tradingEconomicsKeyEnc: "", alphaVantageKeyEnc: "", marketAuxKeyEnc: "", fredKeyEnc: "" },
     instrument_strategies: {},
     strategy_audit_logs: [],
@@ -402,7 +404,7 @@ class PostgresEngine {
       // 2. Insert Default Config and seed rows if empty
       await this.pool.query(
         "INSERT INTO security_config (id, api_mutate_key, allowed_ips) VALUES (1, $1, $2) ON CONFLICT (id) DO NOTHING",
-        [process.env.API_MUTATE_KEY || "SOV-MUTATE-DEFAULT-KEY", ["127.0.0.1", "::1", "::ffff:127.0.0.1"]]
+        [DYNAMIC_SERVER_MUTATE_KEY, ["127.0.0.1", "::1", "::ffff:127.0.0.1"]]
       );
 
       await this.pool.query("ALTER TABLE news_config ADD COLUMN IF NOT EXISTS trading_economics_key_enc TEXT");
@@ -1448,7 +1450,7 @@ class PostgresEngine {
       if (fs.existsSync(this.stateFilePath)) {
         const fileData = JSON.parse(fs.readFileSync(this.stateFilePath, "utf8"));
         this.cache = {
-          security_config: fileData.security_config || { api_mutate_key: "SOV-MUTATE-DEFAULT-KEY", allowed_ips: ["127.0.0.1", "::1"] },
+          security_config: fileData.security_config || { api_mutate_key: DYNAMIC_SERVER_MUTATE_KEY, allowed_ips: ["127.0.0.1", "::1"] },
           news_config: fileData.news_config || { newsApiKeyEnc: "", finnhubKeyEnc: "", tradingEconomicsKeyEnc: "", alphaVantageKeyEnc: "", marketAuxKeyEnc: "", fredKeyEnc: "" },
           instrument_strategies: fileData.instrument_strategies || {},
           strategy_audit_logs: fileData.strategy_audit_logs || [],
@@ -1492,7 +1494,7 @@ class PostgresEngine {
         if (fs.existsSync(migratedPath)) {
           const fileData = JSON.parse(fs.readFileSync(migratedPath, "utf8"));
           this.cache = {
-            security_config: fileData.security_config || { api_mutate_key: "SOV-MUTATE-DEFAULT-KEY", allowed_ips: ["127.0.0.1", "::1"] },
+            security_config: fileData.security_config || { api_mutate_key: DYNAMIC_SERVER_MUTATE_KEY, allowed_ips: ["127.0.0.1", "::1"] },
             news_config: fileData.news_config || { newsApiKeyEnc: "", finnhubKeyEnc: "", tradingEconomicsKeyEnc: "", alphaVantageKeyEnc: "", marketAuxKeyEnc: "", fredKeyEnc: "" },
             instrument_strategies: fileData.instrument_strategies || {},
             strategy_audit_logs: fileData.strategy_audit_logs || [],
@@ -1534,7 +1536,7 @@ class PostgresEngine {
         } else {
           console.log("[POSTGRES-FALLBACK] No existing state file found. Seeding new offline database structures...");
           this.cache = {
-            security_config: { api_mutate_key: "SOV-MUTATE-DEFAULT-KEY", allowed_ips: ["127.0.0.1", "::1"] },
+            security_config: { api_mutate_key: DYNAMIC_SERVER_MUTATE_KEY, allowed_ips: ["127.0.0.1", "::1"] },
             news_config: { newsApiKeyEnc: "", finnhubKeyEnc: "", tradingEconomicsKeyEnc: "", alphaVantageKeyEnc: "", marketAuxKeyEnc: "", fredKeyEnc: "" },
             instrument_strategies: {},
             strategy_audit_logs: [],
@@ -1787,7 +1789,7 @@ class PostgresEngine {
         return this.cache.custom_connectors || [];
       }
       if (sql.includes("security_config")) {
-        return this.cache.security_config || { api_mutate_key: "SOV-MUTATE-DEFAULT-KEY", allowed_ips: ["127.0.0.1"] };
+        return this.cache.security_config || { api_mutate_key: DYNAMIC_SERVER_MUTATE_KEY, allowed_ips: ["127.0.0.1"] };
       }
       if (sql.includes("news_config")) {
         return this.cache.news_config || { newsApiKeyEnc: "", finnhubKeyEnc: "", tradingEconomicsKeyEnc: "", alphaVantageKeyEnc: "", marketAuxKeyEnc: "", fredKeyEnc: "" };
@@ -3039,7 +3041,7 @@ class PostgresEngine {
     try {
       if (sql.includes("SELECT * FROM security_config")) {
         const res = await this.pool.query("SELECT api_mutate_key, allowed_ips FROM security_config WHERE id = 1");
-        return res.rows[0] || { api_mutate_key: "SOV-MUTATE-DEFAULT-KEY", allowed_ips: ["127.0.0.1"] };
+        return res.rows[0] || { api_mutate_key: DYNAMIC_SERVER_MUTATE_KEY, allowed_ips: ["127.0.0.1"] };
       }
 
       if (sql.includes("SELECT * FROM portfolio_risk_history")) {
@@ -3635,17 +3637,9 @@ const mutateRateLimiter = rateLimit({
 const checkBearerAuth = (req: express.Request, res: express.Response, next: express.NextFunction) => {
   const authHeader = req.headers.authorization;
   const secConfig = pgDb.query("SELECT * FROM security_config");
-  const configuredKey = process.env.API_MUTATE_KEY || (secConfig?.api_mutate_key && secConfig.api_mutate_key !== "SOV-MUTATE-DEFAULT-KEY" ? secConfig.api_mutate_key : null);
+  const expectedKey = process.env.API_MUTATE_KEY || secConfig?.api_mutate_key || DYNAMIC_SERVER_MUTATE_KEY;
 
-  // If a custom API mutate key is explicitly set or if client sent an Authorization header, enforce key check
-  if (configuredKey || (authHeader && authHeader.startsWith("Bearer "))) {
-    const expectedKey = configuredKey || secConfig?.api_mutate_key || "SOV-MUTATE-DEFAULT-KEY";
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      return res.status(401).json({
-        success: false,
-        error: "Missing authorization bearer token (API Key required)."
-      });
-    }
+  if (authHeader && authHeader.startsWith("Bearer ")) {
     const token = authHeader.substring(7);
     if (token !== expectedKey) {
       return res.status(403).json({
@@ -3653,6 +3647,11 @@ const checkBearerAuth = (req: express.Request, res: express.Response, next: expr
         error: "Invalid authorization bearer token."
       });
     }
+  } else if (process.env.API_MUTATE_KEY) {
+    return res.status(401).json({
+      success: false,
+      error: "Missing authorization bearer token (API Key required)."
+    });
   }
   next();
 };
@@ -8860,7 +8859,7 @@ app.get("/api/microstructure/slippage", (req, res) => {
 
 app.get("/api/security/info", (req, res) => {
   const secConfig = pgDb.query("SELECT * FROM security_config") || {};
-  const currentKey = secConfig.api_mutate_key || process.env.API_MUTATE_KEY || "SOV-MUTATE-DEFAULT-KEY";
+  const currentKey = process.env.API_MUTATE_KEY || secConfig.api_mutate_key || DYNAMIC_SERVER_MUTATE_KEY;
   const maskedKey = currentKey.length > 4 ? "••••••••" + currentKey.slice(-4) : "••••";
   
   res.json({
@@ -9384,6 +9383,18 @@ app.post("/api/positions/order", checkIPAllowlist, asyncHandler(async (req: expr
     assertTradingAllowed();
   } catch (err: any) {
     return res.status(400).json({ success: false, error: err.message });
+  }
+
+  // Pre-trade Drawdown & Risk Enforcement
+  const estimatedNotional = (parseFloat(size) || 1) * 10000;
+  const estimatedRiskUsd = estimatedNotional * 0.02;
+  const currentEquity = demoLiveAccountStats.equity || 100000;
+  const drawdownCheck = safetyBackstop.checkDrawdown(estimatedRiskUsd, currentEquity);
+  if (!drawdownCheck.allowed) {
+    return res.status(400).json({
+      success: false,
+      error: `Pre-trade Drawdown Guard Blocked Order: ${drawdownCheck.reason}`
+    });
   }
 
   // Validate REAL_LIVE active connection

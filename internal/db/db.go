@@ -657,7 +657,7 @@ func (db *DB) Initialize(ctx context.Context) error {
 	// 19. Seed security config and other required static setups
 	_, _ = db.Pool.Exec(ctx, `
 		INSERT INTO security_config (id, api_mutate_key, allowed_ips) 
-		VALUES (1, 'SOV-MUTATE-DEFAULT-KEY', ARRAY['127.0.0.1', '::1', '::ffff:127.0.0.1']) 
+		VALUES (1, '', ARRAY['127.0.0.1', '::1', '::ffff:127.0.0.1']) 
 		ON CONFLICT (id) DO NOTHING
 	`)
 
