@@ -359,17 +359,22 @@ function isQuotaOrRateLimitError(err: any): boolean {
   const msg = (err.message || String(err)).toLowerCase();
   return (
     msg.includes("429") ||
+    msg.includes("503") ||
+    msg.includes("service unavailable") ||
+    msg.includes("high demand") ||
     msg.includes("quota exceeded") ||
     msg.includes("too many requests") ||
     msg.includes("resource_exhausted") ||
-    msg.includes("limit exceeded")
+    msg.includes("limit exceeded") ||
+    msg.includes("overloaded") ||
+    msg.includes("temporarily unavailable")
   );
 }
 
 function cleanErrorMessage(err: any): string {
   if (!err) return "Unknown error";
   if (isQuotaOrRateLimitError(err)) {
-    return "Gemini rate limit / quota exceeded (429 circuit breaker engaged)";
+    return "Gemini API high demand / rate limit (429/503 circuit breaker engaged, using heuristic engine)";
   }
   const raw = err.message || String(err);
   return raw.length > 200 ? raw.slice(0, 200) + "..." : raw;
