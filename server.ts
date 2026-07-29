@@ -17040,6 +17040,6 @@ async function startServer() {
   process.on("SIGINT", () => handleGracefulShutdown("SIGINT"));
 }
 
-if (process.env.NODE_ENV !== "test") {
+if (process.env.NODE_ENV !== "test" && !process.env.VITEST) {
   startServer();
 }

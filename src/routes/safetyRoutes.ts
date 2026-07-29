@@ -15,7 +15,7 @@ safetyRouter.get("/state", (req: Request, res: Response) => {
 });
 
 // POST /api/safety/config
-safetyRouter.post("/config", checkIPAllowlist, (req: Request, res: Response) => {
+safetyRouter.post("/config", (req: Request, res: Response, next: any) => checkIPAllowlist(req, res, next), (req: Request, res: Response) => {
   const {
     drawdownThresholdPct,
     emergencyHaltPolicy,
@@ -82,7 +82,7 @@ safetyRouter.get("/heartbeat", (req: Request, res: Response) => {
 });
 
 // POST /api/safety/clear-notifications
-safetyRouter.post("/clear-notifications", checkIPAllowlist, (req: Request, res: Response) => {
+safetyRouter.post("/clear-notifications", (req: Request, res: Response, next: any) => checkIPAllowlist(req, res, next), (req: Request, res: Response) => {
   safetyBackstop.updateState({ notifications: [] });
   res.json({ success: true });
 });
@@ -127,7 +127,7 @@ safetyRouter.post("/emergency-halt/reset", (req: Request, res: Response) => {
 });
 
 // POST /api/safety/test-run
-safetyRouter.post("/test-run", checkIPAllowlist, async (req: Request, res: Response) => {
+safetyRouter.post("/test-run", (req: Request, res: Response, next: any) => checkIPAllowlist(req, res, next), async (req: Request, res: Response) => {
   const logs: string[] = [];
   const runTest = async (name: string, fn: () => Promise<void> | void) => {
     logs.push(`[TEST] Running: ${name}...`);

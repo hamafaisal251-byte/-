@@ -1,5 +1,8 @@
 import { Request, Response, NextFunction } from "express";
-import { pgDb } from "../../server";
+
+export const asyncHandler = (fn: Function) => (req: Request, res: Response, next: NextFunction) => {
+  Promise.resolve(fn(req, res, next)).catch(next);
+};
 
 export const checkIPAllowlist = (req: Request, res: Response, next: NextFunction) => {
   // Always allow GET read-only requests for dashboard UI rendering
@@ -14,7 +17,14 @@ export const checkIPAllowlist = (req: Request, res: Response, next: NextFunction
     clientIp = "127.0.0.1";
   }
 
-  const secConfig = pgDb?.query ? pgDb.query("SELECT * FROM security_config") : null;
+  let secConfig: any = null;
+  try {
+    const serverModule = require("../../server");
+    secConfig = serverModule.pgDb?.query ? serverModule.pgDb.query("SELECT * FROM security_config") : null;
+  } catch (_err) {
+    // Ignore if server module not yet fully loaded
+  }
+
   const allowed = secConfig?.allowed_ips || ["127.0.0.1", "::1"];
   
   // Check Cloud Run proxy headers if present
@@ -29,8 +39,4 @@ export const checkIPAllowlist = (req: Request, res: Response, next: NextFunction
   }
 
   return res.status(403).json({ error: `Access forbidden: IP address ${clientIp} is not in the security allowlist.` });
-};
-
-export const asyncHandler = (fn: Function) => (req: Request, res: Response, next: NextFunction) => {
-  Promise.resolve(fn(req, res, next)).catch(next);
 };
