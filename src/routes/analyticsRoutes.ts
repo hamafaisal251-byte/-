@@ -1,5 +1,6 @@
 import { Router, Request, Response } from "express";
-import { pgDb, demoLiveAccountStats, realLiveAccountStats, demoLivePositions, realLivePositions } from "../../server";
+import { pgDb } from "../db";
+import { demoLiveAccountStats, realLiveAccountStats, demoLivePositions, realLivePositions } from "../state/tradingState";
 import { safetyBackstop } from "../../safetyBackstop";
 
 export const analyticsRouter = Router();

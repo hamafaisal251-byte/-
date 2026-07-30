@@ -1,6 +1,8 @@
 import { Router, Request, Response } from "express";
 import crypto from "crypto";
-import { pgDb, addServerLog, fixEngine } from "../../server";
+import { pgDb } from "../db";
+import { addServerLog } from "../services/logging";
+import { fixEngine } from "../services/fixEngineInstance";
 import { checkIPAllowlist, asyncHandler } from "../middleware/auth";
 import { encrypt, decrypt } from "../services/encryption";
 

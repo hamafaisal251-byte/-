@@ -1,22 +1,24 @@
 import { Router, Request, Response } from "express";
 import { safetyBackstop } from "../../safetyBackstop";
 import { checkIPAllowlist, asyncHandler } from "../middleware/auth";
+import { pgDb } from "../db";
+import { addServerLog } from "../services/logging";
+import { promTradesExecutedTotal } from "../services/metricsService";
 import {
-  pgDb,
   assertTradingAllowed,
-  systemStatus,
-  addServerLog,
-  promTradesExecutedTotal,
   liveRates,
   getNumericRate,
   rollingTicks,
-  saveLiveTradingStateToDisk,
+  saveLiveTradingStateToDisk
+} from "../services/tradingService";
+import {
+  systemStatus,
   recordDemoLiveTradeClose,
   demoLivePositions,
   demoLiveAccountStats,
   realLivePositions,
   realLiveAccountStats
-} from "../../server";
+} from "../state/tradingState";
 
 export const positionRouter = Router();
 

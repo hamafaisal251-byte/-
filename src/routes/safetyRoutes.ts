@@ -1,6 +1,8 @@
 import { Router, Request, Response } from "express";
 import { safetyBackstop } from "../../safetyBackstop";
-import { pgDb, systemStatus, errorCount, livePositions, liveAccountStats, demoLivePositions, addServerLog } from "../../server";
+import { pgDb } from "../db";
+import { systemStatus, errorCount, livePositions, liveAccountStats, demoLivePositions } from "../state/tradingState";
+import { addServerLog } from "../services/logging";
 import { checkIPAllowlist } from "../middleware/auth";
 
 export const safetyRouter = Router();
