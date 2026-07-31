@@ -12,12 +12,15 @@ arbitrageRouter.get("/state", (req: Request, res: Response) => {
   const activeCandidate = candidatesList.find(c => c.id === activeCandidateId) || candidatesList[0];
   const sandboxPassed = activeCandidate && activeCandidate.status === "PASSED";
 
+  const tosPermitted = Boolean(compliance?.tosPermitted || compliance?.tos_permitted);
+  const regulationsPermitted = Boolean(compliance?.regulationsPermitted || compliance?.regulations_permitted);
+
   res.json({
     success: true,
     config: arbitrageConfig,
     compliance: {
-      tosPermitted: compliance?.tosPermitted || false,
-      regulationsPermitted: compliance?.regulationsPermitted || false,
+      tosPermitted,
+      regulationsPermitted,
       sandboxPassed: sandboxPassed
     }
   });
@@ -41,10 +44,13 @@ arbitrageRouter.post("/toggle", (req: Request, res: Response, next: any) => chec
     const activeCandidate = candidatesList.find(c => c.id === activeCandidateId) || candidatesList[0];
     const sandboxPassed = activeCandidate && activeCandidate.status === "PASSED";
 
-    if (!compliance.tosPermitted) {
+    const tosPermitted = Boolean(compliance?.tosPermitted || compliance?.tos_permitted);
+    const regulationsPermitted = Boolean(compliance?.regulationsPermitted || compliance?.regulations_permitted);
+
+    if (!tosPermitted) {
       return res.status(400).json({ success: false, error: "TOS compliance verification required." });
     }
-    if (!compliance.regulationsPermitted) {
+    if (!regulationsPermitted) {
       return res.status(400).json({ success: false, error: "Regulatory compliance verification required." });
     }
     if (!sandboxPassed) {

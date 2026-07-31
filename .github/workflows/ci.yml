@@ -30,6 +30,9 @@ jobs:
       - name: Run Code Linter
         run: npm run lint
 
+      - name: Run Unit & Integration Test Suite
+        run: npm test
+
       - name: Run Build Verification
         run: npm run build
 
@@ -40,9 +43,29 @@ jobs:
 
       - name: Run AI Sandbox Lexical and AST Security Audits
         run: |
-          echo "==== Running Evolution Validator on test candidates ===="
+          echo "==== Running Evolution Validator on all 5 C++ test candidates ===="
           chmod +x ./evolution_validator.sh
-          ./evolution_validator.sh test/test_clean.cpp
+
+          pass_files=("test/test_clean.cpp" "test/test_proposed.cpp" "test/test_proposed_temp.cpp")
+          fail_files=("test/test_leak.cpp" "test/test_static.cpp")
+
+          for file in "${pass_files[@]}"; do
+            echo "Validating expected PASS candidate: $file"
+            if ! ./evolution_validator.sh "$file"; then
+              echo "Error: Candidate $file was expected to PASS but was REJECTED." >&2
+              exit 1
+            fi
+          done
+
+          for file in "${fail_files[@]}"; do
+            echo "Validating expected REJECT candidate: $file"
+            if ./evolution_validator.sh "$file"; then
+              echo "Error: Candidate $file was expected to be REJECTED but PASSED." >&2
+              exit 1
+            else
+              echo "Candidate $file correctly REJECTED as expected."
+            fi
+          done
 
   strategy-walk-forward-validation:
     name: High-Frequency Strategy Walk-Forward Validation
@@ -53,11 +76,16 @@ jobs:
       - name: Check out Repository
         uses: actions/checkout@v4
 
+      - name: Install Cppcheck and G++ Toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cppcheck g++ valgrind
+
       - name: Run HFT Strategy Playback
         run: |
           echo "Executing walk-forward validation for active reward models..."
-          # In CI, we run a simulated HFT tick simulation to verify zero regressions
-          g++ -O3 -Wall -Werror -o test_harness test/test_clean.cpp cmd/harness_main.cpp || echo "No custom main, using default validator"
+          chmod +x ./evolution_validator.sh
+          ./evolution_validator.sh test/test_clean.cpp
           echo "Walk-forward validation successfully verified over historical sample."
 
   zero-downtime-deploy-precheck:
@@ -72,9 +100,10 @@ jobs:
       - name: Verify Deployment Manifest
         run: |
           echo "Verifying Docker compose files, environment variables schema, and rollbacks..."
-          if [ -f "docker-compose.yml" ] && [ -f "Dockerfile" ]; then
-            echo "Deployment files present and compliant."
+          if [ -f "Dockerfile.go" ] && [ -f "Dockerfile.node" ]; then
+            echo "Deployment files Dockerfile.go and Dockerfile.node present and compliant."
           else
-            echo "Warning: Standard Docker configurations missing."
+            echo "Error: Dockerfile.go or Dockerfile.node missing." >&2
+            exit 1
           fi
           echo "Deployment pre-flight passed."
