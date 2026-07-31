@@ -83,3 +83,79 @@ export let liveAccountStats = demoLiveAccountStats;
 export function setLiveAccountStats(stats: any) {
   liveAccountStats = stats;
 }
+
+export let arbitrageConfig = {
+  liveEnabled: false,
+  thresholdNetProfitUsd: 15.0,
+  orderSizeBtc: 0.5,
+  slippagePct: 0.05
+};
+
+export let activeCandidateId = "candidate-a";
+export function setActiveCandidateId(id: string) { activeCandidateId = id; }
+
+export let candidatesList: any[] = [
+  {
+    id: "candidate-a",
+    name: "Reward Candidate #0412: Latency Optimized Sniper",
+    creator: "AGENT_GEN_V2",
+    status: "IDLE",
+    code: `double calculateReward(double pnl_pips, double execution_latency_ns, double slippage_ticks, double volatility_spike, double position_lots) { return 0.0; }`,
+    metrics: {
+      avgReward: 4.2,
+      maxDrawdown: 0.8,
+      avgLatencyNs: 180.0,
+      leaksBytes: 0,
+      astWarningsCount: 0
+    }
+  }
+];
+export function setCandidatesList(list: any[]) { candidatesList = list; }
+
+export let geminiAvailableState: "GEMINI_AVAILABLE" | "GEMINI_UNAVAILABLE" = "GEMINI_AVAILABLE";
+export function setGeminiAvailableState(s: "GEMINI_AVAILABLE" | "GEMINI_UNAVAILABLE") { geminiAvailableState = s; }
+
+export let geminiLastTransitionTime = new Date().toISOString();
+export function setGeminiLastTransitionTime(t: string) { geminiLastTransitionTime = t; }
+
+export let tier3Status = "RUNNING";
+export function setTier3Status(s: string) { tier3Status = s; }
+
+export let selectedLocalModel = "llama3.1:70b";
+export let ollamaStatus = "ONLINE";
+export let benchmarkResults: any = {};
+export let mockOutageSimulated = false;
+export function setMockOutageSimulated(val: boolean) { mockOutageSimulated = val; }
+export let geminiUnavailableSince: string | null = null;
+export function setGeminiUnavailableSince(t: string | null) { geminiUnavailableSince = t; }
+
+export let inMemoryToolCallLogs: any[] = [];
+
+export let activeCodePRs: any[] = [
+  {
+    prId: "PR-2041",
+    title: "Optimization: Microsecond order routing batching",
+    branch: "feat/order-routing-optimization",
+    author: "AI Evolution Engine",
+    ciStatus: "PASSED",
+    coveragePct: 94.2,
+    deployTarget: "CANARY_SHADOW",
+    valgrindLeaks: 0,
+    astWarnings: 0,
+    version: "2.4.0"
+  }
+];
+
+export let pipelineHistory: any[] = [
+  {
+    id: "PR-2040",
+    title: "Refactor: Safety backstop drawdown calculation",
+    branch: "refactor/drawdown-safety",
+    author: "Human Admin",
+    mergedAt: new Date(Date.now() - 3600000 * 24).toISOString(),
+    ciStatus: "PASSED",
+    deployDurationSec: 12.4,
+    version: "2.4.0"
+  }
+];
+

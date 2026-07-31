@@ -214,6 +214,14 @@ import { fixRouter } from "./src/routes/fixRoutes";
 import { microstructureRouter } from "./src/routes/microstructureRoutes";
 import { securityRouter } from "./src/routes/securityRoutes";
 import { strategiesRouter } from "./src/routes/strategiesRoutes";
+import { systemIntelligenceRouter } from "./src/routes/systemIntelligenceRoutes";
+import { arbitrageRouter } from "./src/routes/arbitrageRoutes";
+import { valueDiscoveryRouter } from "./src/routes/valueDiscoveryRoutes";
+import { riskRouter } from "./src/routes/riskRoutes";
+import { pipelineRouter } from "./src/routes/pipelineRoutes";
+import { notificationsRouter } from "./src/routes/notificationsRoutes";
+import { drlRouter } from "./src/routes/drlRoutes";
+import { miscRouter } from "./src/routes/miscRoutes";
 
 export const app = express();
 app.set("trust proxy", 1);
@@ -235,6 +243,15 @@ app.use("/api/fix", fixRouter);
 app.use("/api/microstructure", microstructureRouter);
 app.use("/api/security", securityRouter);
 app.use("/api/strategies", strategiesRouter);
+app.use("/api/system-intelligence", systemIntelligenceRouter);
+app.use("/api/arbitrage", arbitrageRouter);
+app.use("/api/value-discovery", valueDiscoveryRouter);
+app.use("/api/risk", riskRouter);
+app.use("/api/pipeline", pipelineRouter);
+app.use("/api/notifications", notificationsRouter);
+app.use("/api/drl", drlRouter);
+app.use("/api", miscRouter);
+
 
 // ============================================================================
 // PROMETHEUS METRICS INSTRUMENTATION (prom-client)
