@@ -1,4 +1,5 @@
 import { Router, Request, Response } from "express";
+import { z } from "zod";
 import { pgDb } from "../db";
 import {
   candidatesList,
@@ -8,30 +9,37 @@ import {
 import { safetyBackstop } from "../../safetyBackstop";
 import { addServerLog } from "../services/logging";
 import { checkIPAllowlist } from "../middleware/auth";
+import { llmProvider } from "../../llmProvider";
 import {
   AdoptCandidateSchema,
   SelectCandidateSchema,
   BacktestSchema,
   executeSandboxForCandidate,
   evaluateCppRewardInJs,
-  recordPromotedVersion
+  recordPromotedVersion,
+  synthesizeCandidateFromResearch
 } from "../services/evolutionService";
 
 export const evolutionRouter = Router();
 
+const GeminiAnalyzeSchema = z.object({
+  code: z.string().min(1, "Code parameter is required"),
+  candidateName: z.string().optional()
+});
+
 // GET /api/candidates
-evolutionRouter.get("/candidates", (req: Request, res: Response) => {
+evolutionRouter.get(["/candidates", "/v1/candidates", "/evolution/candidates"], (req: Request, res: Response) => {
   res.json({ success: true, candidates: candidatesList, activeCandidateId });
 });
 
 // GET /api/candidates/sandbox_history
-evolutionRouter.get("/candidates/sandbox_history", (req: Request, res: Response) => {
+evolutionRouter.get(["/candidates/sandbox_history", "/v1/candidates/sandbox_history", "/evolution/candidates/sandbox_history"], (req: Request, res: Response) => {
   const history = pgDb.query("SELECT * FROM sandbox_runs") || [];
   res.json({ success: true, history });
 });
 
 // POST /api/candidates/adopt
-evolutionRouter.post("/candidates/adopt", (req: Request, res: Response, next: any) => checkIPAllowlist(req, res, next), async (req: Request, res: Response) => {
+evolutionRouter.post(["/candidates/adopt", "/v1/candidates/adopt", "/evolution/candidates/adopt"], (req: Request, res: Response, next: any) => checkIPAllowlist(req, res, next), async (req: Request, res: Response) => {
   try {
     const safety = safetyBackstop.getState();
     if (safety.silentLockActive) {
@@ -96,7 +104,7 @@ evolutionRouter.post("/candidates/adopt", (req: Request, res: Response, next: an
 });
 
 // POST /api/candidates/select
-evolutionRouter.post("/candidates/select", (req: Request, res: Response, next: any) => checkIPAllowlist(req, res, next), async (req: Request, res: Response) => {
+evolutionRouter.post(["/candidates/select", "/v1/candidates/select", "/evolution/candidates/select"], (req: Request, res: Response, next: any) => checkIPAllowlist(req, res, next), async (req: Request, res: Response) => {
   try {
     const safety = safetyBackstop.getState();
     if (safety.silentLockActive) {
@@ -127,7 +135,7 @@ evolutionRouter.post("/candidates/select", (req: Request, res: Response, next: a
 });
 
 // POST /api/candidates/promote
-evolutionRouter.post("/candidates/promote", (req: Request, res: Response, next: any) => checkIPAllowlist(req, res, next), async (req: Request, res: Response) => {
+evolutionRouter.post(["/candidates/promote", "/v1/candidates/promote", "/evolution/candidates/promote"], (req: Request, res: Response, next: any) => checkIPAllowlist(req, res, next), async (req: Request, res: Response) => {
   try {
     const safety = safetyBackstop.getState();
     if (safety.silentLockActive) {
@@ -166,7 +174,7 @@ evolutionRouter.post("/candidates/promote", (req: Request, res: Response, next: 
 });
 
 // POST /api/backtest
-evolutionRouter.post("/backtest", async (req: Request, res: Response) => {
+evolutionRouter.post(["/backtest", "/v1/backtest", "/evolution/backtest"], async (req: Request, res: Response) => {
   try {
     const validated = BacktestSchema.parse(req.body);
     const { code, asset, duration, condition } = validated;
@@ -250,5 +258,128 @@ evolutionRouter.post("/backtest", async (req: Request, res: Response) => {
     });
   } catch (err: any) {
     res.status(400).json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/gemini/analyze
+evolutionRouter.post(["/gemini/analyze", "/v1/gemini/analyze"], async (req: Request, res: Response) => {
+  try {
+    const validated = GeminiAnalyzeSchema.parse(req.body);
+    const { code, candidateName } = validated;
+
+    const promptText = `شیکردنەوەی تەکنیکی و بونیادی ئەنجام بدە بۆ کاندیدی چالاک بەناوی: ${candidateName || "Latency Optimized Sniper"}. کۆدی کەرنەڵی C++ ئەسپاردەکراو ئەمەیە:\n\n${code}\n\nتکایە وەک پڕۆفیسۆرێکی دارایی و زیرەکی دەستکرد، گونجاوی ئەم مۆدێلە لەگەڵ هەژمار و پۆرتفۆلیۆ بنرخێنە. پێشنیاری بیرکاری پێشکەش بکە بە زمانی کوردی. وەڵامەکە بە شێوازێکی پڕۆفیشناڵ و ڕێکخراو بێت بەبێ زاراوەی مارکێتینگی دڵخۆشکەر.`;
+
+    const result = await llmProvider.generateText({
+      prompt: promptText
+    });
+    res.json({ success: true, text: result.text });
+  } catch (err: any) {
+    console.error("[ANALYZE-ERROR] Generation failed:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/gemini/optimize
+evolutionRouter.post(["/gemini/optimize", "/v1/gemini/optimize"], async (req: Request, res: Response) => {
+  try {
+    const validated = GeminiAnalyzeSchema.parse(req.body);
+    const { code, candidateName } = validated;
+
+    const promptText = `ئۆپتیمایزکردنی فۆرمولەی کەرنەڵی C++ ڕادەست بکە بۆ کاندیدی ${candidateName || "Active Candidate"}. کۆدەکەی ئەمەیە:\n\n${code}\n\nهاوکێشەکە ئۆپتیمایز بکە بۆ بەدەستهێنانی کەمترین تاخیربوون (Low Latency) و زۆرترین قازانج لەژێر نۆرمەکانی PPO. تەنها کۆدەکەی C++ لەناو بلۆکی نیشانەکردنی کۆد \`\`\`cpp ... \`\`\` و پێشنیارە بیرکارییەکان بە کوردی پێشکەش بکە.`;
+
+    const result = await llmProvider.generateText({
+      prompt: promptText
+    });
+    res.json({ success: true, text: result.text });
+  } catch (err: any) {
+    console.error("[OPTIMIZE-ERROR] Generation failed:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/candidates/synthesize
+evolutionRouter.post(["/candidates/synthesize", "/v1/candidates/synthesize", "/evolution/synthesize"], async (req: Request, res: Response) => {
+  try {
+    const topic = req.body.topic || "Volatility-Dampened High Frequency Reward Kernel";
+    const researchSummary = req.body.researchSummary || "Microstructure latency dampening with quadratic slippage penalties.";
+
+    const result = await synthesizeCandidateFromResearch(topic, researchSummary);
+    res.json({ success: true, ...result });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+const GO_BACKEND_URL = process.env.GO_BACKEND_URL || "http://127.0.0.1:3001";
+
+// POST /api/evolution/hot-patch
+evolutionRouter.post(["/hot-patch", "/v1/hot-patch"], async (req: Request, res: Response) => {
+  try {
+    const targetUrl = `${GO_BACKEND_URL}/api/evolution/hot-patch`;
+    const response = await fetch(targetUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(req.body)
+    });
+    const data = await response.json();
+    return res.status(response.status).json(data);
+  } catch (err: any) {
+    return res.status(502).json({
+      success: false,
+      error: `Go backend service unreachable: ${err.message}`
+    });
+  }
+});
+
+// GET /api/evolution/patches
+evolutionRouter.get(["/patches", "/v1/patches"], async (req: Request, res: Response) => {
+  try {
+    const targetUrl = `${GO_BACKEND_URL}/api/evolution/patches`;
+    const response = await fetch(targetUrl, {
+      method: "GET"
+    });
+    const data = await response.json();
+    return res.status(response.status).json(data);
+  } catch (err: any) {
+    return res.status(502).json({
+      success: false,
+      error: `Go backend service unreachable: ${err.message}`
+    });
+  }
+});
+
+// POST /api/evolution/self-heal
+evolutionRouter.post(["/self-heal", "/v1/self-heal"], async (req: Request, res: Response) => {
+  try {
+    const targetUrl = `${GO_BACKEND_URL}/api/evolution/self-heal`;
+    const response = await fetch(targetUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(req.body)
+    });
+    const data = await response.json();
+    return res.status(response.status).json(data);
+  } catch (err: any) {
+    return res.status(502).json({
+      success: false,
+      error: `Go backend service unreachable: ${err.message}`
+    });
+  }
+});
+
+// GET /api/evolution/healing-logs
+evolutionRouter.get(["/healing-logs", "/v1/healing-logs"], async (req: Request, res: Response) => {
+  try {
+    const targetUrl = `${GO_BACKEND_URL}/api/evolution/healing-logs`;
+    const response = await fetch(targetUrl, {
+      method: "GET"
+    });
+    const data = await response.json();
+    return res.status(response.status).json(data);
+  } catch (err: any) {
+    return res.status(502).json({
+      success: false,
+      error: `Go backend service unreachable: ${err.message}`
+    });
   }
 });

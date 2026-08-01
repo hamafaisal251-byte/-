@@ -1,4 +1,5 @@
-import { pgDb, assertTradingAllowed } from "./server";
+import { pgDb } from "./src/db";
+import { assertTradingAllowed } from "./src/services/tradingService";
 import { safetyBackstop } from "./safetyBackstop";
 
 /**
