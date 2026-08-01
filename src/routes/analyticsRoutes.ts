@@ -2,6 +2,7 @@ import { Router, Request, Response } from "express";
 import { pgDb } from "../db";
 import { demoLiveAccountStats, realLiveAccountStats, demoLivePositions, realLivePositions } from "../state/tradingState";
 import { safetyBackstop } from "../../safetyBackstop";
+import { checkIPAllowlist } from "../middleware/auth";
 
 export const analyticsRouter = Router();
 
@@ -63,4 +64,10 @@ analyticsRouter.get("/darkpool", async (req: Request, res: Response) => {
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
   }
+});
+
+// GET /api/analytics/attribution
+analyticsRouter.get(["/attribution", "/v1/attribution"], (req: Request, res: Response, next: any) => checkIPAllowlist(req, res, next), (req: Request, res: Response) => {
+  const attributions = pgDb.query("SELECT * FROM execution_attributions") || [];
+  res.json({ success: true, attributions });
 });
