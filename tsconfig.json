@@ -25,6 +25,11 @@
   "include": [
     "src/**/*.ts",
     "src/**/*.tsx",
+    "server.ts",
+    "autonomousAgent.ts",
+    "sovereignMind.ts",
+    "toolRegistry.ts",
+    "telegramNotifier.ts",
     "llmProvider.ts",
     "safetyBackstop.ts",
     "deepResearchAgent.ts",
@@ -33,7 +38,6 @@
   ],
   "exclude": [
     "node_modules",
-    "dist",
-    "server.ts"
+    "dist"
   ]
 }

@@ -19,7 +19,7 @@ To prevent rogue AI automation, corrupted scripts, or unauthorized commits from 
 
 The following core files are protected and monitored by the regression guard (`./bin/regression_guard.sh`):
 - `internal/safety/backstop.go` — Safety Backstop Engine
-- `internal/crypto/encryption.go` — AES-256 Envelope Encryption
+- `internal/crypto/crypto.go` — AES-256 Envelope Encryption
 - `internal/api/handlers.go` — IP Firewall & Mutating Route Guards
 - `audit_and_repair.js` — Core Repository Repair Engine
 

@@ -73,6 +73,9 @@ export let realLiveAccountStats = {
 };
 
 export let realLiveActiveCandidateId = "candidate-a";
+export function setRealLiveActiveCandidateId(id: string) {
+  realLiveActiveCandidateId = id;
+}
 
 export let livePositions = demoLivePositions;
 export function setLivePositions(positions: any[]) {

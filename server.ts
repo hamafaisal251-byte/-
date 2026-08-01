@@ -1,4 +1,3 @@
-// @ts-nocheck
 import express from "express";
 import path from "path";
 import dotenv from "dotenv";
@@ -34,6 +33,7 @@ const execAsync = promisify(exec);
 
 dotenv.config();
 
+// Imports from state and utils
 import { DYNAMIC_SERVER_MUTATE_KEY, encrypt, decrypt } from "./src/utils/crypto";
 import { pgDb } from "./src/db";
 import { addServerLog, serverLogs } from "./src/services/logging";
@@ -48,29 +48,16 @@ import {
   realLiveAccountStats,
   livePositions,
   liveAccountStats,
-  recordDemoLiveTradeClose
+  recordDemoLiveTradeClose,
+  arbitrageConfig,
+  activeCandidateId,
+  candidatesList,
+  setActiveCandidateId as setActiveCandidateIdState,
+  setCandidatesList as setCandidatesListState,
+  realLiveActiveCandidateId,
+  setRealLiveActiveCandidateId,
+  setLivePositions
 } from "./src/state/tradingState";
-import {
-  testNewsConnection,
-  updateNewsAndCalendar,
-  platformStatusCache,
-  individualSentiments,
-  computeAggregatedSentiment,
-  updateNewsSentimentState,
-  currentNewsEvents,
-  minutesUntilHighImpactNews,
-  sentimentScore,
-  aggregatedSentimentState,
-  aggregatedNewsFeed
-} from "./src/services/newsService";
-import {
-  assertTradingAllowed,
-  saveLiveTradingStateToDisk,
-  liveRates,
-  getNumericRate,
-  rollingTicks
-} from "./src/services/tradingService";
-import { executeCustomConnectorEndpoint } from "./src/services/connectorService";
 
 export {
   DYNAMIC_SERVER_MUTATE_KEY,
@@ -90,6 +77,9 @@ export {
   livePositions,
   liveAccountStats,
   recordDemoLiveTradeClose,
+  arbitrageConfig,
+  activeCandidateId,
+  candidatesList,
   testNewsConnection,
   updateNewsAndCalendar,
   platformStatusCache,
@@ -102,7 +92,6 @@ export {
   aggregatedSentimentState,
   aggregatedNewsFeed,
   assertTradingAllowed,
-  saveLiveTradingStateToDisk,
   liveRates,
   getNumericRate,
   rollingTicks,
@@ -626,6 +615,8 @@ export async function saveLiveTradingStateToDb() {
   }
 }
 
+export const saveLiveTradingStateToDisk = saveLiveTradingStateToDb;
+
 export async function loadLiveTradingStateFromDb() {
   console.log("[SERVER] Restoring live trading state and safety configuration from Postgres...");
   try {
@@ -656,10 +647,10 @@ export async function loadLiveTradingStateFromDb() {
           Object.assign(realLiveAccountStats, saved.realLiveAccountStats);
         }
         if (saved.activeCandidateId && typeof activeCandidateId !== "undefined") {
-          activeCandidateId = saved.activeCandidateId;
+          setActiveCandidateId(saved.activeCandidateId);
         }
         if (saved.realLiveActiveCandidateId) {
-          realLiveActiveCandidateId = saved.realLiveActiveCandidateId;
+          setRealLiveActiveCandidateId(saved.realLiveActiveCandidateId);
         }
         console.log("[SERVER] Successfully restored live positions and stats from Postgres 'runtime_state' table.");
       }
@@ -699,10 +690,10 @@ function restoreStateFromDisk() {
         Object.assign(realLiveAccountStats, saved.realLiveAccountStats);
       }
       if (saved.activeCandidateId && typeof activeCandidateId !== "undefined") {
-        activeCandidateId = saved.activeCandidateId;
+        setActiveCandidateId(saved.activeCandidateId);
       }
       if (saved.realLiveActiveCandidateId) {
-        realLiveActiveCandidateId = saved.realLiveActiveCandidateId;
+        setRealLiveActiveCandidateId(saved.realLiveActiveCandidateId);
       }
       console.log("[SERVER] Restored live state from local `/tmp/live_trading_state.json` fallback.");
     }
@@ -954,12 +945,6 @@ let packetsPerSecond = 48500;
 // STAGE 6: CROSS-EXCHANGE ARBITRAGE & COMPLIANCE GLOBALS
 // ============================================================================
 export let latestDrlArbitrageFeature = 0;
-export let arbitrageConfig = {
-  liveEnabled: false,
-  thresholdNetProfitUsd: 15.0,
-  orderSizeBtc: 0.5,
-  slippagePct: 0.05
-};
 
 // Live PPO Reinforcement Learning Telemetry tracking
 let ppoEpisodes = 0;
@@ -974,14 +959,7 @@ interface TelemetryLog {
   message: string;
 }
 
-let serverLogs: TelemetryLog[] = [
-  { timestamp: getFormattedTime(), source: "GO-BACKPLANE", level: "INFO", message: "Sovereign Controller backplane initialized. IPC buffer mapped." },
-  { timestamp: getFormattedTime(), source: "CPP-ENGINE", level: "SUCCESS", message: "Execution thread pinned to CPU Core 3. SPSC spin-polling active." },
-  { timestamp: getFormattedTime(), source: "RISK-MANAGER", level: "INFO", message: "HSM API dynamic registration checked. DMA authorization granted." },
-  { timestamp: getFormattedTime(), source: "EVOLUTION-LAB", level: "SUCCESS", message: "Active Reinforcement learning reward engine bound: AGENT_GEN_V2_OPT" }
-];
-
-interface EvolutionCandidate {
+export interface EvolutionCandidate {
   id: string;
   name: string;
   creator: string;
@@ -1019,36 +997,9 @@ interface EvolutionCandidate {
 }
 
 export function getCandidatesList() { return candidatesList; }
-export function setCandidatesList(list: EvolutionCandidate[]) { candidatesList = list; }
+export function setCandidatesList(list: EvolutionCandidate[]) { setCandidatesListState(list); }
 export function getActiveCandidateId() { return activeCandidateId; }
-export function setActiveCandidateId(id: string) { activeCandidateId = id; }
-
-export let activeCandidateId = "candidate-a";
-export let candidatesList: EvolutionCandidate[] = [
-  {
-    id: "candidate-a",
-    name: "Reward Candidate #0412: Latency Optimized Sniper",
-    creator: "AGENT_GEN_V2",
-    status: "IDLE",
-    code: `double calculateReward(double pnl_pips, double execution_latency_ns, double slippage_ticks, double volatility_spike, double position_lots) {
-    double pnl_reward = pnl_pips * position_lots * 10.0;
-    double slippage_penalty = std::pow(std::abs(slippage_ticks), 1.5) * 2.5;
-    double sniper_speed_bonus = 0.0;
-    if (execution_latency_ns > 0.0 && execution_latency_ns < 500.0) {
-        sniper_speed_bonus = (500.0 - execution_latency_ns) * 0.0375;
-    }
-    double shock_factor = volatility_spike > 3.0 ? std::exp(-0.4 * (volatility_spike - 3.0)) : 1.0;
-    return std::max(-150.0, std::min(150.0, ((pnl_reward - slippage_penalty) * shock_factor) + sniper_speed_bonus));
-}`,
-    metrics: {
-      avgReward: 48.2,
-      maxDrawdown: 1.1,
-      avgLatencyNs: 215,
-      leaksBytes: 0,
-      astWarningsCount: 0
-    }
-  }
-];
+export function setActiveCandidateId(id: string) { setActiveCandidateIdState(id); }
 
 // ============================================================================
 // LIVE MARKET-DATA INGESTION PIPELINE (WEBSOCKETS + ROLLING TRAINING FEED)
@@ -1699,7 +1650,7 @@ export function computePortfolioRiskMetrics(positions: any[], historicalTicks: a
   }
 
   // 1. Group/Align independent ticks by 15-second time buckets
-  const buckets: Record<string, { "EUR/USD"?: number, "GBP/USD"?: number, "BTC/USD"?: number }> = {};
+  const buckets: Record<string, Record<string, number>> = {};
   
   sortedTicks.forEach(t => {
     const instRaw = t.instrument || "EUR/USD";
@@ -1836,12 +1787,12 @@ export function computePortfolioRiskMetrics(positions: any[], historicalTicks: a
 
   // 6. Parametric VaR
   const keys = ["EUR/USD", "GBP/USD", "BTC/USD"];
-  const returnsMap = {
+  const returnsMap: Record<string, number[]> = {
     "EUR/USD": eurReturns,
     "GBP/USD": gbpReturns,
     "BTC/USD": btcReturns
   };
-  const statsMap = {
+  const statsMap: Record<string, { mean: number; variance: number; stdDev: number }> = {
     "EUR/USD": eurStats,
     "GBP/USD": gbpStats,
     "BTC/USD": btcStats
@@ -2191,22 +2142,6 @@ let liveRates: {
   btcUsd: 65450.00
 };
 
-// Sovereign Strategy Engine - State Declarations
-let demoLivePositions: any[] = [
-  { id: 'pos-demo-1', symbol: 'EUR/USD', type: 'BUY', size: 1.5, entryPrice: 1.08450, currentPrice: 1.08580, sl: 1.08000, tp: 1.09500, pnl: 195.00 },
-  { id: 'pos-demo-2', symbol: 'GBP/USD', type: 'SELL', size: 2.0, entryPrice: 1.26420, currentPrice: 1.26310, sl: 1.27000, tp: 1.25200, pnl: 220.00 },
-  { id: 'pos-demo-3', symbol: 'BTC/USD', type: 'BUY', size: 0.5, entryPrice: 62450.00, currentPrice: 62780.00, sl: 61000.00, tp: 65000.00, pnl: 165.00 }
-];
-
-let demoLiveAccountStats = {
-  balance: 104250.40,
-  equity: 104830.40,
-  usedMargin: 3750.00,
-  freeMargin: 101080.40,
-  marginLevel: 2795.4,
-  todayPnl: 1420.50
-};
-
 // Demo-Live Tracking State
 export let demoLiveDailyTradesCount = 0;
 export let demoLiveDailyWinsCount = 0;
@@ -2222,35 +2157,11 @@ export let lastRecordedStats = {
   todayPnl: -999999
 };
 
-function recordDemoLiveTradeClose(pnl: number) {
-  demoLiveDailyTradesCount++;
-  if (pnl > 0) {
-    demoLiveDailyWinsCount++;
-  }
-}
-
-let realLivePositions: any[] = [];
-
-let realLiveAccountStats = {
-  balance: 50000.00,
-  equity: 50000.00,
-  usedMargin: 0.00,
-  freeMargin: 50000.00,
-  marginLevel: 0,
-  todayPnl: 0.00
-};
-
-export let realLiveActiveCandidateId = "candidate-a"; // Tracks active REAL_LIVE candidate
-
-// Legacy exports for backwards compatibility
-let livePositions = demoLivePositions;
-let liveAccountStats = demoLiveAccountStats;
-
 // Register real position closing callback for safetyBackstop 24H daily loss limit breach
 safetyBackstop.onDailyLossClosePositionsCallback = () => {
   addServerLog("RISK-MANAGER", "CRITICAL", `🛡️ [DAILY LOSS ACTION] 24H Daily loss limit breached. Closing all ${demoLivePositions.length} open positions immediately.`);
   demoLivePositions.length = 0;
-  livePositions = demoLivePositions;
+  setLivePositions(demoLivePositions);
   demoLiveAccountStats.usedMargin = 0;
   demoLiveAccountStats.freeMargin = demoLiveAccountStats.equity;
   demoLiveAccountStats.marginLevel = 0;
@@ -2880,7 +2791,7 @@ setInterval(async () => {
     setSystemStatus("EMERGENCY_HALT");
     if (safety.emergencyHaltPolicy === "FLATTEN_ALL" && livePositions.length > 0) {
       addServerLog("RISK-MANAGER", "CRITICAL", `🛡️ [EMERGENCY ACTION] Executing FLATTEN_ALL policy. Closing all ${livePositions.length} open positions immediately.`);
-      livePositions = [];
+      setLivePositions([]);
       liveAccountStats.usedMargin = 0;
       liveAccountStats.freeMargin = liveAccountStats.equity;
       liveAccountStats.marginLevel = 0;
@@ -3303,7 +3214,8 @@ setInterval(async () => {
         const outcome = hitTP ? "WIN" : "LOSS";
 
         // Remove from list
-        demoLivePositions = demoLivePositions.filter(p => p.id !== position.id);
+        const removeIdx = demoLivePositions.findIndex(p => p.id === position.id);
+        if (removeIdx !== -1) demoLivePositions.splice(removeIdx, 1);
         recordDemoLiveTradeClose(finalPnl);
         
         // Log to audit log
@@ -3380,12 +3292,12 @@ setInterval(async () => {
   }
 
   // Calculate overall account equity & margin level
-  const totalPnLSumDemo = demoLivePositions.reduce((sum, p) => sum + p.pnl, 0);
+  const totalPnLSumDemo = demoLivePositions.reduce((sum: number, p: any) => sum + p.pnl, 0);
   demoLiveAccountStats.equity = parseFloat((demoLiveAccountStats.balance + totalPnLSumDemo).toFixed(2));
   demoLiveAccountStats.freeMargin = parseFloat((demoLiveAccountStats.equity - demoLiveAccountStats.usedMargin).toFixed(2));
   demoLiveAccountStats.marginLevel = demoLiveAccountStats.usedMargin > 0 ? parseFloat(((demoLiveAccountStats.equity / demoLiveAccountStats.usedMargin) * 100).toFixed(1)) : 0;
 
-  const totalPnLSumReal = realLivePositions.reduce((sum, p) => sum + p.pnl, 0);
+  const totalPnLSumReal = realLivePositions.reduce((sum: number, p: any) => sum + p.pnl, 0);
   realLiveAccountStats.equity = parseFloat((realLiveAccountStats.balance + totalPnLSumReal).toFixed(2));
   realLiveAccountStats.freeMargin = parseFloat((realLiveAccountStats.equity - realLiveAccountStats.usedMargin).toFixed(2));
   realLiveAccountStats.marginLevel = realLiveAccountStats.usedMargin > 0 ? parseFloat(((realLiveAccountStats.equity / realLiveAccountStats.usedMargin) * 100).toFixed(1)) : 0;
@@ -3419,8 +3331,8 @@ setInterval(async () => {
 
           const rewards = cand.evaluationRewards;
           const N = rewards.length;
-          const avgReward = rewards.reduce((s, r) => s + r, 0) / N;
-          const sumSq = rewards.reduce((s, r) => s + Math.pow(r - avgReward, 2), 0);
+          const avgReward = rewards.reduce((s: number, r: number) => s + r, 0) / N;
+          const sumSq = rewards.reduce((s: number, r: number) => s + Math.pow(r - avgReward, 2), 0);
           const stdDev = N > 1 ? Math.sqrt(sumSq / (N - 1)) : 1.0;
           const sharpe = stdDev > 0 ? (avgReward / stdDev) * Math.sqrt(252) : 0;
 
@@ -3428,7 +3340,7 @@ setInterval(async () => {
           let cumulative = 0;
           let peak = 0;
           let maxDrawdown = 0;
-          rewards.forEach(r => {
+          rewards.forEach((r: number) => {
             cumulative += r * 0.1;
             if (cumulative > peak) peak = cumulative;
             const dd = peak > 0 ? ((peak - cumulative) / peak) * 100 : 0;
@@ -3487,7 +3399,7 @@ setInterval(async () => {
     (async () => {
       try {
         const symbol: string = "EUR/USD";
-        const currentPrice = liveRates[symbol] || 1.08500;
+        const currentPrice = (liveRates as any)[symbol] || 1.08500;
         const atr = 0.00120;
 
         const regimeTrendVsRange = currentRegimeState.active.trendRegime === "TRENDING" ? 1.0 : -1.0;
@@ -4767,7 +4679,7 @@ app.post(["/api/control/halt", "/api/v1/control/halt"], mutateRateLimiter, check
 
   const safety = safetyBackstop.getState();
   if (safety.emergencyHaltPolicy === "FLATTEN_ALL") {
-    livePositions = [];
+    setLivePositions([]);
     liveAccountStats.usedMargin = 0;
     liveAccountStats.freeMargin = liveAccountStats.equity;
     liveAccountStats.marginLevel = 0;
@@ -5042,7 +4954,7 @@ app.post(["/api/candidates/adopt", "/api/v1/candidates/adopt"], mutateRateLimite
   };
 
   candidatesList.unshift(newCandidate);
-  activeCandidateId = id;
+  setActiveCandidateId(id);
 
   addServerLog("EVOLUTION-LAB", "SUCCESS", `🎉 Sandbox APPROVED candidate: '${name}'! Promoted to Demo execution. Sharpe=${sandboxResult.metrics.SharpeRatio.toFixed(2)}, MaxDD=${sandboxResult.metrics.maxDrawdown.toFixed(2)}%, Trades=${sandboxResult.metrics.tradesCount}`);
 
@@ -5071,7 +4983,7 @@ app.post(["/api/candidates/select", "/api/v1/candidates/select"], mutateRateLimi
     });
   }
 
-  activeCandidateId = id;
+  setActiveCandidateId(id);
   addServerLog("EVOLUTION-LAB", "SUCCESS", `Dynamic hot-swap successful: '${found.name}' bound to CPU Core 3.`);
   res.json({ success: true, activeCandidateId });
 }));
@@ -5100,7 +5012,7 @@ app.post(["/api/candidates/promote", "/api/v1/candidates/promote"], checkBearerA
   if (confirmStep === 2) {
     found.lifecycleStage = "PROMOTED_REAL_LIVE";
     found.status = "PASSED"; 
-    activeCandidateId = id; 
+    setActiveCandidateId(id); 
     
     // Record into version history
     recordPromotedVersion(found.id, found.name, found.code, found.liveDemoMetrics || found.metrics || {});
@@ -5858,7 +5770,7 @@ export function triggerAutomaticRollback(currentSharpe: number, currentDrawdown:
     return;
   }
   
-  activeCandidateId = previousVersion.id;
+  setActiveCandidateId(previousVersion.id);
   
   const rollbackMsg = `🔄 [رژێمی خۆکار] پاشەکشەی خۆکار جێبەجێکرا بۆ وەشانی پێشوو: '${previousVersion.name}' بەهۆی تێکچوونی کارایی لایڤ (Rolling Sharpe=${currentSharpe.toFixed(2)}, Drawdown=${currentDrawdown.toFixed(2)}%).`;
   
@@ -7335,7 +7247,7 @@ Do not include markdown code block characters inside the JSON. Return only the J
   };
 
   candidatesList.unshift(newCandidate);
-  activeCandidateId = candidateId;
+  setActiveCandidateId(candidateId);
 
   // Persist to version history list for rollback reference
   recordPromotedVersion(candidateId, finalWinner.name, finalWinner.code, finalWinner.metrics);
@@ -8608,7 +8520,7 @@ app.get("/metrics", asyncHandler(async (req: express.Request, res: express.Respo
     promDbIdleConnections.set(pgDb.useLocalFallback ? 0 : (pgDb.pool?.idleCount || 3));
 
     // 2. Refresh dynamic portfolio risk metrics
-    promPortfolioDrawdownPct.set(systemStatus === "HALTED" ? 8.4 : 1.2);
+    promPortfolioDrawdownPct.set(systemStatus === "EMERGENCY_HALT" ? 8.4 : 1.2);
     promPortfolioVarUSD.set(4820.50);
     promPortfolioSharpeRatio.set(2.41);
 
