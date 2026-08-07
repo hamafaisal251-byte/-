@@ -252,7 +252,7 @@ export const SystemImplementationStatusPanel: React.FC = () => {
             <h1 className="text-xl font-bold tracking-tight text-white">System Implementation Status & Verification Audit</h1>
           </div>
           <p className="text-xs text-slate-400 mt-1">
-            Automated, zero-mock health matrix verifying database decision logs, activity timestamps, and runtime subsystems across NEXUS.
+            Automated system health matrix verifying database decision logs, activity timestamps, and runtime subsystems across NEXUS.
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -506,7 +506,7 @@ export const SystemImplementationStatusPanel: React.FC = () => {
             Automated verification scan timestamp: {summary?.scanTimestamp ? new Date(summary.scanTimestamp).toLocaleString() : 'N/A'}
           </span>
           <span className="text-slate-400 font-mono">
-            NEXUS Zero-Mock Health Standard v2.4
+            NEXUS Health Standard v2.4
           </span>
         </div>
       </div>

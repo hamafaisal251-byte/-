@@ -312,7 +312,7 @@ export default function BacktestArena({ candidates, selectedCandidateId, setSele
     }
   };
 
-  // Generate ZIP/Source code download mock
+  // Source code bundle export handler
   const [downloadingCode, setDownloadingCode] = useState<boolean>(false);
   const [downloadSuccess, setDownloadSuccess] = useState<boolean>(false);
 

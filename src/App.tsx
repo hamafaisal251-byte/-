@@ -24,9 +24,10 @@ import ModelBenchmark from './components/ModelBenchmark';
 import SovereignMindPanel from './components/SovereignMindPanel';
 import SystemImplementationStatusPanel from './components/SystemImplementationStatusPanel';
 import { LiquidityManagerPanel } from './components/LiquidityManagerPanel';
+import ProfitabilityEnginePanel from './components/ProfitabilityEnginePanel';
 import { EvolutionCandidate } from './types/quant';
 
-type TabId = 'architecture' | 'sovereign-mind' | 'telemetry' | 'evolution' | 'risk-broker' | 'portfolio-risk' | 'alien-brain' | 'reward-playground' | 'backtest-arena' | 'ai-pilot-lab' | 'self-improvement-log' | 'arbitrage' | 'safety-backstop' | 'ensemble' | 'demo-live' | 'code-pipeline' | 'model-benchmark' | 'system-status' | 'liquidity-manager';
+type TabId = 'architecture' | 'sovereign-mind' | 'telemetry' | 'evolution' | 'risk-broker' | 'portfolio-risk' | 'alien-brain' | 'reward-playground' | 'backtest-arena' | 'profitability-engine' | 'ai-pilot-lab' | 'self-improvement-log' | 'arbitrage' | 'safety-backstop' | 'ensemble' | 'demo-live' | 'code-pipeline' | 'model-benchmark' | 'system-status' | 'liquidity-manager';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<TabId>('architecture');
@@ -375,6 +376,20 @@ export default function App() {
             <span>07. مەیدانی باکتێست | Backtest Arena</span>
           </button>
 
+          {/* Tab 7.5: Profitability Engine */}
+          <button
+            id="tab-btn-profitability-engine"
+            onClick={() => setActiveTab('profitability-engine')}
+            className={`px-4 py-2.5 rounded-lg text-xs font-bold font-mono flex items-center space-x-2 border transition-all cursor-pointer whitespace-nowrap ${
+              activeTab === 'profitability-engine'
+                ? 'bg-slate-900 border-emerald-500 text-emerald-200 shadow-lg shadow-emerald-950/40 ring-1 ring-emerald-500/30'
+                : 'bg-transparent border-transparent text-emerald-400 hover:text-emerald-300'
+            }`}
+          >
+            <Zap className="w-4 h-4 shrink-0 text-emerald-400 animate-pulse" />
+            <span className="text-emerald-300 font-bold">★ داڕشتنی قازانج | Profitability & Math Engine</span>
+          </button>
+
           {/* Tab 8: Self-Improvement Logs */}
           <button
             id="tab-btn-self-improvement-log"
@@ -583,6 +598,7 @@ export default function App() {
           {activeTab === 'alien-brain' && <AlienBrainLab />}
           {activeTab === 'reward-playground' && <RewardPlayground />}
           {activeTab === 'backtest-arena' && <BacktestArena candidates={candidates} selectedCandidateId={selectedId} setSelectedCandidateId={handleSelectCandidateId} />}
+          {activeTab === 'profitability-engine' && <ProfitabilityEnginePanel />}
           {activeTab === 'ai-pilot-lab' && <AIPilotLab candidates={candidates} setCandidates={handleUpdateCandidates} selectedId={selectedId} setSelectedId={handleSelectCandidateId} emergencyFrozen={emergencyFrozen} />}
           {activeTab === 'self-improvement-log' && <SelfImprovementDashboard />}
           {activeTab === 'arbitrage' && <ArbitragePanel />}

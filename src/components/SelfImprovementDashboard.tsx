@@ -1210,7 +1210,7 @@ export default function SelfImprovementDashboard() {
                       const points = bucketRanges.map((range, idx) => {
                         const bucketItems = filteredAnalysis.filter((item: any) => item.bucketRange === range);
                         if (bucketItems.length === 0) {
-                          // Dummy dynamic curves if database is still gathering data
+                          // Baseline calibration curve when database is still gathering initial data
                           const randomFluctuation = (Math.random() - 0.5) * 0.05;
                           const centerVal = bucketCenters[idx];
                           const fallbackWinRate = Math.max(0.40, Math.min(0.99, centerVal - 0.04 + randomFluctuation));

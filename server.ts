@@ -213,6 +213,7 @@ import { pipelineRouter } from "./src/routes/pipelineRoutes";
 import { notificationsRouter } from "./src/routes/notificationsRoutes";
 import { drlRouter } from "./src/routes/drlRoutes";
 import { miscRouter } from "./src/routes/miscRoutes";
+import { profitabilityRouter } from "./src/routes/profitabilityRoutes";
 
 export const app = express();
 app.set("trust proxy", 1);
@@ -222,6 +223,8 @@ const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 app.use(express.json());
 
 // Mount modular sub-system routers (Refactored & Split Server Architecture)
+app.use("/api/profitability", profitabilityRouter);
+app.use("/api", profitabilityRouter);
 app.use("/api/safety", safetyRouter);
 app.use("/api", healthRouter);
 app.use("/api/brokers", brokerRouter);

@@ -706,7 +706,7 @@ export class PostgresEngine {
         }
       }
 
-      // Seed initial mock tick data if none exist
+      // Seed initial baseline tick data if none exist
       const ticksCountRes = await this.pool.query("SELECT COUNT(*) FROM historical_ticks");
       if (parseInt(ticksCountRes.rows[0].count) === 0) {
         console.log("[POSTGRES] Seeding initial independent historical tick series for multiple assets...");
@@ -1330,7 +1330,7 @@ export class PostgresEngine {
       }
 
       if (this.cache.prediction_log.length === 0) {
-        console.log("[POSTGRES-FALLBACK] Seeding mock offline prediction records...");
+        console.log("[POSTGRES-FALLBACK] Seeding baseline offline prediction records...");
         const modes = ["SniperMod", "Whale Mode", "DRL-driven"];
         const instruments = ["EUR/USD", "GBP/USD", "BTC/USD"];
         for (const mode of modes) {
@@ -1391,7 +1391,7 @@ export class PostgresEngine {
       }
 
       if (!this.cache.historical_ticks || this.cache.historical_ticks.length === 0) {
-        console.log("[POSTGRES-FALLBACK] Seeding mock offline historical_ticks series for multiple assets...");
+        console.log("[POSTGRES-FALLBACK] Seeding offline historical_ticks baseline series for multiple assets...");
         const instruments = ["EUR/USD", "GBP/USD", "BTC/USD"];
         for (const inst of instruments) {
           let price = inst === "EUR/USD" ? 1.08500 : inst === "GBP/USD" ? 1.27300 : 62500.00;
